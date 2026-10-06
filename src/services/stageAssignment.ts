@@ -1,0 +1,644 @@
+import { FmsStageDefinition, FmsStageExecution, FmsInstance, UserProfile } from '../types';
+import { 
+  FMS_CHECK_STOCK_STAGES, 
+  FMS_STANDARD_PURCHASE_STAGES, 
+  FMS_PO_PAYMENT_STAGES,
+  FMS_PURCHASE_TO_STORE_DISPATCH_STAGES,
+  FMS_STORE_TO_SITE_DISPATCH_STAGES,
+  FMS_PAYMENT_TO_DISPATCH_STAGES,
+  FMS_SITE_RECEIVE_STAGES,
+  FMS_ACCOUNTS_INVOICE_COLLECTION_STAGES,
+  FMS_HR_ATTENDANCE_PAYMENT_STAGES,
+  FMS_BREAKDOWN_REPORTING_STAGES,
+  FMS_EQUIPMENT_PART_REPAIR_STAGES,
+  FMS_DPR_REPORTING_STAGES 
+} from '../data/initialData';
+
+/**
+ * Strict role and assignee matching for FMS stages across all flows:
+ * 1. Check Stock FMS (Store Verification):
+ *    - Amanat Bharadwaj (Store Manager)
+ * 2. Store to Site Dispatch FMS (Stock Available):
+ *    - Stages 1 to 8: Store Manager - Sumant (Siladehi) / Hemant (Bijetala)
+ *    - Stage 9: Purchaser (Rajnikant Behera / Purchaser)
+ * 3. Indent to PO FMS (Purchase Dept):
+ *    - Stage 1: Store Manager (Amanat Bharadwaj)
+ *    - Stages 2, 5, 6, 7, 8: Asst. Manager Purchase & Store (Bramhanand Patel)
+ *    - Stage 4: Project Manager (Pranay Ghosh / Chakravarti Ji)
+ *    - Stages 3, 9, 10, 11, 12: Purchase Executive (Shyam Rao Sureshe / Rajnikant Behera)
+ * 4. PO to Payment FMS (Accounts Dept):
+ *    - Stages 1, 5, 8, 12: Finance Approver (Pranjal Agrawal / Khushboo Sahu)
+ *    - Stages 2, 4, 6, 9, 10, 15: Accounts Executive / Manager (Byamkesh Kaiwartya / Manish Koshle / Priyanka)
+ *    - Stages 3, 7: Purchase Executive (Shyam Rao Sureshe)
+ *    - Stages 11, 13, 14: EA / Accounts (Khushboo Sahu / Rajnikant / Vivek)
+ * 5. Accounts Invoice Collection FMS:
+ *    - Stages 1, 2, 6, 7: Accounts Manager (Byamkesh Kaiwartya / Priyanka / Manish Koshle / Accounts)
+ *    - Stages 3, 4: Purchase Manager (Bramhanand Patel)
+ *    - Stage 5: Khushboo Sahu (EA)
+ * 6. HR Labour Attendance & Payment FMS:
+ *    - Stage 1: Site Incharge
+ *    - Stages 2, 3, 4, 5, 6, 9, 10, 11: Garima Pal (HR)
+ *    - Stage 7: Mamta (HR / Accounts)
+ *    - Stage 8: Nandita / Khilesh (Planning / DPR)
+ * 7. Purchase to Store to Dispatch FMS:
+ *    - Stages 1, 4, 5, 7, 8, 9: Store Manager (Bramhanand Patel)
+ *    - Stages 2, 3, 6: Purchase Executive (Shyam Rao Sureshe)
+ *    - Stage 10: Purchaser (Rajendra / Vivek / Rajnikant)
+ * 8. Payment to Dispatch FMS:
+ *    - Stages 1, 4, 5, 6, 7: Purchase Assistant / Purchaser (Rajendra / Vivek / Rajnikant)
+ *    - Stages 2, 3: Purchase Executive (Shyam Rao Sureshe)
+ * 9. Site Receive FMS:
+ *    - Stages 1, 2, 3, 4, 5, 6, 8: Store Incharge (Amanat Bharadwaj / Site Store Incharge)
+ *    - Stage 7: Construction (Civil Incharge) / Mechanical Incharge (Pranay Ghosh / Chakravarti Ji)
+ *    - Stages 9, 10: Site DEO (Site Data Entry Operator)
+ */
+export const isUserResponsibleForStage = (
+  stageDef: FmsStageDefinition,
+  stageExec: FmsStageExecution | undefined,
+  user: UserProfile
+): boolean => {
+  if (!user || !stageDef) return false;
+
+  const userName = user.name.toLowerCase().trim();
+  const userRole = user.role.toLowerCase().trim();
+
+  // Equipment Part Repair FMS Stages
+  if (stageDef.stageId?.startsWith('STG-EQP-')) {
+    // Purchase Manager (Bramhanand Patel): Stages 1, 2, 3, 4, 5, 8, 9, 14, 15
+    if (['STG-EQP-01', 'STG-EQP-02', 'STG-EQP-03', 'STG-EQP-04', 'STG-EQP-05', 'STG-EQP-08', 'STG-EQP-09', 'STG-EQP-14', 'STG-EQP-15'].includes(stageDef.stageId)) {
+      return userName.includes('bramhanand') ||
+             userName.includes('patel') ||
+             userRole.includes('purchase manager') ||
+             userRole.includes('asst. manager purchase & store') ||
+             userRole.includes('purchase') ||
+             userRole.includes('admin');
+    }
+    // Purchase Executive (Shyam Rao Sureshe): Stages 6, 7, 10, 12, 13, 16
+    if (['STG-EQP-06', 'STG-EQP-07', 'STG-EQP-10', 'STG-EQP-12', 'STG-EQP-13', 'STG-EQP-16'].includes(stageDef.stageId)) {
+      return userName.includes('shyam') ||
+             userName.includes('sureshe') ||
+             userName.includes('rajnikant') ||
+             userRole.includes('purchase executive') ||
+             userRole.includes('purchase');
+    }
+    // Purchase Assistant (Rajendra / Vivek): Stage 11
+    if (stageDef.stageId === 'STG-EQP-11') {
+      return userName.includes('rajendra') ||
+             userName.includes('vivek') ||
+             userRole.includes('purchase assistant') ||
+             userRole.includes('purchaser');
+    }
+    // Store Manager / Store Incharge (Sumant / Hemant / Bramhanand): Stages 17, 18
+    if (['STG-EQP-17', 'STG-EQP-18'].includes(stageDef.stageId)) {
+      return userName.includes('sumant') ||
+             userName.includes('hemant') ||
+             userName.includes('bramhanand') ||
+             userName.includes('amanat') ||
+             userRole.includes('store');
+    }
+  }
+
+  // DPR (Daily Progress Report) FMS Stages
+  if (stageDef.stageId?.startsWith('STG-DPR-')) {
+    // Khilesh (Planning / DPR Incharge): Stages 1, 5, 6
+    if (['STG-DPR-01', 'STG-DPR-05', 'STG-DPR-06'].includes(stageDef.stageId)) {
+      return userName.includes('khilesh') || 
+             userRole.includes('planning') || 
+             userRole.includes('dpr') || 
+             userRole.includes('site engineer');
+    }
+    // Nandita (Planning Executive): Stages 2, 3
+    if (['STG-DPR-02', 'STG-DPR-03'].includes(stageDef.stageId)) {
+      return userName.includes('nandita') || 
+             userRole.includes('planning executive') || 
+             userRole.includes('planning') || 
+             userRole.includes('dpr');
+    }
+    // Pranay Ghosh (Mechanical Incharge): Stage 4
+    if (stageDef.stageId === 'STG-DPR-04') {
+      return userName.includes('pranay') || 
+             userName.includes('chakravarti') || 
+             userRole.includes('mechanical') || 
+             userRole.includes('project manager');
+    }
+  }
+
+  // Equipment Part Repair FMS Stages
+  if (stageDef.stageId?.startsWith('STG-EQP-')) {
+    // Purchase Manager (Bramhanand Patel): Stages 1, 2, 3, 4, 5, 8, 9, 14, 15
+    if (['STG-EQP-01', 'STG-EQP-02', 'STG-EQP-03', 'STG-EQP-04', 'STG-EQP-05', 'STG-EQP-08', 'STG-EQP-09', 'STG-EQP-14', 'STG-EQP-15'].includes(stageDef.stageId)) {
+      return userName.includes('bramhanand') || 
+             userRole.includes('purchase manager') ||
+             userRole.includes('asst. manager purchase & store') ||
+             userRole.includes('purchase');
+    }
+    // Purchase Executive (Shyam Rao Sureshe): Stages 6, 7, 10, 12, 13, 16
+    if (['STG-EQP-06', 'STG-EQP-07', 'STG-EQP-10', 'STG-EQP-12', 'STG-EQP-13', 'STG-EQP-16'].includes(stageDef.stageId)) {
+      return userName.includes('shyam') || 
+             userName.includes('rajnikant') || 
+             userRole.includes('purchase executive') ||
+             userRole.includes('purchaser');
+    }
+    // Purchase Assistant (Rajendra / Vivek): Stage 11
+    if (stageDef.stageId === 'STG-EQP-11') {
+      return userName.includes('rajendra') || 
+             userName.includes('vivek') || 
+             userRole.includes('purchase assistant');
+    }
+    // Store Manager / Store Incharge (Sumant / Hemant / Bramhanand): Stages 17, 18
+    if (['STG-EQP-17', 'STG-EQP-18'].includes(stageDef.stageId)) {
+      return userName.includes('sumant') || 
+             userName.includes('hemant') || 
+             userName.includes('bramhanand') ||
+             userRole.includes('store manager') || 
+             userRole.includes('store in charge') ||
+             userRole.includes('store');
+    }
+  }
+
+  // Machine/Vehicle/Plant Breakdown Reporting FMS Stages
+  if (stageDef.stageId?.startsWith('STG-BRK-')) {
+    // Mechanical Manager (J Chakraworti): Stages 3, 5, 9, 10, 11, 12
+    if (['STG-BRK-03', 'STG-BRK-05', 'STG-BRK-09', 'STG-BRK-10', 'STG-BRK-11', 'STG-BRK-12'].includes(stageDef.stageId)) {
+      return userName.includes('chakraworti') ||
+             userName.includes('chakravarti') ||
+             userName.includes('chakraborty') ||
+             userRole.includes('mechanical') ||
+             userRole.includes('mechanical manager') ||
+             userRole.includes('admin');
+    }
+    // Store Keeper (Sumant Singh Chauhan / Pranab Chakraborty): Stages 6, 7
+    if (['STG-BRK-06', 'STG-BRK-07'].includes(stageDef.stageId)) {
+      return userName.includes('sumant') ||
+             userName.includes('pranab') ||
+             userRole.includes('store') ||
+             userRole.includes('store keeper');
+    }
+    // Service Engineer / Mechanic: Stage 4
+    if (stageDef.stageId === 'STG-BRK-04') {
+      return userName.includes('service') ||
+             userRole.includes('service engineer') ||
+             userRole.includes('mechanic');
+    }
+    // Driver / Operator / Mechanic: Stages 13, 14
+    if (['STG-BRK-13', 'STG-BRK-14'].includes(stageDef.stageId)) {
+      return userRole.includes('driver') ||
+             userRole.includes('operator') ||
+             userRole.includes('mechanic') ||
+             userName.includes('chotu');
+    }
+    // Default Site Mechanic: Stages 1, 2, 8
+    return userName.includes('mechanic') ||
+           userRole.includes('mechanic') ||
+           userName.includes('chotu') ||
+           userRole.includes('site');
+  }
+
+  // HR Labour Attendance & Payment FMS Stages
+  if (stageDef.stageId?.startsWith('STG-HR-')) {
+    // Stage 1: Site Incharge
+    if (stageDef.stageId === 'STG-HR-01') {
+      return userRole.includes('site incharge') ||
+             userRole.includes('site') ||
+             userRole.includes('incharge') ||
+             userName.includes('site') ||
+             userName.includes('amanat');
+    }
+    // Stage 7: Mamta (HR / Accounts Verification)
+    if (stageDef.stageId === 'STG-HR-07') {
+      return userName.includes('mamta') || 
+             userRole.includes('hr') || 
+             userRole.includes('accounts');
+    }
+    // Stage 8: Nandita / Khilesh (DPR / Planning)
+    if (stageDef.stageId === 'STG-HR-08') {
+      return userName.includes('nandita') || 
+             userName.includes('khilesh') || 
+             userName.includes('khileash') || 
+             userRole.includes('planning') || 
+             userRole.includes('dpr');
+    }
+    // Stages 2, 3, 4, 5, 6, 9, 10, 11: Garima Pal (HR)
+    return userName.includes('garima') || 
+           userRole.includes('hr') || 
+           userRole.includes('human resources') ||
+           userRole.includes('admin');
+  }
+
+  // Accounts Invoice Collection FMS Stages
+  if (stageDef.stageId?.startsWith('STG-INV-')) {
+    // Stages 1, 2, 6, 7: Accounts Manager (Byamkesh / Priyanka / Manish / Accounts)
+    if (['STG-INV-01', 'STG-INV-02', 'STG-INV-06', 'STG-INV-07'].includes(stageDef.stageId)) {
+      return userName.includes('byamkesh') || 
+             userName.includes('priyanka') || 
+             userName.includes('manish') || 
+             userRole.includes('accounts') ||
+             userRole.includes('it executive');
+    }
+    // Stages 3, 4: Purchase Manager (Bramhanand Patel)
+    if (['STG-INV-03', 'STG-INV-04'].includes(stageDef.stageId)) {
+      return userName.includes('bramhanand') || 
+             userRole.includes('purchase manager') ||
+             userRole.includes('asst. manager purchase & store') ||
+             userRole.includes('purchase');
+    }
+    // Stage 5: Khushboo (EA) / Finance Approver
+    if (stageDef.stageId === 'STG-INV-05') {
+      return userName.includes('khushboo') || 
+             userName.includes('pranjal') || 
+             userRole.includes('ea') || 
+             userRole.includes('executive assistant') ||
+             userRole.includes('finance');
+    }
+  }
+
+  // Store to Site Dispatch FMS Stages (Stock Available)
+  if (stageDef.stageId?.startsWith('STG-SSD-')) {
+    // Stages 1 to 8: Store Manager Sumant (Siladehi) / Hemant (Bijetala)
+    if (['STG-SSD-01', 'STG-SSD-02', 'STG-SSD-03', 'STG-SSD-04', 'STG-SSD-05', 'STG-SSD-06', 'STG-SSD-07', 'STG-SSD-08'].includes(stageDef.stageId)) {
+      return userName.includes('sumant') || 
+             userName.includes('hemant') || 
+             userName.includes('amanat') ||
+             userRole.includes('store manager') || 
+             userRole.includes('store in charge') ||
+             userRole.includes('store');
+    }
+    // Stage 9: Get Receiving -> Purchaser
+    if (stageDef.stageId === 'STG-SSD-09') {
+      return userName.includes('rajnikant') || 
+             userName.includes('rajendra') || 
+             userName.includes('vivek') || 
+             userRole.includes('purchaser') || 
+             userRole.includes('purchase assistant');
+    }
+  }
+
+  // Site Receive FMS Stages
+  if (stageDef.stageId?.startsWith('STG-REC-')) {
+    if (stageDef.stageId === 'STG-REC-07') {
+      return userName.includes('pranay') || 
+             userName.includes('chakravarti') || 
+             userRole.includes('project manager') || 
+             userRole.includes('civil') ||
+             userRole.includes('mechanical');
+    }
+    if (['STG-REC-09', 'STG-REC-10'].includes(stageDef.stageId)) {
+      return userRole.includes('deo') || 
+             userRole.includes('data entry') || 
+             userRole.includes('site') ||
+             userName.includes('deo') ||
+             userName.includes('amanat') ||
+             userName.includes('vivek') ||
+             userName.includes('rajendra');
+    }
+    return userName.includes('amanat') || 
+           userName.includes('store') || 
+           userRole.includes('store') ||
+           userRole.includes('incharge') ||
+           userRole.includes('site store');
+  }
+
+  // Check Stock FMS Stages (Store Manager)
+  if (stageDef.stageId?.startsWith('STG-STK-')) {
+    return userName.includes('amanat') || userRole.includes('store');
+  }
+
+  // Purchase to Store to Dispatch FMS Stages
+  if (stageDef.stageId?.startsWith('STG-PSD-')) {
+    // Stages 1, 4, 5, 7, 8, 9: Store Manager (Bramhanand Patel)
+    if (['STG-PSD-01', 'STG-PSD-04', 'STG-PSD-05', 'STG-PSD-07', 'STG-PSD-08', 'STG-PSD-09'].includes(stageDef.stageId)) {
+      return userName.includes('bramhanand') || 
+             userRole.includes('store manager') || 
+             userRole.includes('purchase & store');
+    }
+    // Stages 2, 3, 6: Purchase Executive (Shyam Rao Sureshe)
+    if (['STG-PSD-02', 'STG-PSD-03', 'STG-PSD-06'].includes(stageDef.stageId)) {
+      return userName.includes('shyam') || 
+             userName.includes('rajnikant') || 
+             userRole.includes('purchase executive');
+    }
+    // Stage 10: Get Receiving -> Purchaser (Rajendra / Vivek / Rajnikant)
+    if (stageDef.stageId === 'STG-PSD-10') {
+      return userName.includes('rajendra') || 
+             userName.includes('vivek') || 
+             userName.includes('rajnikant') || 
+             userRole.includes('purchaser') || 
+             userRole.includes('purchase assistant');
+    }
+  }
+
+  // Payment to Dispatch FMS Stages
+  if (stageDef.stageId?.startsWith('STG-DISP-')) {
+    // Stages 2 & 3: Check & Verify with PO, Acceptability Check -> Purchase Executive (Shyam Rao Sureshe)
+    if (['STG-DISP-02', 'STG-DISP-03'].includes(stageDef.stageId)) {
+      return userName.includes('shyam') || 
+             userName.includes('rajnikant') || 
+             userRole.includes('purchase executive') ||
+             userRole.includes('purchaser');
+    }
+    // Stages 1, 4, 5, 6, 7: Receive Material, Return/Replace, Credit Note, Dispatch -> Purchase Assistant (Rajendra/Vivek/Rajnikant)
+    if (['STG-DISP-01', 'STG-DISP-04', 'STG-DISP-05', 'STG-DISP-06', 'STG-DISP-07'].includes(stageDef.stageId)) {
+      return userName.includes('rajendra') || 
+             userName.includes('vivek') || 
+             userName.includes('rajnikant') || 
+             userName.includes('bramhanand') || 
+             userRole.includes('purchase assistant') || 
+             userRole.includes('purchaser');
+    }
+  }
+
+  // Accounts PO to Payment FMS Stages
+  if (stageDef.stageId?.startsWith('STG-PAY-')) {
+    // Finance approvals: STG-PAY-01, 05, 08, 12
+    if (['STG-PAY-01', 'STG-PAY-05', 'STG-PAY-08', 'STG-PAY-12'].includes(stageDef.stageId)) {
+      return userName.includes('pranjal') || 
+             userName.includes('khushboo') || 
+             userRole.includes('finance') || 
+             userRole.includes('approver') ||
+             userRole.includes('ea');
+    }
+    // Accounts bank addition & payment processing: STG-PAY-02, 04, 06, 09, 10, 15
+    if (['STG-PAY-02', 'STG-PAY-04', 'STG-PAY-06', 'STG-PAY-09', 'STG-PAY-10', 'STG-PAY-15'].includes(stageDef.stageId)) {
+      return userName.includes('byamkesh') || 
+             userName.includes('manish') || 
+             userName.includes('priyanka') || 
+             userRole.includes('accounts');
+    }
+    // Purchase liaison: STG-PAY-03, 07
+    if (['STG-PAY-03', 'STG-PAY-07'].includes(stageDef.stageId)) {
+      return userName.includes('shyam') || 
+             userName.includes('rajnikant') || 
+             userRole.includes('purchase');
+    }
+    // UPI execution & verification: STG-PAY-11, 13, 14
+    if (['STG-PAY-11', 'STG-PAY-13', 'STG-PAY-14'].includes(stageDef.stageId)) {
+      return userName.includes('khushboo') || 
+             userName.includes('byamkesh') || 
+             userName.includes('vivek') || 
+             userName.includes('raj') || 
+             userRole.includes('ea') || 
+             userRole.includes('accounts');
+    }
+  }
+
+  // Standard Indent to PO Purchase FMS Stages:
+  // 1. Stage 1: Store Manager (Amanat Bharadwaj)
+  if (stageDef.stageId === 'STG-01' || stageDef.stageNumber === 1) {
+    return userName.includes('amanat') || userRole === 'store manager' || userRole.includes('store');
+  }
+
+  // 2. Stages 2, 5, 6, 7, 8: Asst. Manager Purchase & Store (Bramhanand Patel)
+  if (['STG-02', 'STG-05', 'STG-06', 'STG-07', 'STG-08'].includes(stageDef.stageId)) {
+    return userName.includes('bramhanand') || 
+           (userRole.includes('asst') && userRole.includes('purchase')) ||
+           userRole.includes('purchase & store');
+  }
+
+  // 3. Stage 4: Project Manager (Pranay Ghosh / Chakravarti Ji)
+  if (stageDef.stageId === 'STG-04' || stageDef.stageNumber === 4) {
+    return userName.includes('pranay') || 
+           userName.includes('chakravarti') || 
+           userRole.includes('project manager') || 
+           userRole.includes('mechanical');
+  }
+
+  // 4. Stages 3, 9, 10, 11, 12: Purchase Executive (Shyam Rao Sureshe / Rajnikant Behera)
+  if (['STG-03', 'STG-09', 'STG-10', 'STG-11', 'STG-12'].includes(stageDef.stageId)) {
+    return userName.includes('shyam') || 
+           userName.includes('rajnikant') || 
+           userName.includes('rajendra') || 
+           userRole.includes('purchase executive') || 
+           userRole.includes('purchaser');
+  }
+
+  // Direct assignee matching
+  const defaultAssignee = (stageDef.whoDefaultAssignee || '').toLowerCase();
+  if (defaultAssignee && defaultAssignee.includes(userName)) {
+    return true;
+  }
+
+  // Fallback direct name match on execution override:
+  const execAssignee = (stageExec?.assignee || '').toLowerCase();
+  if (execAssignee && execAssignee.includes(userName)) {
+    return true;
+  }
+
+  return false;
+};
+
+/**
+ * Returns true if an entire FMS flow's CURRENT active stage is awaiting the given user
+ */
+export const isFlowAwaitingUserAction = (
+  flow: FmsInstance,
+  user: UserProfile
+): boolean => {
+  if (flow.status === 'Completed' || flow.status === 'Cancelled') {
+    return false;
+  }
+
+  const curIndex = flow.currentStageIndex;
+  const curStage = flow.stages[curIndex];
+  if (!curStage) return false;
+
+  const stageDefs = flow.flowType === 'CHECK_STOCK'
+    ? FMS_CHECK_STOCK_STAGES
+    : flow.flowType === 'PO_TO_PAYMENT'
+    ? FMS_PO_PAYMENT_STAGES
+    : flow.flowType === 'PURCHASE_TO_STORE_DISPATCH'
+    ? FMS_PURCHASE_TO_STORE_DISPATCH_STAGES
+    : flow.flowType === 'STORE_TO_SITE_DISPATCH'
+    ? FMS_STORE_TO_SITE_DISPATCH_STAGES
+    : flow.flowType === 'PAYMENT_TO_DISPATCH'
+    ? FMS_PAYMENT_TO_DISPATCH_STAGES
+    : flow.flowType === 'SITE_RECEIVE'
+    ? FMS_SITE_RECEIVE_STAGES
+    : flow.flowType === 'ACCOUNTS_INVOICE_COLLECTION'
+    ? FMS_ACCOUNTS_INVOICE_COLLECTION_STAGES
+    : flow.flowType === 'HR_ATTENDANCE_PAYMENT'
+    ? FMS_HR_ATTENDANCE_PAYMENT_STAGES
+    : flow.flowType === 'BREAKDOWN_REPORTING'
+    ? FMS_BREAKDOWN_REPORTING_STAGES
+    : flow.flowType === 'EQUIPMENT_PART_REPAIR'
+    ? FMS_EQUIPMENT_PART_REPAIR_STAGES
+    : flow.flowType === 'DPR_REPORTING'
+    ? FMS_DPR_REPORTING_STAGES
+    : FMS_STANDARD_PURCHASE_STAGES;
+
+  const curDef = stageDefs[curIndex];
+  if (!curDef) return false;
+
+  return isUserResponsibleForStage(curDef, curStage, user);
+};
+
+/**
+ * Returns stage definitions array for any flow type
+ */
+export const getStageDefinitionsForFlowType = (flowType: string): FmsStageDefinition[] => {
+  switch (flowType) {
+    case 'CHECK_STOCK':
+      return FMS_CHECK_STOCK_STAGES;
+    case 'PO_TO_PAYMENT':
+      return FMS_PO_PAYMENT_STAGES;
+    case 'PURCHASE_TO_STORE_DISPATCH':
+      return FMS_PURCHASE_TO_STORE_DISPATCH_STAGES;
+    case 'STORE_TO_SITE_DISPATCH':
+      return FMS_STORE_TO_SITE_DISPATCH_STAGES;
+    case 'PAYMENT_TO_DISPATCH':
+      return FMS_PAYMENT_TO_DISPATCH_STAGES;
+    case 'SITE_RECEIVE':
+      return FMS_SITE_RECEIVE_STAGES;
+    case 'ACCOUNTS_INVOICE_COLLECTION':
+      return FMS_ACCOUNTS_INVOICE_COLLECTION_STAGES;
+    case 'HR_ATTENDANCE_PAYMENT':
+      return FMS_HR_ATTENDANCE_PAYMENT_STAGES;
+    case 'BREAKDOWN_REPORTING':
+      return FMS_BREAKDOWN_REPORTING_STAGES;
+    case 'EQUIPMENT_PART_REPAIR':
+      return FMS_EQUIPMENT_PART_REPAIR_STAGES;
+    case 'DPR_REPORTING':
+      return FMS_DPR_REPORTING_STAGES;
+    case 'INDENT_PURCHASE':
+    default:
+      return FMS_STANDARD_PURCHASE_STAGES;
+  }
+};
+
+/**
+ * Groups 16+ FMS flow types into 4 core operational domains
+ */
+export const getFmsDomainCategory = (flowType: string): {
+  domainKey: 'PROCUREMENT' | 'FINANCE_ACCOUNTS' | 'SITE_LOGISTICS' | 'HR_EQUIPMENT';
+  label: string;
+  badgeClass: string;
+} => {
+  switch (flowType) {
+    case 'INDENT_PURCHASE':
+    case 'CHECK_STOCK':
+    case 'SUBCONTRACTOR_BILLING':
+      return {
+        domainKey: 'PROCUREMENT',
+        label: 'Procurement & Vendor Sourcing',
+        badgeClass: 'bg-amber-100 text-amber-900 border-amber-300'
+      };
+    case 'PO_TO_PAYMENT':
+    case 'ACCOUNTS_INVOICE_COLLECTION':
+    case 'PAYROLL':
+      return {
+        domainKey: 'FINANCE_ACCOUNTS',
+        label: 'Accounts, Invoices & Finance',
+        badgeClass: 'bg-emerald-100 text-emerald-900 border-emerald-300'
+      };
+    case 'PURCHASE_TO_STORE_DISPATCH':
+    case 'STORE_TO_SITE_DISPATCH':
+    case 'PAYMENT_TO_DISPATCH':
+    case 'SITE_RECEIVE':
+    case 'FUEL_ISSUE':
+      return {
+        domainKey: 'SITE_LOGISTICS',
+        label: 'Site Logistics & Material Movement',
+        badgeClass: 'bg-blue-100 text-blue-900 border-blue-300'
+      };
+    case 'HR_ATTENDANCE_PAYMENT':
+    case 'BREAKDOWN_REPORTING':
+    case 'EQUIPMENT_PART_REPAIR':
+    case 'DPR_REPORTING':
+    case 'LEAVE_SUBMISSION':
+    default:
+      return {
+        domainKey: 'HR_EQUIPMENT',
+        label: 'Plant, Equipment & Site Operations',
+        badgeClass: 'bg-purple-100 text-purple-900 border-purple-300'
+      };
+  }
+};
+
+/**
+ * Calculates SLA compliance status for a specific stage execution
+ */
+export const getStageSlaStatus = (
+  slaHours: number,
+  status: string,
+  plannedStr?: string
+): {
+  status: 'DONE' | 'OVERDUE' | 'NEAR_BREACH' | 'ON_TRACK';
+  label: string;
+  badgeClass: string;
+} => {
+  if (status === 'Done' || status === 'Skipped') {
+    return { status: 'DONE', label: 'Completed', badgeClass: 'bg-emerald-100 text-emerald-800' };
+  }
+
+  // Reference date matching system time: 05/10/2026
+  const now = new Date(2026, 9, 5, 12, 0).getTime();
+  
+  if (!plannedStr) {
+    return { status: 'ON_TRACK', label: `SLA: ${slaHours}h`, badgeClass: 'bg-slate-100 text-slate-700' };
+  }
+
+  try {
+    const cleaned = plannedStr.split(' ')[0];
+    const parts = cleaned.split('/');
+    if (parts.length === 3) {
+      const plannedTime = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0])).getTime();
+      const slaMs = slaHours * 60 * 60 * 1000;
+      const deadline = plannedTime + slaMs;
+
+      if (now > deadline) {
+        const hrsOver = Math.round((now - deadline) / (1000 * 60 * 60));
+        return { 
+          status: 'OVERDUE', 
+          label: `Overdue +${hrsOver}h`, 
+          badgeClass: 'bg-rose-100 text-rose-800 border border-rose-300 font-bold animate-pulse' 
+        };
+      } else if (now > deadline - (slaMs * 0.3)) {
+        return { 
+          status: 'NEAR_BREACH', 
+          label: `Near SLA (${slaHours}h)`, 
+          badgeClass: 'bg-amber-100 text-amber-800 border border-amber-300 font-bold' 
+        };
+      }
+    }
+  } catch {
+    // Fallback
+  }
+
+  return { status: 'ON_TRACK', label: `On Track (${slaHours}h SLA)`, badgeClass: 'bg-emerald-50 text-emerald-700 border border-emerald-200' };
+};
+
+/**
+ * Finds all linked parent and child FMS flows for linear lineage tracing
+ */
+export const getLinkedFmsChain = (currentFlow: FmsInstance, allFlows: FmsInstance[]): FmsInstance[] => {
+  const chain: FmsInstance[] = [];
+  const indent = currentFlow.indentNo || currentFlow.requisitionNumber;
+  const po = currentFlow.poNumber;
+
+  allFlows.forEach((f) => {
+    const fIndent = f.indentNo || f.requisitionNumber;
+    const fPo = f.poNumber;
+
+    if (f.id === currentFlow.id) {
+      chain.push(f);
+      return;
+    }
+
+    if (f.linkedFlowId === currentFlow.flowId || currentFlow.linkedFlowId === f.flowId) {
+      chain.push(f);
+      return;
+    }
+
+    if (indent && fIndent && indent === fIndent) {
+      chain.push(f);
+      return;
+    }
+
+    if (po && fPo && po === fPo) {
+      chain.push(f);
+      return;
+    }
+  });
+
+  return Array.from(new Set(chain));
+};
+

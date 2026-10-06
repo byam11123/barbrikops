@@ -1,0 +1,8 @@
+{
+  "name": "Remix BarBrik Central Operations \u0026 Workflow Management System",
+  "description": "Centralized Operations Platform integrating FMS (Flow Management System), Delegation \u0026 Task Assignment, Checklist Management, IMS (Inventory), and Executive MIS with Google Sheets and Cloud DB migration adapters.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

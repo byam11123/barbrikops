@@ -1,0 +1,4325 @@
+import { 
+  CentralRegistryConfig, 
+  ChecklistItem, 
+  DelegationTask, 
+  FmsInstance, 
+  FmsStageDefinition, 
+  InventoryItem, 
+  InventoryMovement, 
+  UserProfile 
+} from '../types';
+
+export const USERS: UserProfile[] = [
+  {
+    userId: 'USR-001',
+    name: 'Amanat Bharadwaj',
+    role: 'Store Manager',
+    departmentId: 'DEPT-STORE',
+    departmentName: 'Store in charge',
+    phone: '8084801020',
+    email: 'rws.store1@gmail.com'
+  },
+  {
+    userId: 'USR-002',
+    name: 'Bramhanand Patel',
+    role: 'Asst. Manager Purchase & Store',
+    departmentId: 'DEPT-PURCHASE',
+    departmentName: 'Purchase & Store',
+    phone: '9827100011',
+    email: 'purchase.mgr@barbrik.in'
+  },
+  {
+    userId: 'USR-003',
+    name: 'Shyam Rao Sureshe',
+    role: 'Purchase Executive',
+    departmentId: 'DEPT-PURCHASE',
+    departmentName: 'Purchase & Store',
+    phone: '9827100022',
+    email: 'purchase.exec@barbrik.in'
+  },
+  {
+    userId: 'USR-004',
+    name: 'Pranay Ghosh',
+    role: 'Project Manager',
+    departmentId: 'DEPT-PROJECTS',
+    departmentName: 'Project Management',
+    phone: '9437342135',
+    email: 'pranay.ghosh@barbrik.in'
+  },
+  {
+    userId: 'USR-005',
+    name: 'Pooja Rao',
+    role: 'MIS Executive',
+    departmentId: 'DEPT-MIS',
+    departmentName: 'MIS & Operations',
+    phone: '9301242522',
+    email: 'mis@barbrik.in'
+  },
+  {
+    userId: 'USR-006',
+    name: 'Byamkesh Kaiwartya',
+    role: 'IT Executive',
+    departmentId: 'DEPT-IT',
+    departmentName: 'IT Engineering',
+    phone: '9977853230',
+    email: 'itrpr@barbrik.in'
+  },
+  {
+    userId: 'USR-007',
+    name: 'Rajnikant Behera',
+    role: 'Purchaser',
+    departmentId: 'DEPT-PURCHASE',
+    departmentName: 'Purchase',
+    phone: '9348371469',
+    email: 'rajnikant.behera@barbrik.in'
+  },
+  {
+    userId: 'USR-008',
+    name: 'Vinod Tiwari',
+    role: 'Liaising Officer',
+    departmentId: 'DEPT-ADMIN',
+    departmentName: 'Liaising & Admin',
+    phone: '7869234640',
+    email: 'vinod.tiwari@barbrik.in'
+  },
+  {
+    userId: 'USR-009',
+    name: 'Mamta Kumari',
+    role: 'HR Executive',
+    departmentId: 'DEPT-HR',
+    departmentName: 'Human Resources',
+    phone: '8709897038',
+    email: 'hr@barbrik.in'
+  },
+  {
+    userId: 'USR-010',
+    name: 'Aman Kumar',
+    role: 'Site IT/Structure',
+    departmentId: 'DEPT-SITE-SILA',
+    departmentName: 'Structure',
+    phone: '9123456780',
+    email: 'siladehi.it1@gmail.com'
+  },
+  {
+    userId: 'USR-011',
+    name: 'Pappu Gupta / Rajesh Singh',
+    role: 'Sr. Structure / Site IT',
+    departmentId: 'DEPT-SITE-BIJE',
+    departmentName: 'Sr. Structure',
+    phone: '9827100099',
+    email: 'bijetala.it2@gmail.com'
+  },
+  {
+    userId: 'USR-012',
+    name: 'Priyanka',
+    role: 'Accounts Manager',
+    departmentId: 'DEPT-ACCOUNTS',
+    departmentName: 'Accounts & Finance',
+    phone: '9827100055',
+    email: 'accounts.mgr@barbrik.in'
+  },
+  {
+    userId: 'USR-013',
+    name: 'Pranjal Agrawal',
+    role: 'Finance Approver / Director',
+    departmentId: 'DEPT-ACCOUNTS',
+    departmentName: 'Accounts & Finance',
+    phone: '9827100066',
+    email: 'pranjal.agrawal@barbrik.in'
+  },
+  {
+    userId: 'USR-014',
+    name: 'Khushboo Sahu',
+    role: 'Executive Assistant / Accounts',
+    departmentId: 'DEPT-ACCOUNTS',
+    departmentName: 'Accounts & Finance',
+    phone: '9827100077',
+    email: 'khushboo.sahu@barbrik.in'
+  },
+  {
+    userId: 'USR-015',
+    name: 'Manish Koshle',
+    role: 'PO Accounts In-charge',
+    departmentId: 'DEPT-ACCOUNTS',
+    departmentName: 'Accounts & Finance',
+    phone: '9827100088',
+    email: 'manish.koshle@barbrik.in'
+  },
+  {
+    userId: 'USR-016',
+    name: 'Vivek',
+    role: 'Purchase Assistant',
+    departmentId: 'DEPT-PURCHASE',
+    departmentName: 'Purchase',
+    phone: '9827100022',
+    email: 'vivek.purchase@barbrik.in'
+  },
+  {
+    userId: 'USR-017',
+    name: 'Rajendra',
+    role: 'Purchase Assistant',
+    departmentId: 'DEPT-PURCHASE',
+    departmentName: 'Purchase',
+    phone: '9827100033',
+    email: 'rajendra.purchase@barbrik.in'
+  },
+  {
+    userId: 'USR-018',
+    name: 'Sumant',
+    role: 'Store Manager (Siladehi)',
+    departmentId: 'DEPT-STORE-SILA',
+    departmentName: 'Store Department (Siladehi)',
+    phone: '9827100044',
+    email: 'sumant.store@barbrik.in'
+  },
+  {
+    userId: 'USR-019',
+    name: 'Hemant',
+    role: 'Store Manager (Bijetala)',
+    departmentId: 'DEPT-STORE-BIJE',
+    departmentName: 'Store Department (Bijetala)',
+    phone: '9827100055',
+    email: 'hemant.store@barbrik.in'
+  },
+  {
+    userId: 'USR-020',
+    name: 'Garima Pal',
+    role: 'HR Executive',
+    departmentId: 'DEPT-HR',
+    departmentName: 'Human Resources',
+    phone: '9827100066',
+    email: 'garima.hr@barbrik.in'
+  },
+  {
+    userId: 'USR-021',
+    name: 'Mamta',
+    role: 'HR & Accounts Officer',
+    departmentId: 'DEPT-HR',
+    departmentName: 'Human Resources',
+    phone: '9827100077',
+    email: 'mamta.hr@barbrik.in'
+  },
+  {
+    userId: 'USR-022',
+    name: 'Nandita / Khilesh',
+    role: 'DPR & Planning Officer',
+    departmentId: 'DEPT-PLANNING',
+    departmentName: 'Project Planning & DPR',
+    phone: '9827100088',
+    email: 'nandita.planning@barbrik.in'
+  },
+  {
+    userId: 'USR-023',
+    name: 'Ritu Sahu',
+    role: 'Process Coordinator',
+    departmentId: 'DEPT-MIS',
+    departmentName: 'Process Coordination & Audit',
+    phone: '9827100099',
+    email: 'process.coordinator@barbrik.in'
+  }
+];
+
+export const FMS_CHECK_STOCK_STAGES: FmsStageDefinition[] = [
+  {
+    stageId: 'STG-STK-01',
+    stageNumber: 1,
+    name: 'CHECK STOCK',
+    what: 'Verify physical stock at site store and central warehouse against requisition',
+    whoRole: 'STORE MANAGER',
+    whoDefaultAssignee: 'Amanat Bharadwaj',
+    howChannel: 'WHATSAPP / EMAIL / PHYSICALLY',
+    slaHours: 4,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-STK-02',
+    stageNumber: 2,
+    name: 'IS MATERIAL PURCHASE REQUIRED?',
+    what: 'Check if requisition can be fulfilled from existing stock or new purchase is required',
+    whoRole: 'STORE MANAGER',
+    whoDefaultAssignee: 'Amanat Bharadwaj',
+    howChannel: 'WHATSAPP / EMAIL / PHYSICALLY',
+    slaHours: 4,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-STK-03',
+    stageNumber: 3,
+    name: 'SEND INDENT FOR MATERIAL TO BE PURCHASED',
+    what: 'Submit material indent requisition to Purchase Department via Google Form',
+    whoRole: 'STORE MANAGER',
+    whoDefaultAssignee: 'Amanat Bharadwaj',
+    howChannel: 'GOOGLE FORM INDENT TO PO',
+    formUrl: 'https://docs.google.com/forms/d/e/1FAIpQLScYfRmZ4-SDR0DH5l680-0CK0Y0P5l8xAJVb6SWG9ALdAZDyQ/viewform',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-STK-04',
+    stageNumber: 4,
+    name: 'IS PARTIAL PURCHASE REQUIRED?',
+    what: 'Determine if partial available stock should be dispatched while balance is purchased',
+    whoRole: 'STORE MANAGER',
+    whoDefaultAssignee: 'Amanat Bharadwaj',
+    howChannel: 'WHATSAPP / EMAIL / PHYSICALLY',
+    slaHours: 4,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-STK-05',
+    stageNumber: 5,
+    name: 'DISPATCH MATERIAL AVAILABLE',
+    what: 'Dispatch available store stock to site and record gate pass/issue entry',
+    whoRole: 'STORE MANAGER',
+    whoDefaultAssignee: 'Amanat Bharadwaj',
+    howChannel: 'GOOGLE FORM STOCK TO DISPATCH',
+    formUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSdFWVguqGvgz3tiyjeKnlLxVsblra7MwaQQ36OLz9fRgCLC6A/viewform',
+    slaHours: 12,
+    hasYesNoDecision: false
+  }
+];
+
+export const FMS_STANDARD_PURCHASE_STAGES: FmsStageDefinition[] = [
+  {
+    stageId: 'STG-01',
+    stageNumber: 1,
+    name: 'INDENT RECIEVE',
+    what: 'Indent receipt and registration at store',
+    whoRole: 'STORE MANAGER',
+    whoDefaultAssignee: 'Amanat Bharadwaj',
+    howChannel: 'WHATSAPP / CALL / PHYSICAL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-02',
+    stageNumber: 2,
+    name: 'DEGRADED MATERIAL CHECK',
+    what: 'Is any parts/item details required to be filled in Return of Degraded Material sheet?',
+    whoRole: 'ASST. MANAGER PURCHASE & STORE',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'WHATSAPP / CALL / PHYSICAL',
+    slaHours: 1,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-03',
+    stageNumber: 3,
+    name: 'RETURN OF DEGRADED MATERIAL FORM',
+    what: 'Fill Google Form for Return of Degraded Material Sheet',
+    whoRole: 'PURCHASE EXECUTIVE',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'GOOGLE FORM',
+    formUrl: 'https://forms.gle/degraded-material-sample',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-04',
+    stageNumber: 4,
+    name: 'PURCHASE APPROVAL',
+    what: 'Technical & Commercial approval for procurement',
+    whoRole: 'PROJECT MANAGER / MANAGER MECHANICAL',
+    whoDefaultAssignee: 'Pranay Ghosh / Chakravarti Ji',
+    howChannel: 'WHATSAPP / CALL / MANUAL SHEET',
+    slaHours: 3,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-05',
+    stageNumber: 5,
+    name: 'GET QUOTATION',
+    what: 'Solicit preliminary vendor quotations',
+    whoRole: 'ASST. MANAGER PURCHASE & STORE',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'WHATSAPP / CALL / MANUAL SHEET',
+    slaHours: 25,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-06',
+    stageNumber: 6,
+    name: 'CHECK OTHER QUOTATIONS',
+    what: 'Is other quotation required? (Check point)',
+    whoRole: 'ASST. MANAGER PURCHASE & STORE',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'WHATSAPP / CALL / MANUAL SHEET',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-07',
+    stageNumber: 7,
+    name: 'GET OTHER QUOTATION',
+    what: 'Collect secondary / comparative vendor quotes',
+    whoRole: 'ASST. MANAGER PURCHASE & STORE',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'WHATSAPP / CALL / MANUAL SHEET',
+    slaHours: 12,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-08',
+    stageNumber: 8,
+    name: 'L1 APPROVAL',
+    what: 'L1 vendor selection & purchase authorization',
+    whoRole: 'ASST. MANAGER PURCHASE & STORE',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'WHATSAPP / CALL / MANUAL SHEET',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-09',
+    stageNumber: 9,
+    name: 'GENERATE & SEND PO',
+    what: 'PO draft generation and dispatch to vendor',
+    whoRole: 'PURCHASE EXECUTIVE',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'WHATSAPP / CALL / MANUAL PO',
+    slaHours: 3,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-10',
+    stageNumber: 10,
+    name: 'ADVANCE PAYMENT DECISION',
+    what: 'Is payment to be made in advance? (Check point)',
+    whoRole: 'PURCHASE EXECUTIVE',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'GOOGLE FORM',
+    formUrl: 'https://forms.gle/YzQWAkQDPKeeBkLe6',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-11',
+    stageNumber: 11,
+    name: 'SEND FOR PAYMENT',
+    what: 'Submit approval dossier to accounts for disbursement',
+    whoRole: 'PURCHASE EXECUTIVE',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'PAYMENT APPROVAL SHEET / ONLINE PAYMENT',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-12',
+    stageNumber: 12,
+    name: 'MATERIAL COLLECTION PO',
+    what: 'Send purchase order for material collection & gate pass',
+    whoRole: 'PURCHASE EXECUTIVE',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'GOOGLE FORM',
+    formUrl: 'https://forms.gle/o5PsEMYntAYXWZbJ8',
+    slaHours: 1,
+    hasYesNoDecision: false
+  }
+];
+
+export const FMS_PO_PAYMENT_STAGES: FmsStageDefinition[] = [
+  {
+    stageId: 'STG-PAY-01',
+    stageNumber: 1,
+    name: 'IS PAYMENT TO BE DONE FROM ACCOUNT?',
+    what: 'Determine whether payment is routed via Bank Account (NEFT/RTGS) or UPI QR Code',
+    whoRole: 'FINANCE / EA',
+    whoDefaultAssignee: 'Pranjal Agrawal / Khushboo',
+    howChannel: 'WHATSAPP / CALL / MANUAL',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-PAY-02',
+    stageNumber: 2,
+    name: 'IS ACCOUNT ALREADY ADDED?',
+    what: 'Check if vendor bank account is already registered in internet banking',
+    whoRole: 'ACCOUNTS EXECUTIVE',
+    whoDefaultAssignee: 'Byamkesh Kaiwartya',
+    howChannel: 'WHATSAPP / PHONE / EMAIL',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-PAY-03',
+    stageNumber: 3,
+    name: 'GET CANCELLED CHEQUE/PASSBOOK COPY',
+    what: 'Collect vendor cancelled cheque or bank passbook copy for account verification',
+    whoRole: 'PURCHASE EXECUTIVE',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'WHATSAPP / CALL / MANUAL',
+    slaHours: 3,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PAY-04',
+    stageNumber: 4,
+    name: 'BENEFICIARY APPROVAL FORM',
+    what: 'Submit beneficiary registration details form for bank addition',
+    whoRole: 'ACCOUNTS EXECUTIVE',
+    whoDefaultAssignee: 'Byamkesh Kaiwartya',
+    howChannel: 'GOOGLE FORM',
+    formUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSfQBM1AEyn_ZDxlUOO3nzBSKZlgEedLNNKNOy8ViF2le6MJxA/viewform',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PAY-05',
+    stageNumber: 5,
+    name: 'GET APPROVAL (BENEFICIARY)',
+    what: 'Obtain management approval for adding new vendor beneficiary',
+    whoRole: 'FINANCE APPROVER',
+    whoDefaultAssignee: 'Pranjal Agrawal / Khushboo Sahu',
+    howChannel: 'WHATSAPP / CALL / MANUAL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PAY-06',
+    stageNumber: 6,
+    name: 'ADD ACCOUNT ONLINE',
+    what: 'Add vendor beneficiary details into online banking portal',
+    whoRole: 'ACCOUNTS EXECUTIVE',
+    whoDefaultAssignee: 'Byamkesh Kaiwartya',
+    howChannel: 'WHATSAPP / CALL / MANUAL',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PAY-07',
+    stageNumber: 7,
+    name: 'PAYMENT APPROVAL FORM',
+    what: 'Submit formal payment approval requisition for PO disbursement',
+    whoRole: 'PURCHASE EXECUTIVE',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'GOOGLE FORM',
+    formUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSdF41kXu3ZViSeY9u3Kk7I1O4xsfBOLFZHPo2rgh-64IjuMgQ/viewform',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PAY-08',
+    stageNumber: 8,
+    name: 'GET APPROVAL (PAYMENT)',
+    what: 'Secure financial authorization from management for bank payout',
+    whoRole: 'FINANCE APPROVER',
+    whoDefaultAssignee: 'Pranjal Agrawal / Khushboo',
+    howChannel: 'WHATSAPP / CALL / MANUAL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PAY-09',
+    stageNumber: 9,
+    name: 'BANK PAYMENT ENTRY',
+    what: 'Initiate NEFT/RTGS transaction entry on corporate bank portal',
+    whoRole: 'ACCOUNTS MANAGER',
+    whoDefaultAssignee: 'Byamkesh Kaiwartya',
+    howChannel: 'WHATSAPP / CALL / MANUAL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PAY-10',
+    stageNumber: 10,
+    name: 'GET ONLINE PAYMENT APPROVAL / PAYMENT DONE',
+    what: 'Final OTP / director authorization and bank disbursement completion',
+    whoRole: 'FINANCE APPROVER',
+    whoDefaultAssignee: 'Pranjal Agrawal / Khushboo',
+    howChannel: 'WHATSAPP / CALL / MANUAL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PAY-11',
+    stageNumber: 11,
+    name: 'PAYMENT APPROVAL FORM (UPI)',
+    what: 'Submit UPI payment approval form with invoice and reason for quick disbursement',
+    whoRole: 'EA / ACCOUNTS',
+    whoDefaultAssignee: 'Khushboo Sahu',
+    howChannel: 'GOOGLE FORM',
+    formUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSf82paFNXOtDZHBEXR3aEddrOuGsvcdafFaoG_ZM9RFydNBHA/viewform',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PAY-12',
+    stageNumber: 12,
+    name: 'GET APPROVAL (UPI)',
+    what: 'Obtain instant approval for UPI disbursement',
+    whoRole: 'FINANCE APPROVER',
+    whoDefaultAssignee: 'Pranjal Agrawal / Khushboo Sahu',
+    howChannel: 'WHATSAPP / CALL / MANUAL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PAY-13',
+    stageNumber: 13,
+    name: 'GET QR CODE',
+    what: 'Obtain official vendor / shop UPI QR code image or VPA ID',
+    whoRole: 'PURCHASER',
+    whoDefaultAssignee: 'Rajnikant / Vivek / Raj',
+    howChannel: 'WHATSAPP / CALL / MANUAL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PAY-14',
+    stageNumber: 14,
+    name: 'MAKE PAYMENT (UPI)',
+    what: 'Execute UPI payment and capture transaction UTR reference',
+    whoRole: 'EA / ACCOUNTS',
+    whoDefaultAssignee: 'Khushboo Sahu',
+    howChannel: 'WHATSAPP / CALL / MANUAL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PAY-15',
+    stageNumber: 15,
+    name: 'SEND PAYMENT DETAILS TO GET MATERIAL',
+    what: 'Transmit payment receipt / UTR slip to vendor and store team for material dispatch/gate release',
+    whoRole: 'ACCOUNTS / EA',
+    whoDefaultAssignee: 'Byamkesh Kaiwartya / Khushboo',
+    howChannel: 'GOOGLE FORM',
+    formUrl: 'https://forms.gle/o5PsEMYntAYXWZbJ8',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: false
+  }
+];
+
+export const FMS_PURCHASE_TO_STORE_DISPATCH_STAGES: FmsStageDefinition[] = [
+  {
+    stageId: 'STG-PSD-01',
+    stageNumber: 1,
+    name: 'RECEIVE PURCHASED MATERIAL',
+    what: 'Receive incoming purchased material physically at store warehouse',
+    whoRole: 'STORE MANAGER(BRAMHANAND PATEL)',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'PHYSICALLY',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PSD-02',
+    stageNumber: 2,
+    name: 'CHECK & VERIFY MATERIAL PURCHASED WITH PO/STOCK TRANSFER NOTE/INVOICE',
+    what: 'Inspect and verify material physically against Purchase Order, invoice, or stock transfer note',
+    whoRole: 'PURCHASE EXECUTIVE( SHYAM RAO SURESHE )',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'PHYSICALLY',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PSD-03',
+    stageNumber: 3,
+    name: 'PREPARE STOCK TRANSFER NOTE/DELIVERY CHALLAN',
+    what: 'Generate official stock transfer note / physical delivery challan copy for outbound transit',
+    whoRole: 'PURCHASE EXECUTIVE (SHYAM RAO SURESHE)',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'PHYSICAL COPY',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PSD-04',
+    stageNumber: 4,
+    name: 'ARRANGE VEHICLE FOR DISPATCH',
+    what: 'Coordinate and book transport/vehicle physically for project site delivery',
+    whoRole: 'STORE MANAGER(BRAMHANAND PATEL)',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'PHYSICAL',
+    slaHours: 6,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PSD-05',
+    stageNumber: 5,
+    name: 'IS E-WAY BILL REQUIRED?',
+    what: 'Compliance Checkpoint: Is GST E-Way Bill required for this consignment (> ₹50,000 or inter-state)?',
+    whoRole: 'STORE MANAGER(BRAMHANAND PATEL)',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-PSD-06',
+    stageNumber: 6,
+    name: 'SEND DELIVERY CHALLAN/STOCK TRANSFER NOTE FOR E-WAY BILL',
+    what: 'Transmit challan/transfer note to accounts/taxation desk to generate government E-Way Bill',
+    whoRole: 'PURCHASE EXECUTIVE (SHYAM RAO SURESHE)',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'WHATSAPP/EMAIL/PHYYSICAL',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PSD-07',
+    stageNumber: 7,
+    name: 'GET E-WAY BILL',
+    what: 'Receive generated E-Way Bill document and attach to vehicle documentation docket',
+    whoRole: 'STORE MANAGER(BRAMHANAND PATEL)',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'WHATSAPP/EMAIL/PHYSICAL',
+    slaHours: 4,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PSD-08',
+    stageNumber: 8,
+    name: 'LOAD MATERIAL FOR DISPATCH',
+    what: 'Supervise physical loading and securing of consignment onto the dispatch vehicle',
+    whoRole: 'STORE MANAGER(BRAMHANAND PATEL)',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'PHYSICALLY',
+    slaHours: 4,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PSD-09',
+    stageNumber: 9,
+    name: 'DISPATCH ALL MATERIAL WITH ALL DOCUMENTS',
+    what: 'Release loaded vehicle physically with signed challan, invoice, gate pass, and E-Way Bill',
+    whoRole: 'STORE MANAGER(BRAMHANAND PATEL)',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'PHYSICALLY',
+    slaHours: 4,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-PSD-10',
+    stageNumber: 10,
+    name: 'GET RECEIVING',
+    what: 'Obtain site receiver acknowledgment slip and log confirmation via Google Form',
+    whoRole: 'PURCHASER (RAJENDRA/VIVEK/RAJNIKANT)',
+    whoDefaultAssignee: 'Rajendra / Vivek / Rajnikant',
+    howChannel: 'WHATSAPP/EMAIL/PHYSICALLY',
+    formUrl: 'https://forms.gle/tETaTMfRGfU2ERUc6',
+    slaHours: 12,
+    isCheckpoint: true,
+    hasYesNoDecision: false
+  }
+];
+
+export const FMS_PAYMENT_TO_DISPATCH_STAGES: FmsStageDefinition[] = [
+  {
+    stageId: 'STG-DISP-01',
+    stageNumber: 1,
+    name: 'GET MATERIAL',
+    what: 'Procure and receive material from vendor as per Purchase Order',
+    whoRole: 'PURCHASE ASSISTANT (RAJENDRA/VIVEK/RAJNIKANT)',
+    whoDefaultAssignee: 'Rajendra / Vivek / Rajnikant',
+    howChannel: 'WHATSAPP/CALL/PHYSICAL VERIFICATION',
+    slaHours: 4,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-DISP-02',
+    stageNumber: 2,
+    name: 'CHECK & VERIFY MATERIAL WITH PO',
+    what: 'Inspect and verify material quality, specifications, and quantity with Purchase Order',
+    whoRole: 'PURCHASE EXECUTIVE (SHYAM RAO SURESHE)',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'WHATSAPP/CALL/PHYSICAL VERIFICATION',
+    slaHours: 3,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-DISP-03',
+    stageNumber: 3,
+    name: 'IS MATERIAL ACCEPTABLE ?',
+    what: 'Inspection Checkpoint: Is material acceptable as per required standard?',
+    whoRole: 'PURCHASE EXECUTIVE (SHYAM RAO SURESHE)',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'WHATSAPP / CALL',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-DISP-04',
+    stageNumber: 4,
+    name: 'RETURN / REPLACE MATERIAL',
+    what: 'Initiate physical return or replacement of defective/non-compliant material with vendor',
+    whoRole: 'PURCHASE ASSISTANT (RAJENDRA/VIVEK/RAJNIKANT)',
+    whoDefaultAssignee: 'Rajendra / Vivek / Rajnikant',
+    howChannel: 'PHYSICALLY',
+    slaHours: 3,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-DISP-05',
+    stageNumber: 5,
+    name: 'IS MATERIAL REPLACED ?',
+    what: 'Checkpoint: Has vendor successfully replaced the returned material?',
+    whoRole: 'PURCHASE ASSISTANT (RAJENDRA/VIVEK/RAJNIKANT)',
+    whoDefaultAssignee: 'Rajendra / Vivek / Rajnikant',
+    howChannel: 'WHATSAPP / CALL',
+    slaHours: 4,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-DISP-06',
+    stageNumber: 6,
+    name: 'GET REFUND / CREDIT NOTES',
+    what: 'Obtain official credit note or bank refund from vendor for non-replaceable material',
+    whoRole: 'PURCHASE ASSISTANT (RAJENDRA/VIVEK/RAJNIKANT)',
+    whoDefaultAssignee: 'Rajendra / Vivek / Rajnikant',
+    howChannel: 'WHATSAPP/ EMAIL / PHYSICAL COPY',
+    slaHours: 4,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-DISP-07',
+    stageNumber: 7,
+    name: 'DISPATCH MATERIAL',
+    what: 'Fill Purchase to Store to Dispatch Google Form and release material to project site',
+    whoRole: 'Purchaser (Rajendra/Rajnikant/Vivek)',
+    whoDefaultAssignee: 'Rajendra / Rajnikant / Vivek',
+    howChannel: 'PURCHASE TO STORE TO DISPATCH GOOGLE FORM',
+    formUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSfDtaA-hHEepRqLxn69U-CeA7djTHNjJhnp_P9nEhdAuIjnhw/viewform',
+    slaHours: 28,
+    isCheckpoint: true,
+    hasYesNoDecision: false
+  }
+];
+
+export const FMS_SITE_RECEIVE_STAGES: FmsStageDefinition[] = [
+  {
+    stageId: 'STG-REC-01',
+    stageNumber: 1,
+    name: 'RECEIVE MATERIAL',
+    what: 'Receive incoming shipment physically at project site store',
+    whoRole: 'STORE INCHARGE',
+    whoDefaultAssignee: 'Site Store Incharge (Amanat / Siladehi Incharge)',
+    howChannel: 'WHATSAPP/EMAIL',
+    slaHours: 12,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-REC-02',
+    stageNumber: 2,
+    name: 'CHECK MATERIAL WITH PO/DELIVERY CHALLAN/INVOICE/STOCK TRANSFER NOTE',
+    what: 'Inspect materials physically against PO, challan, and stock transfer note',
+    whoRole: 'STORE INCHARGE',
+    whoDefaultAssignee: 'Site Store Incharge',
+    howChannel: 'PHYSICALLY',
+    slaHours: 4,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-REC-03',
+    stageNumber: 3,
+    name: 'ARE THERE ANY DISCREPANCY OBSERVED ?',
+    what: 'Quality Checkpoint: Are any discrepancies, shortfalls, or physical damages observed in consignment?',
+    whoRole: 'STORE INCHARGE',
+    whoDefaultAssignee: 'Site Store Incharge',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-REC-04',
+    stageNumber: 4,
+    name: 'INFORM CSR STORE & GET IT RECTIFIED',
+    what: 'Notify Central Raipur/CSR Store team regarding discrepancy and obtain replacement/adjustment',
+    whoRole: 'STORE INCHARGE',
+    whoDefaultAssignee: 'Site Store Incharge',
+    howChannel: 'WHATSAPP/EMAIL/PHONE',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-REC-05',
+    stageNumber: 5,
+    name: 'IS MATERIAL ACCEPTABLE ?',
+    what: 'Material Acceptability Checkpoint: Is material in acceptable condition for installation/construction?',
+    whoRole: 'STORE INCHARGE',
+    whoDefaultAssignee: 'Site Store Incharge',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-REC-06',
+    stageNumber: 6,
+    name: 'RETURN MATERIAL TO REPAIRE STORE',
+    what: 'Dispatch rejected/damaged items physically back to repair store / central depot',
+    whoRole: 'STORE INCHARGE',
+    whoDefaultAssignee: 'Site Store Incharge',
+    howChannel: 'PHYSICALLY',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-REC-07',
+    stageNumber: 7,
+    name: 'GET MATERIAL VERIFIED',
+    what: 'Technical site verification by Construction Material (Civil Incharge) or Mechanical Material (Mechanical Incharge)',
+    whoRole: 'CONSTRUCTION (CIVIL INCHARGE) / MECHANICAL INCHARGE',
+    whoDefaultAssignee: 'Chakravarti Ji / Pranay Ghosh',
+    howChannel: 'WHATSAPP/EMAIL/PHYSICALLY',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-REC-08',
+    stageNumber: 8,
+    name: 'GIVE RECEIVING IN STOCK TRANSFER NOTE/DELIVERY CHALLAN/INVOICE SEND TO RAIPUR STORE',
+    what: 'Sign and stamp receiving on physical stock transfer note/challan and transmit copy to Raipur Central Store',
+    whoRole: 'STORE INCHARGE',
+    whoDefaultAssignee: 'Site Store Incharge',
+    howChannel: 'WHATSAPP/EMAIL/PHYSICALLY',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-REC-09',
+    stageNumber: 9,
+    name: 'IS MATERIAL INWARD FORM FILLED ?',
+    what: 'Digital Inventory Checkpoint: Has the Site DEO submitted the Material Inward Google Form?',
+    whoRole: 'SITE DEO',
+    whoDefaultAssignee: 'Site DEO',
+    howChannel: 'MATERIAL IN/OUT GOOGLE FORM',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-REC-10',
+    stageNumber: 10,
+    name: 'FILL GOOGLE FORM FOR MATERIAL INWARD',
+    what: 'Log official inbound receipt and physical inventory count in organization Material In/Out Google Form',
+    whoRole: 'SITE DEO',
+    whoDefaultAssignee: 'Site DEO',
+    howChannel: 'MATERIAL IN/OUT GOOGLE FORM',
+    formUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSfn24oudK7GLha0N1UOKAsNFRZudHSX_mA5ZVmsbFMr2dYxrA/viewform',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: false
+  }
+];
+
+export const FMS_STORE_TO_SITE_DISPATCH_STAGES: FmsStageDefinition[] = [
+  {
+    stageId: 'STG-SSD-01',
+    stageNumber: 1,
+    name: 'COLLECT ALL ITEMS AVAILABE',
+    what: 'Collect all available materials physically at store warehouse as per requisition details',
+    whoRole: 'STORE MANAGER-SUMANT(SILADEHI)/HEMANT(BIJETALA)',
+    whoDefaultAssignee: 'Sumant / Hemant',
+    howChannel: 'PHYSICALLY',
+    slaHours: 4,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-SSD-02',
+    stageNumber: 2,
+    name: 'ARRANGE VEHICLE FOR DISPATCH',
+    what: 'Coordinate and book transport/vehicle physically for dispatching collected inventory to site',
+    whoRole: 'STORE MANAGER-SUMANT(SILADEHI)/HEMANT(BIJETALA)',
+    whoDefaultAssignee: 'Sumant / Hemant',
+    howChannel: 'PHYSICALLY',
+    slaHours: 6,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-SSD-03',
+    stageNumber: 3,
+    name: 'PREPARE STOCK TRANSFER NOTE/DELIVERY CHALLAN',
+    what: 'Generate official physical stock transfer note / delivery challan copy for outbound site transfer',
+    whoRole: 'STORE MANAGER-SUMANT(SILADEHI)/HEMANT(BIJETALA)',
+    whoDefaultAssignee: 'Sumant / Hemant',
+    howChannel: 'PHYSICALLY',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-SSD-04',
+    stageNumber: 4,
+    name: 'IS E-WAY REQUIRED?',
+    what: 'Compliance Checkpoint: Determine if GST E-Way Bill is required for consignment (> ₹50,000 / inter-state)',
+    whoRole: 'STORE MANAGER-SUMANT(SILADEHI)/HEMANT(BIJETALA)',
+    whoDefaultAssignee: 'Sumant / Hemant',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-SSD-05',
+    stageNumber: 5,
+    name: 'SEND STOCK TRANSFER NOTE/DELIVERY CHALLAN FOR E-WAY BILL',
+    what: 'Transmit challan/transfer note copy to accounts/taxation desk to generate government E-Way Bill',
+    whoRole: 'STORE MANAGER-SUMANT(SILADEHI)/HEMANT(BIJETALA)',
+    whoDefaultAssignee: 'Sumant / Hemant',
+    howChannel: 'WHATSAPP/EMAIL/PHYSICALLY',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-SSD-06',
+    stageNumber: 6,
+    name: 'GET E-WAY BILL',
+    what: 'Receive generated E-Way Bill document and attach to vehicle documentation docket',
+    whoRole: 'STORE MANAGER-SUMANT(SILADEHI)/HEMANT(BIJETALA)',
+    whoDefaultAssignee: 'Sumant / Hemant',
+    howChannel: 'WHATSAPP/EMAIL/PHYSICALLY',
+    slaHours: 4,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-SSD-07',
+    stageNumber: 7,
+    name: 'LOAD MATERIAL TO BE DISPATCHED',
+    what: 'Supervise physical loading and securing of consignment onto the dispatch vehicle',
+    whoRole: 'STORE MANAGER-SUMANT(SILADEHI)/HEMANT(BIJETALA)',
+    whoDefaultAssignee: 'Sumant / Hemant',
+    howChannel: 'PHYSICALLY',
+    slaHours: 4,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-SSD-08',
+    stageNumber: 8,
+    name: 'DISPATCH MATERIAL WITH ALL DOCUMENTS',
+    what: 'Release loaded vehicle physically with signed challan, transfer note, gate pass, and E-Way Bill',
+    whoRole: 'STORE MANAGER-SUMANT(SILADEHI)/HEMANT(BIJETALA)',
+    whoDefaultAssignee: 'Sumant / Hemant',
+    howChannel: 'PHYSICALLY',
+    slaHours: 4,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-SSD-09',
+    stageNumber: 9,
+    name: 'GET RECEIVING OF MATERIAL',
+    what: 'Obtain site receiver acknowledgment slip and log confirmation via Google Form',
+    whoRole: 'PURCHASER',
+    whoDefaultAssignee: 'Rajnikant Behera / Purchaser',
+    howChannel: 'WHATSAPP/EMAIL/PHYSICAL COPY',
+    formUrl: 'https://forms.gle/tETaTMfRGfU2ERUc6',
+    slaHours: 12,
+    isCheckpoint: true,
+    hasYesNoDecision: false
+  }
+];
+
+export const FMS_ACCOUNTS_INVOICE_COLLECTION_STAGES: FmsStageDefinition[] = [
+  {
+    stageId: 'STG-INV-01',
+    stageNumber: 1,
+    name: 'RECEIVE INVOICE',
+    what: 'Receive vendor GST invoice copy via WhatsApp, email, or physical submission',
+    whoRole: 'ACCOUNT MANAGER',
+    whoDefaultAssignee: 'Byamkesh Kaiwartya / Accounts',
+    howChannel: 'WHATSAPP/EMAIL/PHYSICAL',
+    slaHours: 24,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-INV-02',
+    stageNumber: 2,
+    name: 'CHECK INVOICE DETAILS & CALCULATION',
+    what: 'Inspect invoice line items, tax breakdown, GST rates, HSN codes, and arithmetic calculations physically against PO',
+    whoRole: 'ACCOUNTS MANAGER',
+    whoDefaultAssignee: 'Byamkesh Kaiwartya',
+    howChannel: 'INVOICE PHYSICALLY',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-INV-03',
+    stageNumber: 3,
+    name: 'IS INVOICE ACCEPTABLE?',
+    what: 'Verification Checkpoint: Is the vendor invoice legally, commercially, and physically acceptable?',
+    whoRole: 'PURCHASE MANAGER(BRAHMANAND PATEL)',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'SITE INCHARGE PHYSICALLY',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-INV-04',
+    stageNumber: 4,
+    name: 'GET INVOICE RECTIFIED',
+    what: 'Liaise with vendor / site store to rectify discrepancies, issue revised invoice or debit/credit note',
+    whoRole: 'PURCHASE MANAGER(BRAHMANAND PATEL)',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'SITE INCHARGE PHYSICALLY',
+    slaHours: 12,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-INV-05',
+    stageNumber: 5,
+    name: 'GET INVOICE APPROVAL',
+    what: 'Submit verified invoice dossier to Executive Assistant / Finance for final executive authorization',
+    whoRole: 'KHUSBOO (EA)',
+    whoDefaultAssignee: 'Khushboo Sahu',
+    howChannel: 'PHYSICAL COPY',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-INV-06',
+    stageNumber: 6,
+    name: 'UPLOAD/APPROVE IN ERP',
+    what: 'Enter invoice journal voucher, post entry, and approve in corporate ERP system',
+    whoRole: 'ACCOUNTS MANAGER',
+    whoDefaultAssignee: 'Byamkesh Kaiwartya',
+    howChannel: 'ONLINE ERP',
+    slaHours: 4,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-INV-07',
+    stageNumber: 7,
+    name: 'RECEIVE ORIGINAL INVOICE',
+    what: 'Receive and archive hard-copy original tax invoice in physical accounts record registry',
+    whoRole: 'ACCOUNTS MANAGER',
+    whoDefaultAssignee: 'Byamkesh Kaiwartya',
+    howChannel: 'PHYSICAL COPY',
+    slaHours: 72,
+    hasYesNoDecision: false
+  }
+];
+
+export const FMS_HR_ATTENDANCE_PAYMENT_STAGES: FmsStageDefinition[] = [
+  {
+    stageId: 'STG-HR-01',
+    stageNumber: 1,
+    name: 'COLLECT ATTENDANCE OF LABOUR',
+    what: 'Collect daily muster roll, gang count, and labour attendance log from site in-charge',
+    whoRole: 'SITE INCHARGE',
+    whoDefaultAssignee: 'Site Incharge',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 4,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-HR-02',
+    stageNumber: 2,
+    name: 'CHECK ATTENDANCE OF LABOUR FROM PHOTO AND SHEET',
+    what: 'Verify physical photo proof, gang headcount, and attendance manual sheet against site logs',
+    whoRole: 'GARIMA PAL (HR)',
+    whoDefaultAssignee: 'Garima Pal',
+    howChannel: 'WHATSAPP',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-HR-03',
+    stageNumber: 3,
+    name: 'CHECK FOR OT IF ANY ?',
+    what: 'Audit Checkpoint: Is overtime (OT) logged for any labour gang at site?',
+    whoRole: 'GARIMA PAL (HR)',
+    whoDefaultAssignee: 'Garima Pal',
+    howChannel: 'WHATSAPP',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-HR-04',
+    stageNumber: 4,
+    name: 'PREPARE OT SHEET',
+    what: 'Calculate approved overtime hours, shift rates, and compile Labour OT Sheet in Excel',
+    whoRole: 'GARIMA PAL (HR)',
+    whoDefaultAssignee: 'Garima Pal',
+    howChannel: 'EXCEL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-HR-05',
+    stageNumber: 5,
+    name: 'GET APPROVAL OT SHEET',
+    what: 'Submit prepared OT sheet to site incharge/PM and secure physical signature sign-off',
+    whoRole: 'GARIMA PAL (HR)',
+    whoDefaultAssignee: 'Garima Pal',
+    howChannel: 'MANUAL SHEET/PHYSICAL',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-HR-06',
+    stageNumber: 6,
+    name: 'PREPARE ATTENDANCE & PAYMENT SHEET',
+    what: 'Compute shift wages, food allowances, deductions, and finalize comprehensive Payment Sheet in Excel',
+    whoRole: 'GARIMA PAL (HR)',
+    whoDefaultAssignee: 'Garima Pal',
+    howChannel: 'EXCEL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-HR-07',
+    stageNumber: 7,
+    name: 'CHECK ATTENDANCE AND PAYMENT SHEET',
+    what: 'Independent audit of attendance wage formulas, gang sums, and calculation accuracy',
+    whoRole: 'MAMTA (HR / ACCOUNTS)',
+    whoDefaultAssignee: 'Mamta',
+    howChannel: 'MANUAL SHEET/WHATSAPP/PHYSICAL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-HR-08',
+    stageNumber: 8,
+    name: 'CHECK DPR SHEET',
+    what: 'Reconcile daily labour deployment and activity output with Daily Progress Report (DPR) site logs',
+    whoRole: 'NANDITA/KHILEASH',
+    whoDefaultAssignee: 'Nandita / Khilesh',
+    howChannel: 'MANUAL SHEET/WHATSAPP/PHYSICAL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-HR-09',
+    stageNumber: 9,
+    name: 'GET APPROVAL PAYMENT AND ATTENDANCE SHEET FROM PM',
+    what: 'Submit verified attendance and payment sheet to Project Manager (PM) for formal operational approval',
+    whoRole: 'GARIMA PAL (HR)',
+    whoDefaultAssignee: 'Garima Pal',
+    howChannel: 'MANUAL SHEET/PHYSICAL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-HR-10',
+    stageNumber: 10,
+    name: 'GET APPROVAL FROM MD',
+    what: 'Submit approved wage dossier to Managing Director (MD) for final executive payment release sign-off',
+    whoRole: 'GARIMA PAL (HR)',
+    whoDefaultAssignee: 'Garima Pal',
+    howChannel: 'MANUAL SHEET/PHYSICAL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-HR-11',
+    stageNumber: 11,
+    name: 'MAKE LABOUR PAYMENT',
+    what: 'Execute wage disbursement to site labour / gangs and archive physical signed payout vouchers',
+    whoRole: 'GARIMA PAL (HR)',
+    whoDefaultAssignee: 'Garima Pal',
+    howChannel: 'MANUAL SHEET/PHYSICAL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  }
+];
+
+export const FMS_BREAKDOWN_REPORTING_STAGES: FmsStageDefinition[] = [
+  {
+    stageId: 'STG-BRK-01',
+    stageNumber: 1,
+    name: 'BREAKDOWN PRELIMINARY REPORT',
+    what: 'Log preliminary breakdown report immediately upon machine / vehicle / plant failure',
+    whoRole: 'SITE MECHANIC',
+    whoDefaultAssignee: 'Site Mechanic',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-BRK-02',
+    stageNumber: 2,
+    name: 'IS SERVICE ENGINEER REQUIRED?',
+    what: 'Assess if specialized OEM Service Engineer visit is required for diagnostics',
+    whoRole: 'SITE MECHANIC',
+    whoDefaultAssignee: 'Site Mechanic',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-BRK-03',
+    stageNumber: 3,
+    name: 'CALL SERVICE ENGINEER',
+    what: 'Contact and schedule certified Service Engineer to visit site',
+    whoRole: 'MECHANICAL MANAGER (J CHAKRAWORTI)',
+    whoDefaultAssignee: 'J Chakraworti',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 24,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-BRK-04',
+    stageNumber: 4,
+    name: 'PREPARE DETAILED DEFECT ANALYSIS REPORT',
+    what: 'Prepare technical defect analysis report detailing root cause and required parts',
+    whoRole: 'SERVICE ENGINEER/MECHANIC',
+    whoDefaultAssignee: 'Service Engineer / Mechanic',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 12,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-BRK-05',
+    stageNumber: 5,
+    name: 'CAN DEFECTIVE PART/MACHINE/PLANT/VEHICLE BE REPAIRED AT SITE?',
+    what: 'Evaluate if repair can be completed at site store or requires external workshop dispatch',
+    whoRole: 'MECHANIC/MECHANICAL MANAGER (J CHAKRAWORTI)',
+    whoDefaultAssignee: 'J Chakraworti / Mechanic',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-BRK-06',
+    stageNumber: 6,
+    name: 'SEND PARTS INDENT ALONG WITH SAMPLE (IF REQUIRED)',
+    what: 'Dispatch parts indent requisition and damaged sample part to store',
+    whoRole: 'STORE KEEPER (SUMANT SINGH CHAUHAN / PRANAB CHAKRABORTY)',
+    whoDefaultAssignee: 'Sumant Singh Chauhan / Pranab Chakraborty',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-BRK-07',
+    stageNumber: 7,
+    name: 'RECEIVE PARTS',
+    what: 'Receive replacement parts at site store and verify specs against indent',
+    whoRole: 'STORE KEEPER (SUMANT SINGH CHAUHAN / PRANAB CHAKRABORTY)',
+    whoDefaultAssignee: 'Sumant Singh Chauhan / Pranab Chakraborty',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 24,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-BRK-08',
+    stageNumber: 8,
+    name: 'REPAIR MACHINE',
+    what: 'Execute site mechanic repair and part replacement on machine',
+    whoRole: 'MECHANIC',
+    whoDefaultAssignee: 'Site Mechanic',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 12,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-BRK-09',
+    stageNumber: 9,
+    name: 'SEND MACHINE/PLANT/VEHICLE DEFECTIVE PART FOR REPAIR',
+    what: 'Transport machine / defective unit to authorized offsite workshop',
+    whoRole: 'MECHANICAL MANAGER (J CHAKRAWORTI)',
+    whoDefaultAssignee: 'J Chakraworti',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 24,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-BRK-10',
+    stageNumber: 10,
+    name: 'GET REPAIR ESTIMATE',
+    what: 'Obtain formal repair cost estimate and quotation from workshop',
+    whoRole: 'MECHANICAL MANAGER (J CHAKRAWORTI)',
+    whoDefaultAssignee: 'J Chakraworti',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 12,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-BRK-11',
+    stageNumber: 11,
+    name: 'GET ESTIMATE APPROVAL',
+    what: 'Secure management approval for workshop repair estimate',
+    whoRole: 'MECHANICAL MANAGER (J CHAKRAWORTI)',
+    whoDefaultAssignee: 'J Chakraworti',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-BRK-12',
+    stageNumber: 12,
+    name: 'GET MACHINE REPAIR',
+    what: 'Complete external workshop repair and receive repaired machine back at site',
+    whoRole: 'MECHANICAL MANAGER (J CHAKRAWORTI)',
+    whoDefaultAssignee: 'J Chakraworti',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 36,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-BRK-13',
+    stageNumber: 13,
+    name: 'TRIAL RUN FOR 2 HOURS',
+    what: 'Conduct mandatory 2-hour continuous trial run to verify load and operational stability',
+    whoRole: 'DRIVER/OPERATOR/MECHANIC',
+    whoDefaultAssignee: 'Driver / Operator / Mechanic',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-BRK-14',
+    stageNumber: 14,
+    name: 'DEPLOY AT SITE',
+    what: 'Clear machine for active site deployment and update site availability logs',
+    whoRole: 'DRIVER/OPERATOR/MECHANIC',
+    whoDefaultAssignee: 'Driver / Operator / Mechanic',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 2,
+    hasYesNoDecision: false
+  }
+];
+
+export const FMS_EQUIPMENT_PART_REPAIR_STAGES: FmsStageDefinition[] = [
+  {
+    stageId: 'STG-EQP-01',
+    stageNumber: 1,
+    name: 'RECEIVE REPAIR REQUEST',
+    what: 'Receive and log equipment/part repair requisition via Google Form',
+    whoRole: 'PURCHASE MANAGER (BRAMHANAND PATEL)',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'GOOGLE FORM',
+    slaHours: 3,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-EQP-02',
+    stageNumber: 2,
+    name: 'CHECK WARRANTY DETAILS',
+    what: 'Verify OEM invoice and warranty card to check active coverage',
+    whoRole: 'PURCHASE MANAGER (BRAMHANAND PATEL)',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'INVOICE/WARRANTY CARD',
+    slaHours: 3,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-EQP-03',
+    stageNumber: 3,
+    name: 'IS PART/EQUIPMENT UNDER WARRANTY?',
+    what: 'Checkpoint: Is the damaged part / equipment under active manufacturer warranty?',
+    whoRole: 'PURCHASE MANAGER (BRAMHANAND PATEL)',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'MANUAL',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-EQP-04',
+    stageNumber: 4,
+    name: 'SEND PART/EQUIPMENT TO AUTHORIZED SERVICE CENTER',
+    what: 'Ship defective part / equipment to authorized OEM service center for free warranty repair',
+    whoRole: 'PURCHASE MANAGER (BRAMHANAND PATEL)',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'SEND PHYSICALLY',
+    slaHours: 24,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-EQP-05',
+    stageNumber: 5,
+    name: 'GET APPROVAL FOR REPAIR',
+    what: 'Obtain formal management approval on paper to proceed with paid workshop repair',
+    whoRole: 'PURCHASE MANAGER (BRAMHANAND PATEL)',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'ON PAPER',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-EQP-06',
+    stageNumber: 6,
+    name: 'SEND FOR REPAIR',
+    what: 'Dispatch defective part physically to authorized workshop / vendor for estimation',
+    whoRole: 'PURCHASE EXECUTIVE',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'PHYSICALLY',
+    slaHours: 24,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-EQP-07',
+    stageNumber: 7,
+    name: 'GET ESTIMATE',
+    what: 'Receive formal repair quotation and part breakdown estimate from workshop',
+    whoRole: 'PURCHASE EXECUTIVE',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'WHATSAPP/EMAIL/PHYSICALLY',
+    slaHours: 24,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-EQP-08',
+    stageNumber: 8,
+    name: 'GET ESTIMATE APPROVAL',
+    what: 'Review and approve workshop repair cost estimate',
+    whoRole: 'PURCHASE MANAGER (BRAMHANAND PATEL)',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'WHATSAPP/EMAIL/PHYSICALLY',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-EQP-09',
+    stageNumber: 9,
+    name: 'GIVE WORK ORDER',
+    what: 'Issue official Work Order (WO) to vendor to commence repair work',
+    whoRole: 'PURCHASE MANAGER (BRAMHANAND PATEL)',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'WHATSAPP/EMAIL/PHYSICALLY',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-EQP-10',
+    stageNumber: 10,
+    name: 'GET REPAIRED',
+    what: 'Monitor workshop repair progress and collect repaired equipment / part',
+    whoRole: 'PURCHASE EXECUTIVE',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'PHYSICALLY',
+    slaHours: 48,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-EQP-11',
+    stageNumber: 11,
+    name: 'TRIAL RUN (IF POSSIBLE)',
+    what: 'Conduct initial functional trial run / video testing of repaired equipment',
+    whoRole: 'PURCHASE ASSISTANT',
+    whoDefaultAssignee: 'Rajendra / Vivek',
+    howChannel: 'PHYSICALLY/VIDEO',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-EQP-12',
+    stageNumber: 12,
+    name: 'IS TRIAL RUN SUCCESSFUL?',
+    what: 'Checkpoint: Did the repaired part/equipment pass the functional trial test successfully?',
+    whoRole: 'PURCHASE EXECUTIVE',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-EQP-13',
+    stageNumber: 13,
+    name: 'ARE ADDITIONAL CHARGES TO BE INCURRED?',
+    what: 'Checkpoint: Are there extra / unexpected repair charges or parts required?',
+    whoRole: 'PURCHASE EXECUTIVE',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: true
+  },
+  {
+    stageId: 'STG-EQP-14',
+    stageNumber: 14,
+    name: 'GET APPROVAL',
+    what: 'Get approval for additional repair expenses',
+    whoRole: 'PURCHASE MANAGER (BRAMHANAND PATEL)',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'WHATSAPP/CALL/MANUAL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-EQP-15',
+    stageNumber: 15,
+    name: 'SEND FOR REPAIR',
+    what: 'Re-send part to workshop for additional rectifications',
+    whoRole: 'PURCHASE MANAGER (BRAMHANAND PATEL)',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'PHYSICAL',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-EQP-16',
+    stageNumber: 16,
+    name: 'TRIAL RUN',
+    what: 'Re-conduct trial run after secondary repair',
+    whoRole: 'PURCHASE EXECUTIVE',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 2,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-EQP-17',
+    stageNumber: 17,
+    name: 'RECEIVE PART/EQUIPMENT IN STORE',
+    what: 'Receive fully repaired part / equipment into central / site store inventory',
+    whoRole: 'STORE MANAGER (BRAMHANAND PATEL/SUMANT/HEMANT)',
+    whoDefaultAssignee: 'Sumant / Hemant / Bramhanand Patel',
+    howChannel: 'PHYSICALLY',
+    slaHours: 4,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-EQP-18',
+    stageNumber: 18,
+    name: 'DEPLOY AT SITE',
+    what: 'Dispatch and install repaired part / equipment at active site location',
+    whoRole: 'STORE INCHARGE (BRAMHANAND PATEL/SUMANT/HEMANT)',
+    whoDefaultAssignee: 'Sumant / Hemant / Bramhanand Patel',
+    howChannel: 'PHYSICALLY',
+    slaHours: 12,
+    hasYesNoDecision: false
+  }
+];
+
+export const FMS_DPR_REPORTING_STAGES: FmsStageDefinition[] = [
+  {
+    stageId: 'STG-DPR-01',
+    stageNumber: 1,
+    name: 'RECEIVE DPR',
+    what: 'Receive and log site Daily Progress Report (DPR) via WhatsApp / Call',
+    whoRole: 'PLANNING / DPR INCHARGE (KHILESH)',
+    whoDefaultAssignee: 'Khilesh',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 3,
+    isCheckpoint: true,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-DPR-02',
+    stageNumber: 2,
+    name: 'PREPARE PLANNED ACTUAL SHEET',
+    what: 'Collate planned vs actual work progress targets into comparison sheet',
+    whoRole: 'PLANNING EXECUTIVE (NANDITA)',
+    whoDefaultAssignee: 'Nandita',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-DPR-03',
+    stageNumber: 3,
+    name: 'PREPARE CONSUMPTION REPORT',
+    what: 'Calculate diesel, cement, steel, and material site consumption from DPR',
+    whoRole: 'PLANNING EXECUTIVE (NANDITA)',
+    whoDefaultAssignee: 'Nandita',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-DPR-04',
+    stageNumber: 4,
+    name: 'REPORT MECHANICAL ISSUES TO MECHANICAL INCHARGE',
+    what: 'Flag equipment breakdown or plant downtime issues to mechanical team',
+    whoRole: 'MECHANICAL INCHARGE (PRANAY GHOSH)',
+    whoDefaultAssignee: 'Pranay Ghosh',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-DPR-05',
+    stageNumber: 5,
+    name: 'REPORT HINDRANCE DETAILS TO PROJECT MANAGER',
+    what: 'Highlight site ROW, weather, labor, or drawing hindrances to PM',
+    whoRole: 'PLANNING INCHARGE (KHILESH)',
+    whoDefaultAssignee: 'Khilesh',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-DPR-06',
+    stageNumber: 6,
+    name: 'UPDATE WEEKLY REVIEW SHEET',
+    what: 'Sync daily progress data into executive weekly review matrix',
+    whoRole: 'PLANNING INCHARGE (KHILESH)',
+    whoDefaultAssignee: 'Khilesh',
+    howChannel: 'WHATSAPP/CALL',
+    slaHours: 1,
+    hasYesNoDecision: false
+  }
+];
+
+export const INITIAL_FMS_FLOWS: FmsInstance[] = [
+  {
+    id: 'fms-inst-dpr-001',
+    flowId: 'FLOW-DPR-BIJETALA-01',
+    flowType: 'DPR_REPORTING',
+    indentNo: 'DPR-BIJ-010726',
+    dprDate: '01/07/2026',
+    dprPreparedBy: 'Eklavya Upadhyay',
+    siteName: 'BIJETALA',
+    priority: 'Normal',
+    currentStageId: 'STG-DPR-06',
+    currentStageIndex: 5,
+    totalStages: 6,
+    status: 'Completed',
+    createdAt: '02/07/2026 12:59:53',
+    updatedAt: '02/07/2026 16:12:18',
+    totalDelayHours: 0.93,
+    remarks: 'Bijetala site DPR for 01/07/2026 by Eklavya Upadhyay. All 6 stages processed.',
+    stages: [
+      { stageId: 'STG-DPR-01', stageName: 'RECEIVE DPR', assignee: 'Khilesh', how: 'WHATSAPP/CALL', status: 'Done', plannedDateTime: '02/07/2026 13:59:53', actualDateTime: '02/07/2026 14:56:13', timeDelayHours: 0.93 },
+      { stageId: 'STG-DPR-02', stageName: 'PREPARE PLANNED ACTUAL SHEET', assignee: 'Nandita', how: 'WHATSAPP/CALL', status: 'Done', plannedDateTime: '02/07/2026 15:56:13', actualDateTime: '02/07/2026 14:56:26', timeDelayHours: 0 },
+      { stageId: 'STG-DPR-03', stageName: 'PREPARE CONSUMPTION REPORT', assignee: 'Nandita', how: 'WHATSAPP/CALL', status: 'Done', plannedDateTime: '02/07/2026 15:56:26', actualDateTime: '02/07/2026 15:23:12', timeDelayHours: 0 },
+      { stageId: 'STG-DPR-04', stageName: 'REPORT MECHANICAL ISSUES TO MECHANICAL INCHARGE', assignee: 'Pranay Ghosh', how: 'WHATSAPP/CALL', status: 'Done', plannedDateTime: '02/07/2026 16:23:12', actualDateTime: '02/07/2026 15:44:35', timeDelayHours: 0 },
+      { stageId: 'STG-DPR-05', stageName: 'REPORT HINDRANCE DETAILS TO PROJECT MANAGER', assignee: 'Khilesh', how: 'WHATSAPP/CALL', status: 'Done', plannedDateTime: '02/07/2026 16:44:35', actualDateTime: '02/07/2026 16:12:18', timeDelayHours: 0 },
+      { stageId: 'STG-DPR-06', stageName: 'UPDATE WEEKLY REVIEW SHEET', assignee: 'Khilesh', how: 'WHATSAPP/CALL', status: 'Done', plannedDateTime: '02/07/2026 17:12:18', actualDateTime: '02/07/2026 16:12:18', timeDelayHours: 0 }
+    ]
+  },
+  {
+    id: 'fms-inst-eqp-001',
+    flowId: 'FLOW-EQP-PUMP-22376424',
+    flowType: 'EQUIPMENT_PART_REPAIR',
+    indentNo: 'EQP-PUMP-22376424',
+    partSerialNo: 'Pump S/N: 22376424 Motor S/N: 23029944',
+    partEquipmentName: 'Submersible Pump Set',
+    vehiclePlantMachineName: 'Submersible Pump Set',
+    siteName: 'BIJETALA',
+    warrantyStatus: 'OUT_WARRANTY',
+    priority: 'Urgent',
+    currentStageId: 'STG-EQP-17',
+    currentStageIndex: 16,
+    totalStages: 18,
+    status: 'In Progress',
+    createdAt: '03/08/2026 15:49:43',
+    updatedAt: '18/08/2026 12:58:34',
+    totalDelayHours: 0,
+    remarks: 'Bijetala Submersible Pump repair. Completed repair and trial run, receiving in store.',
+    stages: [
+      { stageId: 'STG-EQP-01', stageName: 'RECEIVE REPAIR REQUEST', assignee: 'Bramhanand Patel', how: 'GOOGLE FORM', status: 'Done', plannedDateTime: '04/08/2026 10:49:43', actualDateTime: '03/08/2026 15:52:52', timeDelayHours: 0 },
+      { stageId: 'STG-EQP-02', stageName: 'CHECK WARRANTY DETAILS', assignee: 'Bramhanand Patel', how: 'INVOICE/WARRANTY CARD', status: 'Done', plannedDateTime: '03/08/2026 16:52:52', actualDateTime: '03/08/2026 15:53:03', timeDelayHours: 0 },
+      { stageId: 'STG-EQP-03', stageName: 'IS PART/EQUIPMENT UNDER WARRANTY?', assignee: 'Bramhanand Patel', how: 'MANUAL', status: 'Done', decisionValue: 'No', plannedDateTime: '03/08/2026 17:53:03', actualDateTime: '03/08/2026 15:55:29', timeDelayHours: 0 },
+      { stageId: 'STG-EQP-04', stageName: 'SEND PART/EQUIPMENT TO AUTHORIZED SERVICE CENTER', assignee: 'Bramhanand Patel', how: 'SEND PHYSICALLY', status: 'Skipped', notes: 'Skipped: Out of warranty' },
+      { stageId: 'STG-EQP-05', stageName: 'GET APPROVAL FOR REPAIR', assignee: 'Bramhanand Patel', how: 'ON PAPER', status: 'Done', plannedDateTime: '06/08/2026 15:55:29', actualDateTime: '03/08/2026 15:55:37', timeDelayHours: 0 },
+      { stageId: 'STG-EQP-06', stageName: 'SEND FOR REPAIR', assignee: 'Shyam Rao Sureshe', how: 'PHYSICALLY', status: 'Done', plannedDateTime: '06/08/2026 15:55:37', actualDateTime: '07/08/2026 11:40:53', timeDelayHours: 19 },
+      { stageId: 'STG-EQP-07', stageName: 'GET ESTIMATE', assignee: 'Shyam Rao Sureshe', how: 'WHATSAPP/EMAIL/PHYSICALLY', status: 'Done', plannedDateTime: '07/08/2026 13:40:53', actualDateTime: '10/08/2026 18:51:09', timeDelayHours: 77 },
+      { stageId: 'STG-EQP-08', stageName: 'GET ESTIMATE APPROVAL', assignee: 'Bramhanand Patel', how: 'WHATSAPP/EMAIL/PHYSICALLY', status: 'Done', plannedDateTime: '11/08/2026 12:30:00', actualDateTime: '10/08/2026 18:51:18', timeDelayHours: 0 },
+      { stageId: 'STG-EQP-09', stageName: 'GIVE WORK ORDER', assignee: 'Bramhanand Patel', how: 'WHATSAPP/EMAIL/PHYSICALLY', status: 'Done', plannedDateTime: '18/08/2026 10:30:00', actualDateTime: '17/08/2026 15:07:21', timeDelayHours: 0 },
+      { stageId: 'STG-EQP-10', stageName: 'GET REPAIRED', assignee: 'Shyam Rao Sureshe', how: 'PHYSICALLY', status: 'Done', plannedDateTime: '17/08/2026 17:07:21', actualDateTime: '18/08/2026 12:58:22', timeDelayHours: 19 },
+      { stageId: 'STG-EQP-11', stageName: 'TRIAL RUN (IF POSSIBLE)', assignee: 'Rajendra / Vivek', how: 'PHYSICALLY/VIDEO', status: 'Done', plannedDateTime: '18/08/2026 13:58:22', actualDateTime: '18/08/2026 12:58:22', timeDelayHours: 0 },
+      { stageId: 'STG-EQP-12', stageName: 'IS TRIAL RUN SUCCESSFUL?', assignee: 'Shyam Rao Sureshe', how: 'WHATSAPP/CALL', status: 'Done', decisionValue: 'Yes', plannedDateTime: '18/08/2026 13:58:22', actualDateTime: '18/08/2026 12:58:22', timeDelayHours: 0 },
+      { stageId: 'STG-EQP-13', stageName: 'ARE ADDITIONAL CHARGES TO BE INCURRED?', assignee: 'Shyam Rao Sureshe', how: 'WHATSAPP/CALL', status: 'Done', decisionValue: 'No', plannedDateTime: '18/08/2026 13:58:22', actualDateTime: '18/08/2026 12:58:22', timeDelayHours: 0 },
+      { stageId: 'STG-EQP-14', stageName: 'GET APPROVAL', assignee: 'Bramhanand Patel', how: 'WHATSAPP/CALL/MANUAL', status: 'Skipped', notes: 'Skipped: No additional charges' },
+      { stageId: 'STG-EQP-15', stageName: 'SEND FOR REPAIR', assignee: 'Bramhanand Patel', how: 'PHYSICAL', status: 'Skipped', notes: 'Skipped: No additional charges' },
+      { stageId: 'STG-EQP-16', stageName: 'TRIAL RUN', assignee: 'Shyam Rao Sureshe', how: 'WHATSAPP/CALL', status: 'Skipped', notes: 'Skipped: No additional charges' },
+      { stageId: 'STG-EQP-17', stageName: 'RECEIVE PART/EQUIPMENT IN STORE', assignee: 'Sumant / Hemant', how: 'PHYSICALLY', status: 'In Progress', plannedDateTime: '18/08/2026 16:58:22', actualDateTime: '18/08/2026 12:58:29' },
+      { stageId: 'STG-EQP-18', stageName: 'DEPLOY AT SITE', assignee: 'Sumant / Hemant', how: 'PHYSICALLY', status: 'Pending', plannedDateTime: '19/08/2026 16:58:29' }
+    ]
+  },
+  {
+    id: 'fms-inst-brk-001',
+    flowId: 'FLOW-BRK-DG82-01',
+    flowType: 'BREAKDOWN_REPORTING',
+    indentNo: 'BRK-CJGS18014779',
+    machineName: 'Dg-82.5',
+    machineIdNo: 'CJGS18014779',
+    machineMakeModel: 'JSPF-82.5B',
+    siteName: 'BIJETALA',
+    attendingMechanic: 'Chotu',
+    mechanicMobileNo: '8581041010',
+    indentDate: '28/07/2026',
+    priority: 'Urgent',
+    currentStageId: 'STG-BRK-13',
+    currentStageIndex: 12,
+    totalStages: 14,
+    status: 'In Progress',
+    createdAt: '28/07/2026 15:22:47',
+    updatedAt: '30/07/2026 12:26:48',
+    totalDelayHours: 0,
+    remarks: 'DG breakdown at Bijetala site. Repaired and undergoing 2-hour trial run.',
+    stages: [
+      { stageId: 'STG-BRK-01', stageName: 'BREAKDOWN PRELIMINARY REPORT', assignee: 'Site Mechanic', how: 'WHATSAPP/CALL', status: 'Done', plannedDateTime: '28/07/2026 16:22:47', actualDateTime: '28/07/2026 15:58:44', timeDelayHours: 0 },
+      { stageId: 'STG-BRK-02', stageName: 'IS SERVICE ENGINEER REQUIRED?', assignee: 'Site Mechanic', how: 'WHATSAPP/CALL', status: 'Done', decisionValue: 'No', plannedDateTime: '28/07/2026 16:58:44', actualDateTime: '28/07/2026 15:59:00', timeDelayHours: 0 },
+      { stageId: 'STG-BRK-03', stageName: 'CALL SERVICE ENGINEER', assignee: 'J Chakraworti', how: 'WHATSAPP/CALL', status: 'Skipped', notes: 'Skipped: Service engineer visit not required' },
+      { stageId: 'STG-BRK-04', stageName: 'PREPARE DETAILED DEFECT ANALYSIS REPORT', assignee: 'Service Engineer / Mechanic', how: 'WHATSAPP/CALL', status: 'Done', plannedDateTime: '30/07/2026 11:59:00', actualDateTime: '30/07/2026 10:21:21', timeDelayHours: 0 },
+      { stageId: 'STG-BRK-05', stageName: 'CAN DEFECTIVE PART/MACHINE/PLANT/VEHICLE BE REPAIRED AT SITE?', assignee: 'J Chakraworti / Mechanic', how: 'WHATSAPP/CALL', status: 'Done', decisionValue: 'Yes', plannedDateTime: '30/07/2026 11:21:21', actualDateTime: '30/07/2026 10:21:55', timeDelayHours: 0 },
+      { stageId: 'STG-BRK-06', stageName: 'SEND PARTS INDENT ALONG WITH SAMPLE (IF REQUIRED)', assignee: 'Sumant Singh Chauhan / Pranab Chakraborty', how: 'WHATSAPP/CALL', status: 'Done', plannedDateTime: '30/07/2026 11:21:55', actualDateTime: '30/07/2026 10:23:08', timeDelayHours: 0 },
+      { stageId: 'STG-BRK-07', stageName: 'RECEIVE PARTS', assignee: 'Sumant Singh Chauhan / Pranab Chakraborty', how: 'WHATSAPP/CALL', status: 'Done', plannedDateTime: '03/08/2026 10:23:08', actualDateTime: '30/07/2026 10:23:47', timeDelayHours: 0 },
+      { stageId: 'STG-BRK-08', stageName: 'REPAIR MACHINE', assignee: 'Site Mechanic', how: 'WHATSAPP/CALL', status: 'Done', plannedDateTime: '31/07/2026 14:23:47', actualDateTime: '30/07/2026 10:23:57', timeDelayHours: 0 },
+      { stageId: 'STG-BRK-09', stageName: 'SEND MACHINE/PLANT/VEHICLE DEFECTIVE PART FOR REPAIR', assignee: 'J Chakraworti', how: 'WHATSAPP/CALL', status: 'Skipped', notes: 'Skipped: Repaired at site' },
+      { stageId: 'STG-BRK-10', stageName: 'GET REPAIR ESTIMATE', assignee: 'J Chakraworti', how: 'WHATSAPP/CALL', status: 'Skipped', notes: 'Skipped: Repaired at site' },
+      { stageId: 'STG-BRK-11', stageName: 'GET ESTIMATE APPROVAL', assignee: 'J Chakraworti', how: 'WHATSAPP/CALL', status: 'Skipped', notes: 'Skipped: Repaired at site' },
+      { stageId: 'STG-BRK-12', stageName: 'GET MACHINE REPAIR', assignee: 'J Chakraworti', how: 'WHATSAPP/CALL', status: 'Skipped', notes: 'Skipped: Repaired at site' },
+      { stageId: 'STG-BRK-13', stageName: 'TRIAL RUN FOR 2 HOURS', assignee: 'Driver / Operator / Mechanic', how: 'WHATSAPP/CALL', status: 'In Progress', plannedDateTime: '30/07/2026 12:23:57', actualDateTime: '30/07/2026 10:26:41' },
+      { stageId: 'STG-BRK-14', stageName: 'DEPLOY AT SITE', assignee: 'Driver / Operator / Mechanic', how: 'WHATSAPP/CALL', status: 'Pending', plannedDateTime: '30/07/2026 12:26:41' }
+    ]
+  },
+  {
+    id: 'fms-inst-hr-001',
+    flowId: 'FLOW-HR-ATT-SILA-01',
+    flowType: 'HR_ATTENDANCE_PAYMENT',
+    indentNo: 'ATT-SILA-260715',
+    siteName: 'SILADEHI',
+    totalLabourPresent: 48,
+    totalOtHours: 14,
+    attendanceDate: '15/07/2026',
+    indentDate: '15/07/2026',
+    priority: 'Urgent',
+    currentStageId: 'STG-HR-06',
+    currentStageIndex: 5,
+    totalStages: 11,
+    status: 'In Progress',
+    createdAt: '15/07/2026 08:30:00',
+    updatedAt: '15/07/2026 14:15:00',
+    totalDelayHours: 0,
+    remarks: 'Daily labour attendance and OT verification for Siladehi civil works gang.',
+    stages: [
+      {
+        stageId: 'STG-HR-01',
+        stageName: 'COLLECT ATTENDANCE OF LABOUR',
+        assignee: 'Site Incharge',
+        how: 'WHATSAPP/CALL',
+        status: 'Done',
+        plannedDateTime: '15/07/2026 09:00:00',
+        actualDateTime: '15/07/2026 08:45:00',
+        timeDelayHours: 0,
+        doerName: 'Site Incharge'
+      },
+      {
+        stageId: 'STG-HR-02',
+        stageName: 'CHECK ATTENDANCE OF LABOUR FROM PHOTO AND SHEET',
+        assignee: 'Garima Pal',
+        how: 'WHATSAPP',
+        status: 'Done',
+        plannedDateTime: '15/07/2026 10:00:00',
+        actualDateTime: '15/07/2026 09:40:00',
+        timeDelayHours: 0,
+        doerName: 'Garima Pal'
+      },
+      {
+        stageId: 'STG-HR-03',
+        stageName: 'CHECK FOR OT IF ANY ?',
+        assignee: 'Garima Pal',
+        how: 'WHATSAPP',
+        status: 'Done',
+        plannedDateTime: '15/07/2026 11:00:00',
+        actualDateTime: '15/07/2026 10:30:00',
+        decisionValue: 'Yes',
+        timeDelayHours: 0,
+        doerName: 'Garima Pal'
+      },
+      {
+        stageId: 'STG-HR-04',
+        stageName: 'PREPARE OT SHEET',
+        assignee: 'Garima Pal',
+        how: 'EXCEL',
+        status: 'Done',
+        plannedDateTime: '15/07/2026 12:00:00',
+        actualDateTime: '15/07/2026 11:50:00',
+        timeDelayHours: 0,
+        doerName: 'Garima Pal'
+      },
+      {
+        stageId: 'STG-HR-05',
+        stageName: 'GET APPROVAL OT SHEET',
+        assignee: 'Garima Pal',
+        how: 'MANUAL SHEET/PHYSICAL',
+        status: 'Done',
+        plannedDateTime: '15/07/2026 14:00:00',
+        actualDateTime: '15/07/2026 13:45:00',
+        timeDelayHours: 0,
+        doerName: 'Garima Pal'
+      },
+      {
+        stageId: 'STG-HR-06',
+        stageName: 'PREPARE ATTENDANCE & PAYMENT SHEET',
+        assignee: 'Garima Pal',
+        how: 'EXCEL',
+        status: 'In Progress',
+        plannedDateTime: '15/07/2026 15:00:00'
+      },
+      {
+        stageId: 'STG-HR-07',
+        stageName: 'CHECK ATTENDANCE AND PAYMENT SHEET',
+        assignee: 'Mamta',
+        how: 'MANUAL SHEET/WHATSAPP/PHYSICAL',
+        status: 'Pending',
+        plannedDateTime: '15/07/2026 16:00:00'
+      },
+      {
+        stageId: 'STG-HR-08',
+        stageName: 'CHECK DPR SHEET',
+        assignee: 'Nandita / Khilesh',
+        how: 'MANUAL SHEET/WHATSAPP/PHYSICAL',
+        status: 'Pending',
+        plannedDateTime: '15/07/2026 17:00:00'
+      },
+      {
+        stageId: 'STG-HR-09',
+        stageName: 'GET APPROVAL PAYMENT AND ATTENDANCE SHEET FROM PM',
+        assignee: 'Garima Pal',
+        how: 'MANUAL SHEET/PHYSICAL',
+        status: 'Pending',
+        plannedDateTime: '15/07/2026 18:00:00'
+      },
+      {
+        stageId: 'STG-HR-10',
+        stageName: 'GET APPROVAL FROM MD',
+        assignee: 'Garima Pal',
+        how: 'MANUAL SHEET/PHYSICAL',
+        status: 'Pending',
+        plannedDateTime: '15/07/2026 19:00:00'
+      },
+      {
+        stageId: 'STG-HR-11',
+        stageName: 'MAKE LABOUR PAYMENT',
+        assignee: 'Garima Pal',
+        how: 'MANUAL SHEET/PHYSICAL',
+        status: 'Pending',
+        plannedDateTime: '15/07/2026 20:00:00'
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-hr-002',
+    flowId: 'FLOW-HR-ATT-BIJE-02',
+    flowType: 'HR_ATTENDANCE_PAYMENT',
+    indentNo: 'ATT-BIJE-260715',
+    siteName: 'BIJETALA',
+    totalLabourPresent: 32,
+    totalOtHours: 0,
+    attendanceDate: '15/07/2026',
+    indentDate: '15/07/2026',
+    priority: 'Normal',
+    currentStageId: 'STG-HR-03',
+    currentStageIndex: 2,
+    totalStages: 11,
+    status: 'In Progress',
+    createdAt: '15/07/2026 09:00:00',
+    updatedAt: '15/07/2026 10:10:00',
+    totalDelayHours: 0,
+    remarks: 'Bijetala plant & fabrication labour daily muster roll.',
+    stages: [
+      {
+        stageId: 'STG-HR-01',
+        stageName: 'COLLECT ATTENDANCE OF LABOUR',
+        assignee: 'Site Incharge',
+        how: 'WHATSAPP/CALL',
+        status: 'Done',
+        plannedDateTime: '15/07/2026 09:30:00',
+        actualDateTime: '15/07/2026 09:15:00',
+        timeDelayHours: 0,
+        doerName: 'Site Incharge'
+      },
+      {
+        stageId: 'STG-HR-02',
+        stageName: 'CHECK ATTENDANCE OF LABOUR FROM PHOTO AND SHEET',
+        assignee: 'Garima Pal',
+        how: 'WHATSAPP',
+        status: 'Done',
+        plannedDateTime: '15/07/2026 10:30:00',
+        actualDateTime: '15/07/2026 10:10:00',
+        timeDelayHours: 0,
+        doerName: 'Garima Pal'
+      },
+      {
+        stageId: 'STG-HR-03',
+        stageName: 'CHECK FOR OT IF ANY ?',
+        assignee: 'Garima Pal',
+        how: 'WHATSAPP',
+        status: 'In Progress',
+        plannedDateTime: '15/07/2026 11:30:00'
+      },
+      {
+        stageId: 'STG-HR-04',
+        stageName: 'PREPARE OT SHEET',
+        assignee: 'Garima Pal',
+        how: 'EXCEL',
+        status: 'Pending',
+        plannedDateTime: '15/07/2026 12:30:00'
+      },
+      {
+        stageId: 'STG-HR-05',
+        stageName: 'GET APPROVAL OT SHEET',
+        assignee: 'Garima Pal',
+        how: 'MANUAL SHEET/PHYSICAL',
+        status: 'Pending',
+        plannedDateTime: '15/07/2026 14:30:00'
+      },
+      {
+        stageId: 'STG-HR-06',
+        stageName: 'PREPARE ATTENDANCE & PAYMENT SHEET',
+        assignee: 'Garima Pal',
+        how: 'EXCEL',
+        status: 'Pending',
+        plannedDateTime: '15/07/2026 15:30:00'
+      },
+      {
+        stageId: 'STG-HR-07',
+        stageName: 'CHECK ATTENDANCE AND PAYMENT SHEET',
+        assignee: 'Mamta',
+        how: 'MANUAL SHEET/WHATSAPP/PHYSICAL',
+        status: 'Pending',
+        plannedDateTime: '15/07/2026 16:30:00'
+      },
+      {
+        stageId: 'STG-HR-08',
+        stageName: 'CHECK DPR SHEET',
+        assignee: 'Nandita / Khilesh',
+        how: 'MANUAL SHEET/WHATSAPP/PHYSICAL',
+        status: 'Pending',
+        plannedDateTime: '15/07/2026 17:30:00'
+      },
+      {
+        stageId: 'STG-HR-09',
+        stageName: 'GET APPROVAL PAYMENT AND ATTENDANCE SHEET FROM PM',
+        assignee: 'Garima Pal',
+        how: 'MANUAL SHEET/PHYSICAL',
+        status: 'Pending',
+        plannedDateTime: '15/07/2026 18:30:00'
+      },
+      {
+        stageId: 'STG-HR-10',
+        stageName: 'GET APPROVAL FROM MD',
+        assignee: 'Garima Pal',
+        how: 'MANUAL SHEET/PHYSICAL',
+        status: 'Pending',
+        plannedDateTime: '15/07/2026 19:30:00'
+      },
+      {
+        stageId: 'STG-HR-11',
+        stageName: 'MAKE LABOUR PAYMENT',
+        assignee: 'Garima Pal',
+        how: 'MANUAL SHEET/PHYSICAL',
+        status: 'Pending',
+        plannedDateTime: '15/07/2026 20:30:00'
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-inv-449',
+    flowId: 'FLOW-INV-260715-006',
+    flowType: 'ACCOUNTS_INVOICE_COLLECTION',
+    poNumber: 'RAO/PO/260715-006',
+    vendorName: 'M/S ULTRA TECH CEMENT - [GEN]',
+    poAssignTo: 'MR. BRAMHANAND PATEL',
+    indentNo: '449',
+    poDate: '15/07/2026',
+    siteName: 'BIJETALA',
+    priority: 'Normal',
+    currentStageId: 'STG-INV-06',
+    currentStageIndex: 5,
+    totalStages: 7,
+    status: 'In Progress',
+    createdAt: '15/07/2026 17:39:21',
+    updatedAt: '20/07/2026 10:28:47',
+    totalDelayHours: 40.81,
+    remarks: 'Cement consignment invoice verification and ERP processing.',
+    stages: [
+      {
+        stageId: 'STG-INV-01',
+        stageName: 'RECEIVE INVOICE',
+        assignee: 'Byamkesh Kaiwartya / Accounts',
+        how: 'WHATSAPP/EMAIL/PHYSICAL',
+        status: 'Done',
+        plannedDateTime: '18/07/2026 17:39:21',
+        actualDateTime: '20/07/2026 10:28:04',
+        timeDelayHours: 40.81,
+        doerName: 'Byamkesh Kaiwartya'
+      },
+      {
+        stageId: 'STG-INV-02',
+        stageName: 'CHECK INVOICE DETAILS & CALCULATION',
+        assignee: 'Byamkesh Kaiwartya',
+        how: 'INVOICE PHYSICALLY',
+        status: 'Done',
+        plannedDateTime: '20/07/2026 12:30:00',
+        actualDateTime: '20/07/2026 10:28:11',
+        timeDelayHours: 0,
+        doerName: 'Byamkesh Kaiwartya'
+      },
+      {
+        stageId: 'STG-INV-03',
+        stageName: 'IS INVOICE ACCEPTABLE?',
+        assignee: 'Bramhanand Patel',
+        how: 'SITE INCHARGE PHYSICALLY',
+        status: 'Done',
+        plannedDateTime: '20/07/2026 11:30:00',
+        actualDateTime: '20/07/2026 10:28:19',
+        decisionValue: 'Yes',
+        doerName: 'Bramhanand Patel'
+      },
+      {
+        stageId: 'STG-INV-04',
+        stageName: 'GET INVOICE RECTIFIED',
+        assignee: 'Bramhanand Patel',
+        how: 'SITE INCHARGE PHYSICALLY',
+        status: 'Skipped',
+        notes: 'Skipped: Invoice verified acceptable without rectification'
+      },
+      {
+        stageId: 'STG-INV-05',
+        stageName: 'GET INVOICE APPROVAL',
+        assignee: 'Khushboo Sahu (EA)',
+        how: 'PHYSICAL COPY',
+        status: 'Done',
+        plannedDateTime: '20/07/2026 12:30:00',
+        actualDateTime: '20/07/2026 10:28:47',
+        timeDelayHours: 0,
+        doerName: 'Khushboo Sahu'
+      },
+      {
+        stageId: 'STG-INV-06',
+        stageName: 'UPLOAD/APPROVE IN ERP',
+        assignee: 'Byamkesh Kaiwartya',
+        how: 'ONLINE ERP',
+        status: 'In Progress',
+        plannedDateTime: '20/07/2026 14:30:00'
+      },
+      {
+        stageId: 'STG-INV-07',
+        stageName: 'RECEIVE ORIGINAL INVOICE',
+        assignee: 'Byamkesh Kaiwartya',
+        how: 'PHYSICAL COPY',
+        status: 'Pending',
+        plannedDateTime: '23/07/2026 14:30:00'
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-ssd-654',
+    flowId: 'FLOW-SSD-654',
+    flowType: 'STORE_TO_SITE_DISPATCH',
+    requisitionNumber: '654',
+    indentNo: '654',
+    indentDate: '04/08/2026',
+    siteName: 'SILADEHI',
+    priority: 'Urgent',
+    currentStageId: 'COMPLETED',
+    currentStageIndex: 9,
+    totalStages: 9,
+    status: 'Completed',
+    createdAt: '04/08/2026 09:03:24',
+    updatedAt: '05/08/2026 11:00:52',
+    totalDelayHours: 0.52,
+    remarks: 'Dispatched directly from Store to Siladehi site after stock check availability.',
+    stages: [
+      {
+        stageId: 'STG-SSD-01',
+        stageName: 'COLLECT ALL ITEMS AVAILABE',
+        assignee: 'Sumant (Siladehi)',
+        how: 'PHYSICALLY',
+        status: 'Done',
+        plannedDateTime: '04/08/2026 14:30:00',
+        actualDateTime: '04/08/2026 15:01:29',
+        timeDelayHours: 0.52,
+        doerName: 'Sumant'
+      },
+      {
+        stageId: 'STG-SSD-02',
+        stageName: 'ARRANGE VEHICLE FOR DISPATCH',
+        assignee: 'Sumant (Siladehi)',
+        how: 'PHYSICALLY',
+        status: 'Done',
+        plannedDateTime: '05/08/2026 13:01:29',
+        actualDateTime: '04/08/2026 16:13:07',
+        timeDelayHours: 0,
+        doerName: 'Sumant'
+      },
+      {
+        stageId: 'STG-SSD-03',
+        stageName: 'PREPARE STOCK TRANSFER NOTE/DELIVERY CHALLAN',
+        assignee: 'Sumant (Siladehi)',
+        how: 'PHYSICALLY',
+        status: 'Done',
+        plannedDateTime: '04/08/2026 18:13:07',
+        actualDateTime: '04/08/2026 16:13:18',
+        timeDelayHours: 0,
+        doerName: 'Sumant'
+      },
+      {
+        stageId: 'STG-SSD-04',
+        stageName: 'IS E-WAY REQUIRED?',
+        assignee: 'Sumant (Siladehi)',
+        how: 'WHATSAPP/CALL',
+        status: 'Done',
+        plannedDateTime: '04/08/2026 17:13:18',
+        actualDateTime: '04/08/2026 16:13:33',
+        decisionValue: 'No',
+        doerName: 'Sumant'
+      },
+      {
+        stageId: 'STG-SSD-05',
+        stageName: 'SEND STOCK TRANSFER NOTE/DELIVERY CHALLAN FOR E-WAY BILL',
+        assignee: 'Sumant (Siladehi)',
+        how: 'WHATSAPP/EMAIL/PHYSICALLY',
+        status: 'Skipped',
+        notes: 'Bypassed because E-Way Bill not required'
+      },
+      {
+        stageId: 'STG-SSD-06',
+        stageName: 'GET E-WAY BILL',
+        assignee: 'Sumant (Siladehi)',
+        how: 'WHATSAPP/EMAIL/PHYSICALLY',
+        status: 'Skipped',
+        notes: 'Bypassed because E-Way Bill not required'
+      },
+      {
+        stageId: 'STG-SSD-07',
+        stageName: 'LOAD MATERIAL TO BE DISPATCHED',
+        assignee: 'Sumant (Siladehi)',
+        how: 'PHYSICALLY',
+        status: 'Done',
+        plannedDateTime: '05/08/2026 12:13:33',
+        actualDateTime: '05/08/2026 10:56:13',
+        timeDelayHours: 0,
+        doerName: 'Sumant'
+      },
+      {
+        stageId: 'STG-SSD-08',
+        stageName: 'DISPATCH MATERIAL WITH ALL DOCUMENTS',
+        assignee: 'Sumant (Siladehi)',
+        how: 'PHYSICALLY',
+        status: 'Done',
+        plannedDateTime: '05/08/2026 14:56:13',
+        actualDateTime: '05/08/2026 10:56:24',
+        timeDelayHours: 0,
+        doerName: 'Sumant'
+      },
+      {
+        stageId: 'STG-SSD-09',
+        stageName: 'GET RECEIVING OF MATERIAL',
+        assignee: 'Rajnikant Behera / Purchaser',
+        how: 'WHATSAPP/EMAIL/PHYSICAL COPY',
+        formResponseRef: 'https://forms.gle/tETaTMfRGfU2ERUc6',
+        status: 'Done',
+        plannedDateTime: '06/08/2026 14:56:24',
+        actualDateTime: '05/08/2026 11:00:52',
+        timeDelayHours: 0,
+        doerName: 'Rajnikant Behera'
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-ssd-477',
+    flowId: 'FLOW-SSD-477',
+    flowType: 'STORE_TO_SITE_DISPATCH',
+    requisitionNumber: '477',
+    indentNo: '477',
+    indentDate: '05/10/2026',
+    siteName: 'BIJETALA',
+    priority: 'Normal',
+    currentStageId: 'STG-SSD-02',
+    currentStageIndex: 1,
+    totalStages: 9,
+    status: 'In Progress',
+    createdAt: '05/10/2026 09:30:00',
+    updatedAt: '05/10/2026 11:30:00',
+    totalDelayHours: 0,
+    remarks: 'Dispatched following Check Stock confirmation for Bijetala site.',
+    stages: [
+      {
+        stageId: 'STG-SSD-01',
+        stageName: 'COLLECT ALL ITEMS AVAILABE',
+        assignee: 'Hemant (Bijetala)',
+        how: 'PHYSICALLY',
+        status: 'Done',
+        plannedDateTime: '05/10/2026 13:30:00',
+        actualDateTime: '05/10/2026 11:30:00',
+        timeDelayHours: 0,
+        doerName: 'Hemant'
+      },
+      {
+        stageId: 'STG-SSD-02',
+        stageName: 'ARRANGE VEHICLE FOR DISPATCH',
+        assignee: 'Hemant (Bijetala)',
+        how: 'PHYSICALLY',
+        status: 'In Progress',
+        plannedDateTime: '05/10/2026 17:30:00'
+      },
+      {
+        stageId: 'STG-SSD-03',
+        stageName: 'PREPARE STOCK TRANSFER NOTE/DELIVERY CHALLAN',
+        assignee: 'Hemant (Bijetala)',
+        how: 'PHYSICALLY',
+        status: 'Pending',
+        plannedDateTime: '05/10/2026 19:30:00'
+      },
+      {
+        stageId: 'STG-SSD-04',
+        stageName: 'IS E-WAY REQUIRED?',
+        assignee: 'Hemant (Bijetala)',
+        how: 'WHATSAPP/CALL',
+        status: 'Pending',
+        plannedDateTime: '05/10/2026 20:30:00'
+      },
+      {
+        stageId: 'STG-SSD-05',
+        stageName: 'SEND STOCK TRANSFER NOTE/DELIVERY CHALLAN FOR E-WAY BILL',
+        assignee: 'Hemant (Bijetala)',
+        how: 'WHATSAPP/EMAIL/PHYSICALLY',
+        status: 'Pending',
+        plannedDateTime: '06/10/2026 10:30:00'
+      },
+      {
+        stageId: 'STG-SSD-06',
+        stageName: 'GET E-WAY BILL',
+        assignee: 'Hemant (Bijetala)',
+        how: 'WHATSAPP/EMAIL/PHYSICALLY',
+        status: 'Pending',
+        plannedDateTime: '06/10/2026 14:30:00'
+      },
+      {
+        stageId: 'STG-SSD-07',
+        stageName: 'LOAD MATERIAL TO BE DISPATCHED',
+        assignee: 'Hemant (Bijetala)',
+        how: 'PHYSICALLY',
+        status: 'Pending',
+        plannedDateTime: '06/10/2026 18:30:00'
+      },
+      {
+        stageId: 'STG-SSD-08',
+        stageName: 'DISPATCH MATERIAL WITH ALL DOCUMENTS',
+        assignee: 'Hemant (Bijetala)',
+        how: 'PHYSICALLY',
+        status: 'Pending',
+        plannedDateTime: '06/10/2026 22:30:00'
+      },
+      {
+        stageId: 'STG-SSD-09',
+        stageName: 'GET RECEIVING OF MATERIAL',
+        assignee: 'Rajnikant Behera / Purchaser',
+        how: 'WHATSAPP/EMAIL/PHYSICAL COPY',
+        formResponseRef: 'https://forms.gle/tETaTMfRGfU2ERUc6',
+        status: 'Pending',
+        plannedDateTime: '07/10/2026 10:30:00'
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-rec-102-1',
+    flowId: 'FLOW-REC-102-001',
+    flowType: 'SITE_RECEIVE',
+    requisitionNumber: '102',
+    indentNo: '102',
+    indentDate: '17/07/2026',
+    siteName: 'BIJETALA',
+    priority: 'Normal',
+    currentStageId: 'COMPLETED',
+    currentStageIndex: 10,
+    totalStages: 10,
+    status: 'Completed',
+    createdAt: '04/08/2026 11:12:44',
+    updatedAt: '07/08/2026 17:17:44',
+    totalDelayHours: 30.1,
+    remarks: 'Material received at Bijetala site. Verified by Civil/Mechanical Incharge and logged via Google Form.',
+    stages: [
+      {
+        stageId: 'STG-REC-01',
+        stageName: 'RECEIVE MATERIAL',
+        assignee: 'Site Store Incharge (Amanat / Bijetala Incharge)',
+        how: 'WHATSAPP/EMAIL',
+        plannedDateTime: '05/08/2026 15:12:44',
+        actualDateTime: '04/08/2026 11:21:04',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-REC-02',
+        stageName: 'CHECK MATERIAL WITH PO/DELIVERY CHALLAN/INVOICE/STOCK TRANSFER NOTE',
+        assignee: 'Site Store Incharge',
+        how: 'PHYSICALLY',
+        plannedDateTime: '04/08/2026 15:21:04',
+        actualDateTime: '04/08/2026 12:24:04',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-REC-03',
+        stageName: 'ARE THERE ANY DISCREPANCY OBSERVED ?',
+        assignee: 'Site Store Incharge',
+        how: 'WHATSAPP/CALL',
+        plannedDateTime: '04/08/2026 13:24:04',
+        actualDateTime: '04/08/2026 12:24:24',
+        decisionValue: 'No',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-REC-04',
+        stageName: 'INFORM CSR STORE & GET IT RECTIFIED',
+        assignee: 'Site Store Incharge',
+        how: 'WHATSAPP/EMAIL/PHONE',
+        status: 'Skipped',
+        notes: 'Skipped: No discrepancy observed',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-REC-05',
+        stageName: 'IS MATERIAL ACCEPTABLE ?',
+        assignee: 'Site Store Incharge',
+        how: 'WHATSAPP/CALL',
+        plannedDateTime: '04/08/2026 13:24:24',
+        actualDateTime: '04/08/2026 12:24:50',
+        decisionValue: 'Yes',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-REC-06',
+        stageName: 'RETURN MATERIAL TO REPAIRE STORE',
+        assignee: 'Site Store Incharge',
+        how: 'PHYSICALLY',
+        status: 'Skipped',
+        notes: 'Skipped: Material accepted in good condition',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-REC-07',
+        stageName: 'GET MATERIAL VERIFIED',
+        assignee: 'Chakravarti Ji / Pranay Ghosh',
+        how: 'WHATSAPP/EMAIL/PHYSICALLY',
+        plannedDateTime: '04/08/2026 13:24:50',
+        actualDateTime: '04/08/2026 13:09:14',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-REC-08',
+        stageName: 'GIVE RECEIVING IN STOCK TRANSFER NOTE/DELIVERY CHALLAN/INVOICE SEND TO RAIPUR STORE',
+        assignee: 'Site Store Incharge',
+        how: 'WHATSAPP/EMAIL/PHYSICALLY',
+        plannedDateTime: '04/08/2026 14:09:14',
+        actualDateTime: '04/08/2026 13:09:14',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-REC-09',
+        stageName: 'IS MATERIAL INWARD FORM FILLED ?',
+        assignee: 'Site DEO',
+        how: 'MATERIAL IN/OUT GOOGLE FORM',
+        plannedDateTime: '04/08/2026 14:09:14',
+        actualDateTime: '05/08/2026 18:07:33',
+        decisionValue: 'Yes',
+        status: 'Done',
+        timeDelayHours: 27.97
+      },
+      {
+        stageId: 'STG-REC-10',
+        stageName: 'FILL GOOGLE FORM FOR MATERIAL INWARD',
+        assignee: 'Site DEO',
+        how: 'MATERIAL IN/OUT GOOGLE FORM',
+        plannedDateTime: '06/08/2026 11:07:33',
+        actualDateTime: '07/08/2026 17:17:44',
+        status: 'Done',
+        timeDelayHours: 30.17,
+        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSfn24oudK7GLha0N1UOKAsNFRZudHSX_mA5ZVmsbFMr2dYxrA/viewform'
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-rec-752-1',
+    flowId: 'FLOW-REC-752-001',
+    flowType: 'SITE_RECEIVE',
+    linkedFlowId: 'FLOW-PSD-752-001',
+    requisitionNumber: '752',
+    indentNo: '752',
+    indentDate: '10/07/2026',
+    siteName: 'SILADEHI',
+    priority: 'Urgent',
+    currentStageId: 'STG-REC-09',
+    currentStageIndex: 8,
+    totalStages: 10,
+    status: 'In Progress',
+    createdAt: '04/08/2026 12:00:00',
+    updatedAt: '04/08/2026 15:30:00',
+    totalDelayHours: 0,
+    remarks: 'Physical material verified by Site Engineers. Awaiting Site DEO Material Inward Google Form submission.',
+    stages: [
+      {
+        stageId: 'STG-REC-01',
+        stageName: 'RECEIVE MATERIAL',
+        assignee: 'Site Store Incharge (Amanat / Siladehi Incharge)',
+        how: 'WHATSAPP/EMAIL',
+        plannedDateTime: '04/08/2026 14:00:00',
+        actualDateTime: '04/08/2026 12:30:00',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-REC-02',
+        stageName: 'CHECK MATERIAL WITH PO/DELIVERY CHALLAN/INVOICE/STOCK TRANSFER NOTE',
+        assignee: 'Site Store Incharge',
+        how: 'PHYSICALLY',
+        plannedDateTime: '04/08/2026 16:30:00',
+        actualDateTime: '04/08/2026 13:45:00',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-REC-03',
+        stageName: 'ARE THERE ANY DISCREPANCY OBSERVED ?',
+        assignee: 'Site Store Incharge',
+        how: 'WHATSAPP/CALL',
+        plannedDateTime: '04/08/2026 14:45:00',
+        actualDateTime: '04/08/2026 14:00:00',
+        decisionValue: 'No',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-REC-04',
+        stageName: 'INFORM CSR STORE & GET IT RECTIFIED',
+        assignee: 'Site Store Incharge',
+        how: 'WHATSAPP/EMAIL/PHONE',
+        status: 'Skipped',
+        notes: 'Skipped: No discrepancy observed',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-REC-05',
+        stageName: 'IS MATERIAL ACCEPTABLE ?',
+        assignee: 'Site Store Incharge',
+        how: 'WHATSAPP/CALL',
+        plannedDateTime: '04/08/2026 15:00:00',
+        actualDateTime: '04/08/2026 14:30:00',
+        decisionValue: 'Yes',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-REC-06',
+        stageName: 'RETURN MATERIAL TO REPAIRE STORE',
+        assignee: 'Site Store Incharge',
+        how: 'PHYSICALLY',
+        status: 'Skipped',
+        notes: 'Skipped: Consignment verified and acceptable',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-REC-07',
+        stageName: 'GET MATERIAL VERIFIED',
+        assignee: 'Chakravarti Ji / Pranay Ghosh',
+        how: 'WHATSAPP/EMAIL/PHYSICALLY',
+        plannedDateTime: '04/08/2026 15:30:00',
+        actualDateTime: '04/08/2026 15:15:00',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-REC-08',
+        stageName: 'GIVE RECEIVING IN STOCK TRANSFER NOTE/DELIVERY CHALLAN/INVOICE SEND TO RAIPUR STORE',
+        assignee: 'Site Store Incharge',
+        how: 'WHATSAPP/EMAIL/PHYSICALLY',
+        plannedDateTime: '04/08/2026 16:15:00',
+        actualDateTime: '04/08/2026 15:30:00',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-REC-09',
+        stageName: 'IS MATERIAL INWARD FORM FILLED ?',
+        assignee: 'Site DEO',
+        how: 'MATERIAL IN/OUT GOOGLE FORM',
+        plannedDateTime: '04/08/2026 16:30:00',
+        status: 'In Progress',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-REC-10',
+        stageName: 'FILL GOOGLE FORM FOR MATERIAL INWARD',
+        assignee: 'Site DEO',
+        how: 'MATERIAL IN/OUT GOOGLE FORM',
+        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSfn24oudK7GLha0N1UOKAsNFRZudHSX_mA5ZVmsbFMr2dYxrA/viewform',
+        status: 'Pending',
+        timeDelayHours: 0
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-psd-752-1',
+    flowId: 'FLOW-PSD-752-001',
+    flowType: 'PURCHASE_TO_STORE_DISPATCH',
+    linkedFlowId: 'FLOW-IND-752',
+    requisitionNumber: '752',
+    indentNo: '752',
+    indentDate: '10/07/2026',
+    siteName: 'SILADEHI',
+    priority: 'Urgent',
+    currentStageId: 'COMPLETED',
+    currentStageIndex: 10,
+    totalStages: 10,
+    status: 'Completed',
+    createdAt: '07/08/2026 12:12:52',
+    updatedAt: '04/08/2026 11:33:50',
+    totalDelayHours: 0,
+    remarks: 'Dispatched to Siladehi site with all documents. Receiving logged via Google Form.',
+    stages: [
+      {
+        stageId: 'STG-PSD-01',
+        stageName: 'RECEIVE PURCHASED MATERIAL',
+        assignee: 'Bramhanand Patel',
+        how: 'PHYSICALLY',
+        plannedDateTime: '07/08/2026 14:12:52',
+        actualDateTime: '03/08/2026 12:08:51',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PSD-02',
+        stageName: 'CHECK & VERIFY MATERIAL PURCHASED WITH PO/STOCK TRANSFER NOTE/INVOICE',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'PHYSICALLY',
+        plannedDateTime: '03/08/2026 14:08:51',
+        actualDateTime: '03/08/2026 12:09:27',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PSD-03',
+        stageName: 'PREPARE STOCK TRANSFER NOTE/DELIVERY CHALLAN',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'PHYSICAL COPY',
+        plannedDateTime: '03/08/2026 18:09:27',
+        actualDateTime: '03/08/2026 12:09:48',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PSD-04',
+        stageName: 'ARRANGE VEHICLE FOR DISPATCH',
+        assignee: 'Bramhanand Patel',
+        how: 'PHYSICAL',
+        plannedDateTime: '03/08/2026 13:09:48',
+        actualDateTime: '03/08/2026 13:06:38',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PSD-05',
+        stageName: 'IS E-WAY BILL REQUIRED?',
+        assignee: 'Bramhanand Patel',
+        how: 'WHATSAPP/CALL',
+        plannedDateTime: '03/08/2026 17:06:38',
+        actualDateTime: '03/08/2026 13:06:38',
+        decisionValue: 'No',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PSD-06',
+        stageName: 'SEND DELIVERY CHALLAN/STOCK TRANSFER NOTE FOR E-WAY BILL',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'WHATSAPP/EMAIL/PHYYSICAL',
+        status: 'Skipped',
+        notes: 'Skipped: E-Way Bill not required for this consignment',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PSD-07',
+        stageName: 'GET E-WAY BILL',
+        assignee: 'Bramhanand Patel',
+        how: 'WHATSAPP/EMAIL/PHYSICAL',
+        status: 'Skipped',
+        notes: 'Skipped: E-Way Bill not required for this consignment',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PSD-08',
+        stageName: 'LOAD MATERIAL FOR DISPATCH',
+        assignee: 'Bramhanand Patel',
+        how: 'PHYSICALLY',
+        plannedDateTime: '03/08/2026 17:06:38',
+        actualDateTime: '03/08/2026 13:07:23',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PSD-09',
+        stageName: 'DISPATCH ALL MATERIAL WITH ALL DOCUMENTS',
+        assignee: 'Bramhanand Patel',
+        how: 'PHYSICALLY',
+        plannedDateTime: '03/08/2026 17:07:23',
+        actualDateTime: '03/08/2026 13:07:42',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PSD-10',
+        stageName: 'GET RECEIVING',
+        assignee: 'Rajendra / Vivek / Rajnikant',
+        how: 'WHATSAPP/EMAIL/PHYSICALLY',
+        plannedDateTime: '04/08/2026 17:07:42',
+        actualDateTime: '04/08/2026 11:33:50',
+        status: 'Done',
+        timeDelayHours: 0,
+        doerName: 'Rajendra',
+        formResponseRef: 'https://forms.gle/tETaTMfRGfU2ERUc6'
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-psd-22-1',
+    flowId: 'FLOW-PSD-22-001',
+    flowType: 'PURCHASE_TO_STORE_DISPATCH',
+    linkedFlowId: 'FLOW-IND-22',
+    requisitionNumber: '22',
+    indentNo: '22',
+    indentDate: '12/07/2026',
+    siteName: 'BIJETALA',
+    priority: 'Normal',
+    currentStageId: 'STG-PSD-05',
+    currentStageIndex: 4,
+    totalStages: 10,
+    status: 'In Progress',
+    createdAt: '12/07/2026 09:30:00',
+    updatedAt: '12/07/2026 14:15:00',
+    totalDelayHours: 0,
+    remarks: 'Awaiting E-Way Bill decision by Store Manager Bramhanand Patel',
+    stages: [
+      {
+        stageId: 'STG-PSD-01',
+        stageName: 'RECEIVE PURCHASED MATERIAL',
+        assignee: 'Bramhanand Patel',
+        how: 'PHYSICALLY',
+        plannedDateTime: '12/07/2026 11:30:00',
+        actualDateTime: '12/07/2026 10:15:00',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PSD-02',
+        stageName: 'CHECK & VERIFY MATERIAL PURCHASED WITH PO/STOCK TRANSFER NOTE/INVOICE',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'PHYSICALLY',
+        plannedDateTime: '12/07/2026 12:15:00',
+        actualDateTime: '12/07/2026 11:45:00',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PSD-03',
+        stageName: 'PREPARE STOCK TRANSFER NOTE/DELIVERY CHALLAN',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'PHYSICAL COPY',
+        plannedDateTime: '12/07/2026 13:45:00',
+        actualDateTime: '12/07/2026 12:30:00',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PSD-04',
+        stageName: 'ARRANGE VEHICLE FOR DISPATCH',
+        assignee: 'Bramhanand Patel',
+        how: 'PHYSICAL',
+        plannedDateTime: '12/07/2026 18:30:00',
+        actualDateTime: '12/07/2026 14:15:00',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PSD-05',
+        stageName: 'IS E-WAY BILL REQUIRED?',
+        assignee: 'Bramhanand Patel',
+        how: 'WHATSAPP/CALL',
+        plannedDateTime: '12/07/2026 15:15:00',
+        status: 'In Progress',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PSD-06',
+        stageName: 'SEND DELIVERY CHALLAN/STOCK TRANSFER NOTE FOR E-WAY BILL',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'WHATSAPP/EMAIL/PHYYSICAL',
+        status: 'Pending',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PSD-07',
+        stageName: 'GET E-WAY BILL',
+        assignee: 'Bramhanand Patel',
+        how: 'WHATSAPP/EMAIL/PHYSICAL',
+        status: 'Pending',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PSD-08',
+        stageName: 'LOAD MATERIAL FOR DISPATCH',
+        assignee: 'Bramhanand Patel',
+        how: 'PHYSICALLY',
+        status: 'Pending',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PSD-09',
+        stageName: 'DISPATCH ALL MATERIAL WITH ALL DOCUMENTS',
+        assignee: 'Bramhanand Patel',
+        how: 'PHYSICALLY',
+        status: 'Pending',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PSD-10',
+        stageName: 'GET RECEIVING',
+        assignee: 'Rajendra / Vivek / Rajnikant',
+        how: 'WHATSAPP/EMAIL/PHYSICALLY',
+        formResponseRef: 'https://forms.gle/tETaTMfRGfU2ERUc6',
+        status: 'Pending',
+        timeDelayHours: 0
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-disp-752-1',
+    flowId: 'FLOW-DISP-752-001',
+    flowType: 'PAYMENT_TO_DISPATCH',
+    linkedFlowId: 'FLOW-IND-752',
+    poNumber: 'RAO/PO/260722-002',
+    vendorName: 'M/S ASHARAM ELECTRICALS',
+    poAssignTo: 'BRAHMANAND SIR',
+    indentNo: '752',
+    indentDate: '22/07/2026',
+    poDate: '22/07/2026',
+    siteName: 'SILADEHI',
+    priority: 'Urgent',
+    currentStageId: 'COMPLETED',
+    currentStageIndex: 7,
+    totalStages: 7,
+    status: 'Completed',
+    createdAt: '22/07/2026 18:27:48',
+    updatedAt: '16/06/2026 15:41:28',
+    totalDelayHours: 0,
+    remarks: 'Dispatched to Siladehi site via Purchase to Store to Dispatch Form',
+    stages: [
+      {
+        stageId: 'STG-DISP-01',
+        stageName: 'GET MATERIAL',
+        assignee: 'Brahmanand Patel / Rajendra',
+        how: 'WHATSAPP/CALL/PHYSICAL VERIFICATION',
+        plannedDateTime: '23/07/2026 14:27:48',
+        actualDateTime: '16/06/2026 15:40:11',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-DISP-02',
+        stageName: 'CHECK & VERIFY MATERIAL WITH PO',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'WHATSAPP/CALL/PHYSICAL VERIFICATION',
+        plannedDateTime: '17/06/2026 10:40:11',
+        actualDateTime: '16/06/2026 15:41:13',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-DISP-03',
+        stageName: 'IS MATERIAL ACCEPTABLE ?',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'WHATSAPP / CALL',
+        plannedDateTime: '16/06/2026 16:41:13',
+        actualDateTime: '16/06/2026 15:41:19',
+        decisionValue: 'Yes',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-DISP-04',
+        stageName: 'RETURN / REPLACE MATERIAL',
+        assignee: 'Rajendra / Vivek / Rajnikant',
+        how: 'PHYSICALLY',
+        status: 'Skipped',
+        notes: 'Skipped: Material accepted as per PO specifications',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-DISP-05',
+        stageName: 'IS MATERIAL REPLACED ?',
+        assignee: 'Rajendra / Vivek / Rajnikant',
+        how: 'WHATSAPP / CALL',
+        status: 'Skipped',
+        notes: 'Skipped: Material accepted as per PO specifications',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-DISP-06',
+        stageName: 'GET REFUND / CREDIT NOTES',
+        assignee: 'Rajendra / Vivek / Rajnikant',
+        how: 'WHATSAPP/ EMAIL / PHYSICAL COPY',
+        status: 'Skipped',
+        notes: 'Skipped: Material accepted as per PO specifications',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-DISP-07',
+        stageName: 'DISPATCH MATERIAL',
+        assignee: 'Rajendra / Rajnikant / Vivek',
+        how: 'PURCHASE TO STORE TO DISPATCH GOOGLE FORM',
+        plannedDateTime: '20/06/2026 11:41:19',
+        actualDateTime: '16/06/2026 15:41:28',
+        status: 'Done',
+        timeDelayHours: 0,
+        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSfDtaA-hHEepRqLxn69U-CeA7djTHNjJhnp_P9nEhdAuIjnhw/viewform'
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-disp-752-2',
+    flowId: 'FLOW-DISP-752-002',
+    flowType: 'PAYMENT_TO_DISPATCH',
+    linkedFlowId: 'FLOW-IND-752',
+    poNumber: 'RAO/PO/260715-008',
+    vendorName: 'M/S R D SONS',
+    poAssignTo: 'MR. VIVEK',
+    indentNo: '752',
+    indentDate: '17/07/2026',
+    poDate: '17/07/2026',
+    siteName: 'SILADEHI',
+    priority: 'Normal',
+    currentStageId: 'COMPLETED',
+    currentStageIndex: 7,
+    totalStages: 7,
+    status: 'Completed',
+    createdAt: '24/07/2026 17:22:32',
+    updatedAt: '16/06/2026 15:41:51',
+    totalDelayHours: 0,
+    remarks: 'Dispatched to Siladehi site via Purchase to Store to Dispatch Form',
+    stages: [
+      {
+        stageId: 'STG-DISP-01',
+        stageName: 'GET MATERIAL',
+        assignee: 'Vivek / Rajnikant',
+        how: 'WHATSAPP/CALL/PHYSICAL VERIFICATION',
+        plannedDateTime: '25/07/2026 13:22:32',
+        actualDateTime: '16/06/2026 15:41:34',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-DISP-02',
+        stageName: 'CHECK & VERIFY MATERIAL WITH PO',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'WHATSAPP/CALL/PHYSICAL VERIFICATION',
+        plannedDateTime: '17/06/2026 10:41:34',
+        actualDateTime: '16/06/2026 15:41:39',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-DISP-03',
+        stageName: 'IS MATERIAL ACCEPTABLE ?',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'WHATSAPP / CALL',
+        plannedDateTime: '16/06/2026 16:41:39',
+        actualDateTime: '16/06/2026 15:41:44',
+        decisionValue: 'Yes',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-DISP-04',
+        stageName: 'RETURN / REPLACE MATERIAL',
+        assignee: 'Rajendra / Vivek / Rajnikant',
+        how: 'PHYSICALLY',
+        status: 'Skipped',
+        notes: 'Skipped: Material accepted as per PO specifications',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-DISP-05',
+        stageName: 'IS MATERIAL REPLACED ?',
+        assignee: 'Rajendra / Vivek / Rajnikant',
+        how: 'WHATSAPP / CALL',
+        status: 'Skipped',
+        notes: 'Skipped: Material accepted as per PO specifications',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-DISP-06',
+        stageName: 'GET REFUND / CREDIT NOTES',
+        assignee: 'Rajendra / Vivek / Rajnikant',
+        how: 'WHATSAPP/ EMAIL / PHYSICAL COPY',
+        status: 'Skipped',
+        notes: 'Skipped: Material accepted as per PO specifications',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-DISP-07',
+        stageName: 'DISPATCH MATERIAL',
+        assignee: 'Rajendra / Rajnikant / Vivek',
+        how: 'PURCHASE TO STORE TO DISPATCH GOOGLE FORM',
+        plannedDateTime: '20/06/2026 11:41:44',
+        actualDateTime: '16/06/2026 15:41:51',
+        status: 'Done',
+        timeDelayHours: 0,
+        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSfDtaA-hHEepRqLxn69U-CeA7djTHNjJhnp_P9nEhdAuIjnhw/viewform'
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-disp-752-3',
+    flowId: 'FLOW-DISP-752-003',
+    flowType: 'PAYMENT_TO_DISPATCH',
+    linkedFlowId: 'FLOW-IND-752',
+    poNumber: 'RAO/MPO/17072026/14',
+    vendorName: 'MEHADIA STEEL TRADERS',
+    poAssignTo: 'MR. VIVEK JI',
+    indentNo: '752',
+    indentDate: '17/07/2026',
+    poDate: '17/07/2026',
+    siteName: 'SILADEHI',
+    priority: 'Normal',
+    currentStageId: 'COMPLETED',
+    currentStageIndex: 7,
+    totalStages: 7,
+    status: 'Completed',
+    createdAt: '31/07/2026 17:50:46',
+    updatedAt: '25/06/2026 11:30:26',
+    totalDelayHours: 0,
+    remarks: 'Dispatched to Siladehi site via Purchase to Store to Dispatch Form',
+    stages: [
+      {
+        stageId: 'STG-DISP-01',
+        stageName: 'GET MATERIAL',
+        assignee: 'Vivek / Rajnikant',
+        how: 'WHATSAPP/CALL/PHYSICAL VERIFICATION',
+        plannedDateTime: '01/08/2026 13:50:46',
+        actualDateTime: '25/06/2026 11:29:20',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-DISP-02',
+        stageName: 'CHECK & VERIFY MATERIAL WITH PO',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'WHATSAPP/CALL/PHYSICAL VERIFICATION',
+        plannedDateTime: '25/06/2026 14:29:20',
+        actualDateTime: '25/06/2026 11:29:57',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-DISP-03',
+        stageName: 'IS MATERIAL ACCEPTABLE ?',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'WHATSAPP / CALL',
+        plannedDateTime: '25/06/2026 12:29:57',
+        actualDateTime: '25/06/2026 11:30:11',
+        decisionValue: 'Yes',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-DISP-04',
+        stageName: 'RETURN / REPLACE MATERIAL',
+        assignee: 'Rajendra / Vivek / Rajnikant',
+        how: 'PHYSICALLY',
+        status: 'Skipped',
+        notes: 'Skipped: Material accepted as per PO specifications',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-DISP-05',
+        stageName: 'IS MATERIAL REPLACED ?',
+        assignee: 'Rajendra / Vivek / Rajnikant',
+        how: 'WHATSAPP / CALL',
+        status: 'Skipped',
+        notes: 'Skipped: Material accepted as per PO specifications',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-DISP-06',
+        stageName: 'GET REFUND / CREDIT NOTES',
+        assignee: 'Rajendra / Vivek / Rajnikant',
+        how: 'WHATSAPP/ EMAIL / PHYSICAL COPY',
+        status: 'Skipped',
+        notes: 'Skipped: Material accepted as per PO specifications',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-DISP-07',
+        stageName: 'DISPATCH MATERIAL',
+        assignee: 'Rajendra / Rajnikant / Vivek',
+        how: 'PURCHASE TO STORE TO DISPATCH GOOGLE FORM',
+        plannedDateTime: '29/06/2026 15:30:11',
+        actualDateTime: '25/06/2026 11:30:26',
+        status: 'Done',
+        timeDelayHours: 0,
+        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSfDtaA-hHEepRqLxn69U-CeA7djTHNjJhnp_P9nEhdAuIjnhw/viewform'
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-stk-476',
+    flowId: 'FLOW-STK-476',
+    flowType: 'CHECK_STOCK',
+    requisitionNumber: 'Indent no-476',
+    indentNo: '476',
+    indentDate: '07/08/2026',
+    siteName: 'BIJETALA',
+    priority: 'Urgent',
+    currentStageId: 'COMPLETED',
+    currentStageIndex: 5,
+    totalStages: 5,
+    status: 'Completed',
+    createdAt: '07/08/2026 16:55:36',
+    updatedAt: '08/08/2026 10:58:51',
+    totalDelayHours: 0,
+    remarks: 'Requisition completed with partial stock dispatch and balance PO indent',
+    stages: [
+      {
+        stageId: 'STG-STK-01',
+        stageName: 'CHECK STOCK',
+        assignee: 'Amanat Bharadwaj',
+        how: 'WHATSAPP/EMAIL/PHYSICALLY',
+        plannedDateTime: '08/08/2026 12:55:36',
+        actualDateTime: '07/08/2026 17:00:33',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-STK-02',
+        stageName: 'IS MATERIAL PURCHASE REQUIRED?',
+        assignee: 'Amanat Bharadwaj',
+        how: 'WHATSAPP/EMAIL/PHYSICALLY',
+        plannedDateTime: '08/08/2026 13:00:33',
+        actualDateTime: '07/08/2026 17:00:33',
+        status: 'Done',
+        decisionValue: 'Yes',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-STK-03',
+        stageName: 'SEND INDENT FOR MATERIAL TO BE PURCHASED',
+        assignee: 'Amanat Bharadwaj',
+        how: 'GOOGLE FORM INDENT TO PO',
+        plannedDateTime: '08/08/2026 11:00:33',
+        actualDateTime: '07/08/2026 17:00:51',
+        status: 'Done',
+        timeDelayHours: 0,
+        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLScYfRmZ4-SDR0DH5l680-0CK0Y0P5l8xAJVb6SWG9ALdAZDyQ/viewform'
+      },
+      {
+        stageId: 'STG-STK-04',
+        stageName: 'IS PARTIAL PURCHASE REQUIRED?',
+        assignee: 'Amanat Bharadwaj',
+        how: 'WHATSAPP/EMAIL/PHYSICALLY',
+        plannedDateTime: '08/08/2026 13:00:51',
+        actualDateTime: '07/08/2026 17:00:33',
+        status: 'Done',
+        decisionValue: 'Yes',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-STK-05',
+        stageName: 'DISPATCH MATERIAL AVAILABLE',
+        assignee: 'Amanat Bharadwaj',
+        how: 'GOOGLE FORM STOCK TO DISPATCH',
+        plannedDateTime: '10/08/2026 13:00:51',
+        actualDateTime: '08/08/2026 10:58:51',
+        status: 'Done',
+        timeDelayHours: 0,
+        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSdFWVguqGvgz3tiyjeKnlLxVsblra7MwaQQ36OLz9fRgCLC6A/viewform'
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-stk-752',
+    flowId: 'FLOW-STK-752',
+    flowType: 'CHECK_STOCK',
+    requisitionNumber: 'REQ-SILA-752',
+    indentNo: '752',
+    indentDate: '10/07/2026',
+    siteName: 'SILADEHI',
+    priority: 'Urgent',
+    currentStageId: 'STG-STK-05',
+    currentStageIndex: 4,
+    totalStages: 5,
+    status: 'In Progress',
+    createdAt: '10/07/2026 14:00:00',
+    updatedAt: '10/07/2026 15:25:00',
+    totalDelayHours: 0,
+    remarks: 'Structural welding electrodes: Partial stock dispatched from Central Store, balance routed to Purchase Dept',
+    stages: [
+      {
+        stageId: 'STG-STK-01',
+        stageName: 'CHECK STOCK',
+        assignee: 'Amanat Bharadwaj',
+        how: 'WHATSAPP / EMAIL / PHYSICALLY',
+        plannedDateTime: '10/07/2026 18:00:00',
+        actualDateTime: '10/07/2026 14:30:00',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-STK-02',
+        stageName: 'IS MATERIAL PURCHASE REQUIRED?',
+        assignee: 'Amanat Bharadwaj',
+        how: 'WHATSAPP / EMAIL / PHYSICALLY',
+        plannedDateTime: '10/07/2026 18:30:00',
+        actualDateTime: '10/07/2026 14:35:00',
+        status: 'Done',
+        decisionValue: 'Yes',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-STK-03',
+        stageName: 'SEND INDENT FOR MATERIAL TO BE PURCHASED',
+        assignee: 'Amanat Bharadwaj',
+        how: 'GOOGLE FORM INDENT TO PO',
+        plannedDateTime: '10/07/2026 16:35:00',
+        actualDateTime: '10/07/2026 15:20:00',
+        status: 'Done',
+        timeDelayHours: 0,
+        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLScYfRmZ4-SDR0DH5l680-0CK0Y0P5l8xAJVb6SWG9ALdAZDyQ/viewform'
+      },
+      {
+        stageId: 'STG-STK-04',
+        stageName: 'IS PARTIAL PURCHASE REQUIRED?',
+        assignee: 'Amanat Bharadwaj',
+        how: 'WHATSAPP / EMAIL / PHYSICALLY',
+        plannedDateTime: '10/07/2026 19:20:00',
+        actualDateTime: '10/07/2026 15:25:00',
+        status: 'Done',
+        decisionValue: 'Yes',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-STK-05',
+        stageName: 'DISPATCH MATERIAL AVAILABLE',
+        assignee: 'Amanat Bharadwaj',
+        how: 'GOOGLE FORM STOCK TO DISPATCH',
+        plannedDateTime: '11/07/2026 03:25:00',
+        status: 'In Progress',
+        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSdFWVguqGvgz3tiyjeKnlLxVsblra7MwaQQ36OLz9fRgCLC6A/viewform'
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-pay-001',
+    flowId: 'FLOW-PAY-260625-001',
+    flowType: 'PO_TO_PAYMENT',
+    poNumber: 'RAO/PO/260625-001',
+    vendorName: 'M/S R D SONS',
+    poAssignTo: 'MANISH KOSHLE',
+    indentNo: '22',
+    poDate: '25/06/2026',
+    poAmount: 27445,
+    siteName: 'SILADEHI',
+    priority: 'Normal',
+    currentStageId: 'COMPLETED',
+    currentStageIndex: 15,
+    totalStages: 15,
+    status: 'Completed',
+    createdAt: '25/06/2026 17:34:51',
+    updatedAt: '27/06/2026 13:29:02',
+    totalDelayHours: 26.68,
+    remarks: 'PO Advance & Account Payment settled with M/S R D SONS',
+    paymentMode: 'BANK_ACCOUNT',
+    stages: [
+      {
+        stageId: 'STG-PAY-01',
+        stageName: 'IS PAYMENT TO BE DONE FROM ACCOUNT?',
+        assignee: 'Pranjal Agrawal / Khushboo',
+        how: 'WHATSAPP / CALL / MANUAL',
+        plannedDateTime: '26/06/2026 10:34:51',
+        actualDateTime: '25/06/2026 17:45:08',
+        status: 'Done',
+        decisionValue: 'Yes',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PAY-02',
+        stageName: 'IS ACCOUNT ALREADY ADDED?',
+        assignee: 'Byamkesh Kaiwartya',
+        how: 'WHATSAPP / PHONE / EMAIL',
+        plannedDateTime: '26/06/2026 10:45:08',
+        actualDateTime: '25/06/2026 17:45:37',
+        status: 'Done',
+        decisionValue: 'Yes',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PAY-03',
+        stageName: 'GET CANCELLED CHEQUE/PASSBOOK COPY',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'WHATSAPP / CALL / MANUAL',
+        status: 'Skipped',
+        notes: 'Skipped: Account already verified in internet banking'
+      },
+      {
+        stageId: 'STG-PAY-04',
+        stageName: 'BENEFICIARY APPROVAL FORM',
+        assignee: 'Byamkesh Kaiwartya',
+        how: 'GOOGLE FORM',
+        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSfQBM1AEyn_ZDxlUOO3nzBSKZlgEedLNNKNOy8ViF2le6MJxA/viewform',
+        status: 'Skipped',
+        notes: 'Skipped: Account already verified in internet banking'
+      },
+      {
+        stageId: 'STG-PAY-05',
+        stageName: 'GET APPROVAL (BENEFICIARY)',
+        assignee: 'Pranjal Agrawal / Khushboo Sahu',
+        how: 'WHATSAPP / CALL / MANUAL',
+        status: 'Skipped',
+        notes: 'Skipped: Account already verified in internet banking'
+      },
+      {
+        stageId: 'STG-PAY-06',
+        stageName: 'ADD ACCOUNT ONLINE',
+        assignee: 'Byamkesh Kaiwartya',
+        how: 'WHATSAPP / CALL / MANUAL',
+        status: 'Skipped',
+        notes: 'Skipped: Account already verified in internet banking'
+      },
+      {
+        stageId: 'STG-PAY-07',
+        stageName: 'PAYMENT APPROVAL FORM',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'GOOGLE FORM',
+        plannedDateTime: '26/06/2026 10:45:37',
+        actualDateTime: '25/06/2026 17:46:38',
+        status: 'Done',
+        timeDelayHours: 0,
+        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSdF41kXu3ZViSeY9u3Kk7I1O4xsfBOLFZHPo2rgh-64IjuMgQ/viewform'
+      },
+      {
+        stageId: 'STG-PAY-08',
+        stageName: 'GET APPROVAL (PAYMENT)',
+        assignee: 'Pranjal Agrawal / Khushboo',
+        how: 'WHATSAPP / CALL / MANUAL',
+        plannedDateTime: '26/06/2026 10:46:38',
+        actualDateTime: '27/06/2026 13:27:25',
+        status: 'Done',
+        timeDelayHours: 26.68
+      },
+      {
+        stageId: 'STG-PAY-09',
+        stageName: 'BANK PAYMENT ENTRY',
+        assignee: 'Byamkesh Kaiwartya',
+        how: 'WHATSAPP / CALL / MANUAL',
+        plannedDateTime: '27/06/2026 14:27:25',
+        actualDateTime: '27/06/2026 13:28:49',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PAY-10',
+        stageName: 'GET ONLINE PAYMENT APPROVAL / PAYMENT DONE',
+        assignee: 'Pranjal Agrawal / Khushboo',
+        how: 'WHATSAPP / CALL / MANUAL',
+        plannedDateTime: '27/06/2026 14:28:49',
+        actualDateTime: '27/06/2026 13:28:49',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PAY-11',
+        stageName: 'PAYMENT APPROVAL FORM (UPI)',
+        assignee: 'Khushboo Sahu',
+        how: 'GOOGLE FORM',
+        status: 'Skipped',
+        notes: 'Skipped: Paid via Bank Account route'
+      },
+      {
+        stageId: 'STG-PAY-12',
+        stageName: 'GET APPROVAL (UPI)',
+        assignee: 'Pranjal Agrawal / Khushboo Sahu',
+        how: 'WHATSAPP / CALL / MANUAL',
+        status: 'Skipped',
+        notes: 'Skipped: Paid via Bank Account route'
+      },
+      {
+        stageId: 'STG-PAY-13',
+        stageName: 'GET QR CODE',
+        assignee: 'Rajnikant / Vivek / Raj',
+        how: 'WHATSAPP / CALL / MANUAL',
+        status: 'Skipped',
+        notes: 'Skipped: Paid via Bank Account route'
+      },
+      {
+        stageId: 'STG-PAY-14',
+        stageName: 'MAKE PAYMENT (UPI)',
+        assignee: 'Khushboo Sahu',
+        how: 'WHATSAPP / CALL / MANUAL',
+        status: 'Skipped',
+        notes: 'Skipped: Paid via Bank Account route'
+      },
+      {
+        stageId: 'STG-PAY-15',
+        stageName: 'SEND PAYMENT DETAILS TO GET MATERIAL',
+        assignee: 'Byamkesh Kaiwartya / Khushboo',
+        how: 'GOOGLE FORM',
+        plannedDateTime: '27/06/2026 14:28:49',
+        actualDateTime: '27/06/2026 13:29:02',
+        status: 'Done',
+        timeDelayHours: 0,
+        formResponseRef: 'https://forms.gle/o5PsEMYntAYXWZbJ8'
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-pay-752',
+    flowId: 'FLOW-PAY-752-001',
+    flowType: 'PO_TO_PAYMENT',
+    linkedFlowId: 'FLOW-IND-752',
+    poNumber: 'RAO/PO/752-001',
+    vendorName: 'M/S ESAB WELDING SOLUTIONS',
+    poAssignTo: 'MANISH KOSHLE',
+    indentNo: '752',
+    poDate: '05/10/2026',
+    poAmount: 85200,
+    siteName: 'SILADEHI',
+    priority: 'Urgent',
+    currentStageId: 'STG-PAY-01',
+    currentStageIndex: 0,
+    totalStages: 15,
+    status: 'In Progress',
+    createdAt: '05/10/2026 16:35:00',
+    updatedAt: '05/10/2026 16:40:00',
+    totalDelayHours: 0,
+    remarks: 'Advance payment dossier received from Purchase Dept (Indent #752)',
+    paymentMode: 'PENDING',
+    stages: [
+      {
+        stageId: 'STG-PAY-01',
+        stageName: 'IS PAYMENT TO BE DONE FROM ACCOUNT?',
+        assignee: 'Pranjal Agrawal / Khushboo',
+        how: 'WHATSAPP / CALL / MANUAL',
+        plannedDateTime: '05/10/2026 17:35:00',
+        status: 'In Progress',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-PAY-02',
+        stageName: 'IS ACCOUNT ALREADY ADDED?',
+        assignee: 'Byamkesh Kaiwartya',
+        how: 'WHATSAPP / PHONE / EMAIL',
+        status: 'Pending'
+      },
+      {
+        stageId: 'STG-PAY-03',
+        stageName: 'GET CANCELLED CHEQUE/PASSBOOK COPY',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'WHATSAPP / CALL / MANUAL',
+        status: 'Pending'
+      },
+      {
+        stageId: 'STG-PAY-04',
+        stageName: 'BENEFICIARY APPROVAL FORM',
+        assignee: 'Byamkesh Kaiwartya',
+        how: 'GOOGLE FORM',
+        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSfQBM1AEyn_ZDxlUOO3nzBSKZlgEedLNNKNOy8ViF2le6MJxA/viewform',
+        status: 'Pending'
+      },
+      {
+        stageId: 'STG-PAY-05',
+        stageName: 'GET APPROVAL (BENEFICIARY)',
+        assignee: 'Pranjal Agrawal / Khushboo Sahu',
+        how: 'WHATSAPP / CALL / MANUAL',
+        status: 'Pending'
+      },
+      {
+        stageId: 'STG-PAY-06',
+        stageName: 'ADD ACCOUNT ONLINE',
+        assignee: 'Byamkesh Kaiwartya',
+        how: 'WHATSAPP / CALL / MANUAL',
+        status: 'Pending'
+      },
+      {
+        stageId: 'STG-PAY-07',
+        stageName: 'PAYMENT APPROVAL FORM',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'GOOGLE FORM',
+        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSdF41kXu3ZViSeY9u3Kk7I1O4xsfBOLFZHPo2rgh-64IjuMgQ/viewform',
+        status: 'Pending'
+      },
+      {
+        stageId: 'STG-PAY-08',
+        stageName: 'GET APPROVAL (PAYMENT)',
+        assignee: 'Pranjal Agrawal / Khushboo',
+        how: 'WHATSAPP / CALL / MANUAL',
+        status: 'Pending'
+      },
+      {
+        stageId: 'STG-PAY-09',
+        stageName: 'BANK PAYMENT ENTRY',
+        assignee: 'Byamkesh Kaiwartya',
+        how: 'WHATSAPP / CALL / MANUAL',
+        status: 'Pending'
+      },
+      {
+        stageId: 'STG-PAY-10',
+        stageName: 'GET ONLINE PAYMENT APPROVAL / PAYMENT DONE',
+        assignee: 'Pranjal Agrawal / Khushboo',
+        how: 'WHATSAPP / CALL / MANUAL',
+        status: 'Pending'
+      },
+      {
+        stageId: 'STG-PAY-11',
+        stageName: 'PAYMENT APPROVAL FORM (UPI)',
+        assignee: 'Khushboo Sahu',
+        how: 'GOOGLE FORM',
+        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSf82paFNXOtDZHBEXR3aEddrOuGsvcdafFaoG_ZM9RFydNBHA/viewform',
+        status: 'Pending'
+      },
+      {
+        stageId: 'STG-PAY-12',
+        stageName: 'GET APPROVAL (UPI)',
+        assignee: 'Pranjal Agrawal / Khushboo Sahu',
+        how: 'WHATSAPP / CALL / MANUAL',
+        status: 'Pending'
+      },
+      {
+        stageId: 'STG-PAY-13',
+        stageName: 'GET QR CODE',
+        assignee: 'Rajnikant / Vivek / Raj',
+        how: 'WHATSAPP / CALL / MANUAL',
+        status: 'Pending'
+      },
+      {
+        stageId: 'STG-PAY-14',
+        stageName: 'MAKE PAYMENT (UPI)',
+        assignee: 'Khushboo Sahu',
+        how: 'WHATSAPP / CALL / MANUAL',
+        status: 'Pending'
+      },
+      {
+        stageId: 'STG-PAY-15',
+        stageName: 'SEND PAYMENT DETAILS TO GET MATERIAL',
+        assignee: 'Byamkesh Kaiwartya / Khushboo',
+        how: 'GOOGLE FORM',
+        formResponseRef: 'https://forms.gle/o5PsEMYntAYXWZbJ8',
+        status: 'Pending'
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-752',
+    flowId: 'FLOW-IND-752',
+    flowType: 'INDENT_PURCHASE',
+    requisitionNumber: 'REQ-2026-752',
+    indentNo: '752',
+    indentDate: '10/07/2026',
+    siteName: 'SILADEHI',
+    priority: 'Urgent',
+    currentStageId: 'STG-12',
+    currentStageIndex: 11,
+    totalStages: 12,
+    status: 'In Progress',
+    createdAt: '10/07/2026 15:29:47',
+    updatedAt: '16/06/2026 10:12:38',
+    totalDelayHours: 0,
+    remarks: 'Critical plant machinery repair item; approved for urgent procurement.',
+    stages: [
+      {
+        stageId: 'STG-01',
+        stageName: 'INDENT RECIEVE',
+        assignee: 'Amanat Bharadwaj',
+        how: 'WHATSAPP / CALL / PHYSICAL',
+        plannedDateTime: '10/07/2026 16:29:47',
+        actualDateTime: '15/06/2026 11:30:36',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-02',
+        stageName: 'DEGRADED MATERIAL CHECK',
+        assignee: 'Bramhanand Patel',
+        how: 'WHATSAPP / CALL / PHYSICAL',
+        plannedDateTime: '15/06/2026 12:30:36',
+        actualDateTime: '15/06/2026 11:32:00',
+        status: 'Done',
+        decisionValue: 'No',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-03',
+        stageName: 'RETURN OF DEGRADED MATERIAL FORM',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'GOOGLE FORM',
+        status: 'Skipped',
+        notes: 'Not applicable (No degraded material to return)'
+      },
+      {
+        stageId: 'STG-04',
+        stageName: 'PURCHASE APPROVAL',
+        assignee: 'Pranay Ghosh / Chakravarti Ji',
+        how: 'WHATSAPP / CALL / MANUAL SHEET',
+        plannedDateTime: '15/06/2026 14:30:36',
+        actualDateTime: '15/06/2026 11:37:33',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-05',
+        stageName: 'GET QUOTATION',
+        assignee: 'Bramhanand Patel',
+        how: 'WHATSAPP / CALL / MANUAL SHEET',
+        plannedDateTime: '18/06/2026 12:37:33',
+        actualDateTime: '15/06/2026 16:21:09',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-06',
+        stageName: 'CHECK OTHER QUOTATIONS',
+        assignee: 'Bramhanand Patel',
+        how: 'WHATSAPP / CALL / MANUAL SHEET',
+        plannedDateTime: '15/06/2026 17:21:09',
+        actualDateTime: '15/06/2026 16:21:09',
+        status: 'Done',
+        decisionValue: 'No',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-07',
+        stageName: 'GET OTHER QUOTATION',
+        assignee: 'Bramhanand Patel',
+        how: 'WHATSAPP / CALL / MANUAL SHEET',
+        status: 'Skipped',
+        notes: 'Single authorized OEM distributor'
+      },
+      {
+        stageId: 'STG-08',
+        stageName: 'L1 APPROVAL',
+        assignee: 'Bramhanand Patel',
+        how: 'WHATSAPP / CALL / MANUAL SHEET',
+        plannedDateTime: '15/06/2026 18:21:09',
+        actualDateTime: '15/06/2026 16:21:09',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-09',
+        stageName: 'GENERATE & SEND PO',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'WHATSAPP / CALL / MANUAL PO',
+        plannedDateTime: '16/06/2026 11:21:09',
+        actualDateTime: '16/06/2026 10:12:18',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-10',
+        stageName: 'ADVANCE PAYMENT DECISION',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'GOOGLE FORM',
+        plannedDateTime: '16/06/2026 11:30:00',
+        actualDateTime: '16/06/2026 10:12:28',
+        status: 'Done',
+        decisionValue: 'Yes',
+        timeDelayHours: 0,
+        formResponseRef: 'https://forms.gle/YzQWAkQDPKeeBkLe6'
+      },
+      {
+        stageId: 'STG-11',
+        stageName: 'SEND FOR PAYMENT',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'PAYMENT APPROVAL SHEET / ONLINE PAYMENT',
+        plannedDateTime: '16/06/2026 11:30:00',
+        actualDateTime: '16/06/2026 10:12:38',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-12',
+        stageName: 'MATERIAL COLLECTION PO',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'GOOGLE FORM',
+        plannedDateTime: '16/06/2026 12:30:00',
+        status: 'In Progress',
+        formResponseRef: 'https://forms.gle/o5PsEMYntAYXWZbJ8'
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-780',
+    flowId: 'FLOW-IND-780',
+    flowType: 'INDENT_PURCHASE',
+    requisitionNumber: 'REQ-2026-780',
+    indentNo: '780',
+    indentDate: '01/10/2026',
+    siteName: 'BIJETALA',
+    priority: 'Normal',
+    currentStageId: 'STG-05',
+    currentStageIndex: 4,
+    totalStages: 12,
+    status: 'In Progress',
+    createdAt: '01/10/2026 09:15:00',
+    updatedAt: '02/10/2026 14:00:00',
+    totalDelayHours: 1.5,
+    remarks: 'Standard quarterly structural consumables indent',
+    stages: [
+      {
+        stageId: 'STG-01',
+        stageName: 'INDENT RECIEVE',
+        assignee: 'Amanat Bharadwaj',
+        how: 'WHATSAPP / CALL / PHYSICAL',
+        plannedDateTime: '01/10/2026 10:15:00',
+        actualDateTime: '01/10/2026 10:05:00',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-02',
+        stageName: 'DEGRADED MATERIAL CHECK',
+        assignee: 'Bramhanand Patel',
+        how: 'WHATSAPP / CALL / PHYSICAL',
+        plannedDateTime: '01/10/2026 11:15:00',
+        actualDateTime: '01/10/2026 11:30:00',
+        status: 'Done',
+        decisionValue: 'Yes',
+        timeDelayHours: 0.25
+      },
+      {
+        stageId: 'STG-03',
+        stageName: 'RETURN OF DEGRADED MATERIAL FORM',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'GOOGLE FORM',
+        plannedDateTime: '01/10/2026 12:30:00',
+        actualDateTime: '01/10/2026 13:45:00',
+        status: 'Done',
+        timeDelayHours: 1.25,
+        formResponseRef: 'GF-RESP-9921'
+      },
+      {
+        stageId: 'STG-04',
+        stageName: 'PURCHASE APPROVAL',
+        assignee: 'Pranay Ghosh',
+        how: 'MANUAL SHEET',
+        plannedDateTime: '01/10/2026 16:45:00',
+        actualDateTime: '01/10/2026 16:30:00',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-05',
+        stageName: 'GET QUOTATION',
+        assignee: 'Bramhanand Patel',
+        how: 'CALL / EMAIL',
+        plannedDateTime: '02/10/2026 17:30:00',
+        status: 'In Progress'
+      }
+    ]
+  }
+];
+
+export const INITIAL_DELEGATION_TASKS: DelegationTask[] = [
+  {
+    id: 'del-vhdlgas',
+    taskId: 'vhdlgas',
+    name: 'POOJA RAO (MIS Executive)',
+    rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
+    task: 'SUBCONTRACTOR BILLING FMS',
+    firstDate: '01/10/2026',
+    latestRevision: '01/10/2026',
+    totalRevisions: 0,
+    status: 'Pending',
+    priority: 'Urgent'
+  },
+  {
+    id: 'del-nfs3wfn',
+    taskId: 'nfs3wfn',
+    name: 'BYAMKESH KAIWARTYA (IT Executive)',
+    rolePhone: 'BYAMKESH KAIWARTYA (IT Executive) - 9977853230',
+    task: 'return washing machine',
+    firstDate: '30/09/2026',
+    latestRevision: '30/09/2026',
+    totalRevisions: 0,
+    status: 'Pending',
+    priority: 'Normal'
+  },
+  {
+    id: 'del-g2qajsx',
+    taskId: 'g2qajsx',
+    name: 'POOJA RAO (MIS Executive)',
+    rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
+    task: 'CREATE SYSTEM MASTER FOR ACTIVE & INACTIVE SHEET',
+    firstDate: '18/09/2026',
+    latestRevision: '18/09/2026',
+    totalRevisions: 0,
+    status: 'Completed',
+    completedAt: '18/09/2026 17:45:00'
+  },
+  {
+    id: 'del-iks4ofb',
+    taskId: 'iks4ofb',
+    name: 'POOJA RAO (MIS Executive)',
+    rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
+    task: 'IBT ROLL OUT',
+    firstDate: '18/09/2026',
+    latestRevision: '18/09/2026',
+    totalRevisions: 0,
+    status: 'Completed',
+    completedAt: '18/09/2026 18:10:00'
+  },
+  {
+    id: 'del-2307kk7',
+    taskId: '2307kk7',
+    name: 'POOJA RAO (MIS Executive)',
+    rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
+    task: 'BENIFICEIARY ROLL OUT',
+    firstDate: '18/09/2026',
+    latestRevision: '18/09/2026',
+    totalRevisions: 0,
+    status: 'Completed',
+    completedAt: '18/09/2026 18:30:00'
+  },
+  {
+    id: 'del-8nxsaph',
+    taskId: '8nxsaph',
+    name: 'RAJNIKANT BEHERA (PURCHASER)',
+    rolePhone: 'RAJNIKANT BEHERA (PURCHASER) - 9348371469',
+    task: 'TABLE CLOCK REPAIRING',
+    firstDate: '19/09/2026',
+    latestRevision: '19/09/2026',
+    totalRevisions: 0,
+    status: 'Completed',
+    completedAt: '19/09/2026 16:00:00'
+  },
+  {
+    id: 'del-ztyjngb',
+    taskId: 'ztyjngb',
+    name: 'VINOD TIWARI (LIASING)',
+    rolePhone: 'VINOD TIWARI (LIASING) - 78692 34640',
+    task: 'FINAL DOCCUMENT COLLECTION',
+    firstDate: '30/09/2026',
+    latestRevision: '30/09/2026',
+    totalRevisions: 0,
+    status: 'Pending',
+    priority: 'Urgent'
+  },
+  {
+    id: 'del-5rfo8ok',
+    taskId: '5rfo8ok',
+    name: 'MAMTA KUMARI (HR)',
+    rolePhone: 'MAMTA KUMARI (HR) - 870 989 7038',
+    task: 'MIS Required: Timing 10 am to 8 pm, Location: Julum Tekari, Old Dhamtari Road, Raipur. Salary 20-25k',
+    firstDate: '26/09/2026',
+    latestRevision: '26/09/2026',
+    totalRevisions: 0,
+    status: 'Pending',
+    priority: 'Normal'
+  },
+  {
+    id: 'del-qpgi0f7',
+    taskId: 'qpgi0f7',
+    name: 'RAJNIKANT BEHERA (PURCHASER)',
+    rolePhone: 'RAJNIKANT BEHERA (PURCHASER) - 9348371469',
+    task: 'ALUM STONE & BOX',
+    firstDate: '21/09/2026',
+    latestRevision: '21/09/2026',
+    totalRevisions: 0,
+    status: 'Completed',
+    completedAt: '21/09/2026 15:20:00'
+  },
+  {
+    id: 'del-k012i9a',
+    taskId: 'k012i9a',
+    name: 'RAJENDRA SARTHI (PURCHASER)',
+    rolePhone: 'RAJENDRA SARTHI (PURCHASER) - 9343318047',
+    task: 'DOCCUMENT DROP TO RKC',
+    firstDate: '21/09/2026',
+    latestRevision: '21/09/2026',
+    totalRevisions: 0,
+    status: 'Completed',
+    completedAt: '21/09/2026 17:00:00'
+  },
+  {
+    id: 'del-89iyju4',
+    taskId: '89iyju4',
+    name: 'RAJNIKANT BEHERA (PURCHASER)',
+    rolePhone: 'RAJNIKANT BEHERA (PURCHASER) - 9348371469',
+    task: 'Purchase dog food',
+    firstDate: '24/09/2026',
+    revision1: '25/09/2026',
+    revision2: '25/09/2026',
+    latestRevision: '25/09/2026',
+    totalRevisions: 2,
+    status: 'Week Shifted',
+    priority: 'Normal',
+    revisionHistory: [
+      {
+        revisionNumber: 1,
+        previousDate: '24/09/2026',
+        newDate: '25/09/2026',
+        reason: 'Vendor store stock unavailable',
+        timestamp: '24/09/2026 14:00',
+        revisedBy: 'Rajnikant Behera'
+      },
+      {
+        revisionNumber: 2,
+        previousDate: '25/09/2026',
+        newDate: '25/09/2026',
+        reason: 'Shifted to weekend bulk transport run',
+        timestamp: '25/09/2026 09:30',
+        revisedBy: 'Bramhanand Patel'
+      }
+    ]
+  },
+  {
+    id: 'del-swnspsf',
+    taskId: 'swnspsf',
+    name: 'POOJA RAO (MIS Executive)',
+    rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
+    task: 'attendance collation fms',
+    firstDate: '24/09/2026',
+    latestRevision: '24/09/2026',
+    totalRevisions: 0,
+    status: 'Completed',
+    completedAt: '24/09/2026 19:00:00'
+  },
+  {
+    id: 'del-iz5qme6',
+    taskId: 'iz5qme6',
+    name: 'POOJA RAO (MIS Executive)',
+    rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
+    task: 'LEAVE SUBMISSION FMS',
+    firstDate: '24/09/2026',
+    latestRevision: '24/09/2026',
+    totalRevisions: 0,
+    status: 'Completed',
+    completedAt: '24/09/2026 19:30:00'
+  },
+  {
+    id: 'del-7yqfdf0',
+    taskId: '7yqfdf0',
+    name: 'POOJA RAO (MIS Executive)',
+    rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
+    task: 'MATETIAL ISSUE TO SUBCONTRACTOR FMS',
+    firstDate: '05/10/2026',
+    latestRevision: '05/10/2026',
+    totalRevisions: 0,
+    status: 'Pending',
+    priority: 'Urgent'
+  },
+  {
+    id: 'del-571x65t',
+    taskId: '571x65t',
+    name: 'PRANAY GHOSH (Project Manager)',
+    rolePhone: 'PRANAY GHOSH (Project Manager) - 9437342135',
+    task: 'ELECTRIC POLE',
+    firstDate: '29/09/2026',
+    latestRevision: '29/09/2026',
+    totalRevisions: 0,
+    status: 'Pending',
+    priority: 'Urgent'
+  },
+  {
+    id: 'del-t65ruur',
+    taskId: 't65ruur',
+    name: 'POOJA RAO (MIS Executive)',
+    rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
+    task: 'SALARY PREPARATION/PAYROLL PROCESSING FMS',
+    firstDate: '26/09/2026',
+    latestRevision: '26/09/2026',
+    totalRevisions: 0,
+    status: 'Pending',
+    priority: 'Urgent'
+  },
+  {
+    id: 'del-vvkafs5',
+    taskId: 'vvkafs5',
+    name: 'POOJA RAO (MIS Executive)',
+    rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
+    task: 'FUEL ISSUE FMS',
+    firstDate: '25/09/2026',
+    latestRevision: '25/09/2026',
+    totalRevisions: 0,
+    status: 'Completed',
+    completedAt: '25/09/2026 18:00:00'
+  }
+];
+
+export const INITIAL_CHECKLIST_ITEMS: ChecklistItem[] = [
+  // Amanat Bharadwaj - Store in charge
+  {
+    id: 'chk-270',
+    taskId: '270',
+    name: 'Amanat Bharadwaj (8084801020)',
+    email: 'rws.store1@gmail.com',
+    department: 'Store in charge',
+    frequency: 'W',
+    task: 'All Computer/Laptop Cleaning (CSR)',
+    plannedDate: '18/06/2026',
+    actualDate: '24/06/2026',
+    status: 'Done',
+    createdAt: '18/06/2026 08:00',
+    updatedAt: '24/06/2026 16:30'
+  },
+  {
+    id: 'chk-319',
+    taskId: '319',
+    name: 'Amanat Bharadwaj (8084801020)',
+    email: 'rws.store1@gmail.com',
+    department: 'Store in charge',
+    frequency: 'W',
+    task: 'All Computer/Laptop Check Running (CSR)',
+    plannedDate: '18/06/2026',
+    actualDate: '24/06/2026',
+    status: 'Done',
+    createdAt: '18/06/2026 08:00',
+    updatedAt: '24/06/2026 16:40'
+  },
+  {
+    id: 'chk-368',
+    taskId: '368',
+    name: 'Amanat Bharadwaj (8084801020)',
+    email: 'rws.store1@gmail.com',
+    department: 'Store in charge',
+    frequency: 'W',
+    task: 'All Camera Check/Maintenance (CSR)',
+    plannedDate: '18/06/2026',
+    actualDate: '24/06/2026',
+    status: 'Done',
+    createdAt: '18/06/2026 08:00',
+    updatedAt: '24/06/2026 17:00'
+  },
+  {
+    id: 'chk-417',
+    taskId: '417',
+    name: 'Amanat Bharadwaj (8084801020)',
+    email: 'rws.store1@gmail.com',
+    department: 'Store in charge',
+    frequency: 'W',
+    task: 'All Switch/Modem Check/Maintenance (CSR)',
+    plannedDate: '18/06/2026',
+    actualDate: '24/06/2026',
+    status: 'Done',
+    createdAt: '18/06/2026 08:00',
+    updatedAt: '24/06/2026 17:15'
+  },
+  {
+    id: 'chk-466',
+    taskId: '466',
+    name: 'Amanat Bharadwaj (8084801020)',
+    email: 'rws.store1@gmail.com',
+    department: 'Store in charge',
+    frequency: 'M',
+    task: 'All Printer Check/Maintenance (CSR)',
+    plannedDate: '18/06/2026',
+    actualDate: '24/06/2026',
+    status: 'Done',
+    createdAt: '18/06/2026 08:00',
+    updatedAt: '24/06/2026 17:30'
+  },
+  {
+    id: 'chk-478',
+    taskId: '478',
+    name: 'Amanat Bharadwaj (8084801020)',
+    email: 'rws.store1@gmail.com',
+    department: 'Store in charge',
+    frequency: 'M',
+    task: 'All Printer Ink/Cartridge Check/Maintenance (CSR)',
+    plannedDate: '18/06/2026',
+    actualDate: '24/06/2026',
+    status: 'Done',
+    createdAt: '18/06/2026 08:00',
+    updatedAt: '24/06/2026 17:45'
+  },
+  // Byamkesh Kaiwartya - IT Eng.
+  {
+    id: 'chk-1',
+    taskId: '1',
+    name: 'Byamkesh Kaiwartya (9977853230)',
+    email: 'itrpr@barbrik.in',
+    department: 'IT Eng.',
+    frequency: 'W',
+    task: 'All Computer/Laptop Cleaning (Raipur office)',
+    plannedDate: '20/06/2026',
+    actualDate: '24/06/2026',
+    status: 'Done',
+    createdAt: '20/06/2026 08:00',
+    updatedAt: '24/06/2026 14:00'
+  },
+  {
+    id: 'chk-50',
+    taskId: '50',
+    name: 'Byamkesh Kaiwartya (9977853230)',
+    email: 'itrpr@barbrik.in',
+    department: 'IT Eng.',
+    frequency: 'W',
+    task: 'All Computer/Laptop Check Running (Raipur office)',
+    plannedDate: '20/06/2026',
+    actualDate: '24/06/2026',
+    status: 'Done',
+    createdAt: '20/06/2026 08:00',
+    updatedAt: '24/06/2026 14:20'
+  },
+  {
+    id: 'chk-99',
+    taskId: '99',
+    name: 'Byamkesh Kaiwartya (9977853230)',
+    email: 'itrpr@barbrik.in',
+    department: 'IT Eng.',
+    frequency: 'W',
+    task: 'All Camera Check/Maintenance (Raipur office)',
+    plannedDate: '20/06/2026',
+    actualDate: '24/06/2026',
+    status: 'Done',
+    createdAt: '20/06/2026 08:00',
+    updatedAt: '24/06/2026 14:40'
+  },
+  {
+    id: 'chk-148',
+    taskId: '148',
+    name: 'Byamkesh Kaiwartya (9977853230)',
+    email: 'itrpr@barbrik.in',
+    department: 'IT Eng.',
+    frequency: 'W',
+    task: 'All Switch/Modem Check/Maintenance (Raipur office)',
+    plannedDate: '20/06/2026',
+    actualDate: '24/06/2026',
+    status: 'Done',
+    createdAt: '20/06/2026 08:00',
+    updatedAt: '24/06/2026 15:00'
+  },
+  {
+    id: 'chk-197',
+    taskId: '197',
+    name: 'Byamkesh Kaiwartya (9977853230)',
+    email: 'itrpr@barbrik.in',
+    department: 'IT Eng.',
+    frequency: 'W',
+    task: 'All Intercom equipments Check/Maintenance (Raipur office)',
+    plannedDate: '20/06/2026',
+    actualDate: '24/06/2026',
+    status: 'Done',
+    createdAt: '20/06/2026 08:00',
+    updatedAt: '24/06/2026 15:20'
+  },
+  {
+    id: 'chk-246',
+    taskId: '246',
+    name: 'Byamkesh Kaiwartya (9977853230)',
+    email: 'itrpr@barbrik.in',
+    department: 'IT Eng.',
+    frequency: 'M',
+    task: 'All Printer Check/Maintenance (Raipur office)',
+    plannedDate: '20/06/2026',
+    actualDate: '24/06/2026',
+    status: 'Done',
+    createdAt: '20/06/2026 08:00',
+    updatedAt: '24/06/2026 15:40'
+  },
+  {
+    id: 'chk-258',
+    taskId: '258',
+    name: 'Byamkesh Kaiwartya (9977853230)',
+    email: 'itrpr@barbrik.in',
+    department: 'IT Eng.',
+    frequency: 'M',
+    task: 'All Printer Ink/Cartridge Check/Maintenance (Raipur office)',
+    plannedDate: '20/06/2026',
+    actualDate: '24/06/2026',
+    status: 'Done',
+    createdAt: '20/06/2026 08:00',
+    updatedAt: '24/06/2026 16:00'
+  },
+  // Pappu Gupta / Rajesh Singh - Bijetala
+  {
+    id: 'chk-490',
+    taskId: '490',
+    name: 'Pappu Gupta / Rajesh Singh',
+    email: 'bijetala.it2@gmail.com',
+    department: 'Sr. Structure',
+    frequency: 'W',
+    task: 'All Computer/Laptop Cleaning (Bijetala)',
+    plannedDate: '20/06/2026',
+    actualDate: '24/06/2026',
+    status: 'Done',
+    createdAt: '20/06/2026 08:00',
+    updatedAt: '24/06/2026 16:20'
+  },
+  {
+    id: 'chk-710',
+    taskId: '710',
+    name: 'Aman Kumar',
+    email: 'siladehi.it1@gmail.com',
+    department: 'Structure',
+    frequency: 'W',
+    task: 'All Computer/Laptop Cleaning (Siladehi)',
+    plannedDate: '20/06/2026',
+    actualDate: '24/06/2026',
+    status: 'Done',
+    createdAt: '20/06/2026 08:00',
+    updatedAt: '24/06/2026 16:30'
+  },
+  // Active/Upcoming Checklists for current date
+  {
+    id: 'chk-cur-01',
+    taskId: '901',
+    name: 'Amanat Bharadwaj (8084801020)',
+    email: 'rws.store1@gmail.com',
+    department: 'Store in charge',
+    frequency: 'W',
+    task: 'Physical Verification of Degraded Materials in Store Bay 4',
+    plannedDate: '06/10/2026',
+    status: 'Pending',
+    createdAt: '01/10/2026 08:00',
+    updatedAt: '01/10/2026 08:00'
+  },
+  {
+    id: 'chk-cur-02',
+    taskId: '902',
+    name: 'Byamkesh Kaiwartya (9977853230)',
+    email: 'itrpr@barbrik.in',
+    department: 'IT Eng.',
+    frequency: 'W',
+    task: 'Server Room UPS & Backup Battery Health Check',
+    plannedDate: '05/10/2026',
+    status: 'Pending',
+    createdAt: '01/10/2026 08:00',
+    updatedAt: '01/10/2026 08:00'
+  }
+];
+
+export const INITIAL_INVENTORY_ITEMS: InventoryItem[] = [
+  {
+    id: 'inv-001',
+    itemId: 'ITEM-IT-001',
+    name: 'HP LaserJet Pro MFP M428fdw',
+    category: 'IT Equipment',
+    location: 'Raipur Office',
+    currentStock: 4,
+    minThreshold: 2,
+    unit: 'Units',
+    condition: 'Good',
+    lastCheckedDate: '24/06/2026'
+  },
+  {
+    id: 'inv-002',
+    itemId: 'ITEM-IT-002',
+    name: 'Cisco Catalyst 24-Port Gigabit Switch',
+    category: 'IT Equipment',
+    location: 'Siladehi Site',
+    currentStock: 2,
+    minThreshold: 1,
+    unit: 'Units',
+    condition: 'Good',
+    lastCheckedDate: '24/06/2026'
+  },
+  {
+    id: 'inv-003',
+    itemId: 'ITEM-IT-003',
+    name: 'Hikvision 4MP IP Dome Camera',
+    category: 'IT Equipment',
+    location: 'Bijetala Site',
+    currentStock: 18,
+    minThreshold: 5,
+    unit: 'Units',
+    condition: 'Good',
+    lastCheckedDate: '24/06/2026'
+  },
+  {
+    id: 'inv-004',
+    itemId: 'ITEM-IT-004',
+    name: 'Dell OptiPlex 3080 Desktop Core i5',
+    category: 'IT Equipment',
+    location: 'Central Store',
+    currentStock: 3,
+    minThreshold: 4,
+    unit: 'Units',
+    condition: 'Fair',
+    lastCheckedDate: '24/06/2026'
+  },
+  {
+    id: 'inv-005',
+    itemId: 'ITEM-MECH-005',
+    name: 'Heavy Duty Structural Electric Pole Insulators',
+    category: 'Plant Machinery',
+    location: 'Siladehi Site',
+    currentStock: 12,
+    minThreshold: 20,
+    unit: 'Sets',
+    condition: 'Degraded/Damaged',
+    lastCheckedDate: '29/09/2026',
+    returnDegradedSheetRef: 'REQ-2026-752'
+  },
+  {
+    id: 'inv-006',
+    itemId: 'ITEM-MAT-006',
+    name: 'Alum Stone Industrial Grade 50kg Bags',
+    category: 'Consumables',
+    location: 'Central Store',
+    currentStock: 35,
+    minThreshold: 15,
+    unit: 'Bags',
+    condition: 'Good',
+    lastCheckedDate: '21/09/2026'
+  }
+];
+
+export const INITIAL_INVENTORY_MOVEMENTS: InventoryMovement[] = [
+  {
+    id: 'mov-001',
+    transactionId: 'TXN-2026-091',
+    itemId: 'ITEM-IT-001',
+    itemName: 'HP LaserJet Pro MFP M428fdw',
+    type: 'ISSUE',
+    quantity: 1,
+    sourceLocation: 'Central Store',
+    destinationLocation: 'Raipur Office',
+    timestamp: '20/06/2026 11:00',
+    referenceDoc: 'CHK-246',
+    initiatedBy: 'Byamkesh Kaiwartya',
+    notes: 'Monthly replacement cartridge & printer test complete'
+  },
+  {
+    id: 'mov-002',
+    transactionId: 'TXN-2026-092',
+    itemId: 'ITEM-MECH-005',
+    itemName: 'Heavy Duty Structural Electric Pole Insulators',
+    type: 'RETURN_DEGRADED',
+    quantity: 6,
+    sourceLocation: 'Siladehi Site',
+    destinationLocation: 'Central Store - Scrap Bay',
+    timestamp: '15/06/2026 11:32',
+    referenceDoc: 'REQ-2026-752',
+    initiatedBy: 'Bramhanand Patel',
+    notes: 'Degraded damaged items decommissioned via FMS Stage 2'
+  }
+];
+
+export const DEFAULT_REGISTRY_CONFIG: CentralRegistryConfig = {
+  organizationName: 'BarBrik Construction & Engineering',
+  activeDataSource: 'HYBRID_TRANSITION',
+  sheetsConfig: {
+    fmsSpreadsheetId: '1eB8x9Q_fms_central_indent_v2',
+    fmsSheetTabId: 'FMS_INDENT_RECIEVE',
+    delegationSpreadsheetId: '1184708924_delegation_master',
+    delegationSheetTabId: 'DTA_TASKS',
+    checklistSpreadsheetId: '2092959791_checklist_compliance',
+    checklistSheetTabId: 'CHECKLIST_ITEMS',
+    inventorySpreadsheetId: '1ims_central_store_v1',
+    inventorySheetTabId: 'IMS_STOCK_MASTER'
+  },
+  formsConfig: {
+    returnOfDegradedMaterialFormUrl: 'https://forms.gle/degraded-material-sample',
+    advancePaymentApprovalFormUrl: 'https://forms.gle/YzQWAkQDPKeeBkLe6',
+    materialCollectionPoFormUrl: 'https://forms.gle/o5PsEMYntAYXWZbJ8',
+    generalIndentFormUrl: 'https://forms.gle/indent-requisition-form'
+  },
+  driveConfig: {
+    sharedDriveId: '0ABrBk_Shared_Org_Drive_Root',
+    billsAndInvoicesFolderId: '1Fdr_Bills_Invoices_Archive',
+    purchaseOrdersFolderId: '1Fdr_Approved_PO_PDFs',
+    evidencePhotosFolderId: '1Fdr_Checklist_Site_Photos'
+  },
+  databaseSchemaReady: true
+};
