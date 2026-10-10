@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { db, testConnection } from './firebase';
-import { collection, doc, getDocs, setDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
 import { 
   ChecklistItem, 
   DelegationTask, 
@@ -130,6 +130,23 @@ const STORAGE_KEYS = {
   AUTH_USER: 'barbrik_ops_auth_user_v1',
 };
 
+export function sanitizeForFirestore<T>(obj: T): T {
+  if (obj === null || obj === undefined) return null as any;
+  if (typeof obj !== 'object') return obj;
+  if (obj instanceof Date) return obj.toISOString() as any;
+  if (Array.isArray(obj)) {
+    return obj.map((item) => sanitizeForFirestore(item)) as any;
+  }
+  const clean: Record<string, any> = {};
+  for (const key of Object.keys(obj as Record<string, any>)) {
+    const val = (obj as Record<string, any>)[key];
+    if (val !== undefined) {
+      clean[key] = sanitizeForFirestore(val);
+    }
+  }
+  return clean as T;
+}
+
 class StorageAdapter {
   private auditLogs: AuditLogEntry[] = [];
 
@@ -139,72 +156,128 @@ class StorageAdapter {
 
   private syncToFirestore(collectionName: string, items: any[], idKey: string) {
     try {
+      const currentIds = new Set(
+        items.map((item) => String(item[idKey] || item.id || item.flowId || item.taskId || item.itemId || item.userId || item.auditId)).filter(Boolean)
+      );
+
+      // 1. Create / Update (Upsert) clean items
       for (const item of items) {
         const id = item[idKey] || item.id || item.flowId || item.taskId || item.itemId || item.userId || item.auditId;
         if (id) {
-          setDoc(doc(db, collectionName, String(id)), item, { merge: true }).catch(() => {});
+          const cleanPayload = sanitizeForFirestore(item);
+          setDoc(doc(db, collectionName, String(id)), cleanPayload, { merge: true })
+            .catch((err) => {
+              console.warn(`[Firestore Write Error] ${collectionName}/${id}:`, err?.message || err);
+            });
         }
       }
+
+      // 2. Delete removed items from remote Firestore collection
+      getDocs(collection(db, collectionName)).then((snap) => {
+        snap.docs.forEach((d) => {
+          if (!currentIds.has(d.id)) {
+            deleteDoc(doc(db, collectionName, d.id)).catch(() => {});
+          }
+        });
+      }).catch(() => {});
     } catch (err) {
-      // Background sync warning
+      console.warn(`[Firestore Sync Exception] ${collectionName}:`, err);
+    }
+  }
+
+  public deleteFromFirestore(collectionName: string, id: string) {
+    try {
+      deleteDoc(doc(db, collectionName, id)).catch((err) => {
+        console.warn(`[Firestore Delete Error] ${collectionName}/${id}:`, err?.message || err);
+      });
+    } catch (err) {
+      console.warn(`[Firestore Delete Exception] ${collectionName}/${id}:`, err);
     }
   }
 
   public async loadFromFirestore() {
     try {
       const isConnected = await testConnection();
-      if (!isConnected) return false;
+      if (!isConnected) {
+        console.warn('Firestore server not reachable, serving cached local data.');
+        return false;
+      }
 
+      // 1. Users
       const usersSnap = await getDocs(collection(db, 'users'));
       if (!usersSnap.empty) {
         const remoteUsers = usersSnap.docs.map((d) => d.data() as UserProfile);
         if (remoteUsers.length > 0) {
           localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(remoteUsers));
         }
+      } else {
+        const localUsers = this.getUsers();
+        this.syncToFirestore('users', localUsers, 'userId');
       }
 
+      // 2. FMS Workflows
       const fmsSnap = await getDocs(collection(db, 'fmsFlows'));
       if (!fmsSnap.empty) {
         const remoteFlows = fmsSnap.docs.map((d) => d.data() as FmsInstance);
         if (remoteFlows.length > 0) {
           localStorage.setItem(STORAGE_KEYS.FMS, JSON.stringify(remoteFlows));
         }
+      } else {
+        const localFlows = this.getFmsFlows();
+        this.syncToFirestore('fmsFlows', localFlows, 'flowId');
       }
 
+      // 3. Delegation Tasks
       const delegSnap = await getDocs(collection(db, 'delegationTasks'));
       if (!delegSnap.empty) {
         const remoteDeleg = delegSnap.docs.map((d) => d.data() as DelegationTask);
         if (remoteDeleg.length > 0) {
           localStorage.setItem(STORAGE_KEYS.DELEGATION, JSON.stringify(remoteDeleg));
         }
+      } else {
+        const localDeleg = this.getDelegationTasks();
+        this.syncToFirestore('delegationTasks', localDeleg, 'taskId');
       }
 
+      // 4. Checklist Items
       const chkSnap = await getDocs(collection(db, 'checklistItems'));
       if (!chkSnap.empty) {
         const remoteChk = chkSnap.docs.map((d) => d.data() as ChecklistItem);
         if (remoteChk.length > 0) {
           localStorage.setItem(STORAGE_KEYS.CHECKLIST, JSON.stringify(remoteChk));
         }
+      } else {
+        const localChk = this.getChecklistItems();
+        this.syncToFirestore('checklistItems', localChk, 'id');
       }
 
+      // 5. Inventory Items
       const invSnap = await getDocs(collection(db, 'inventoryItems'));
       if (!invSnap.empty) {
         const remoteInv = invSnap.docs.map((d) => d.data() as InventoryItem);
         if (remoteInv.length > 0) {
           localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(remoteInv));
         }
+      } else {
+        const localInv = this.getInventoryItems();
+        this.syncToFirestore('inventoryItems', localInv, 'itemId');
       }
 
+      // 6. Notice Board
       const noticeSnap = await getDocs(collection(db, 'noticeBoard'));
       if (!noticeSnap.empty) {
         const remoteNotice = noticeSnap.docs.map((d) => d.data() as NoticeBoardItem);
         if (remoteNotice.length > 0) {
           localStorage.setItem(STORAGE_KEYS.NOTICE_BOARD, JSON.stringify(remoteNotice));
         }
+      } else {
+        const localNotices = this.getNoticeBoard();
+        this.syncToFirestore('noticeBoard', localNotices, 'id');
       }
 
       return true;
     } catch (e) {
+      console.warn('Error loading from Firestore:', e);
       return false;
     }
   }
@@ -260,6 +333,7 @@ class StorageAdapter {
     };
     logs.unshift(newEntry);
     localStorage.setItem(STORAGE_KEYS.AUDIT, JSON.stringify(logs.slice(0, 200)));
+    this.syncToFirestore('auditLogs', [newEntry], 'auditId');
   }
 
   public getAuditLogs(): AuditLogEntry[] {
