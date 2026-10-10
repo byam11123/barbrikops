@@ -481,34 +481,36 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             </button>
           </form>
 
-          {/* Quick Demo Staff Switcher */}
-          <div className="pt-6 border-t border-slate-200 space-y-3">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider">
-              <span className="flex items-center gap-1.5">
-                <KeyRound className="w-4 h-4 text-indigo-600" />
-                Quick Demo Login
-              </span>
-              <span className="text-[11px] text-slate-400 font-normal">Click to auto-fill</span>
-            </div>
+          {/* Quick Demo Staff Switcher (Automatically hidden when published in production mode) */}
+          {!import.meta.env.PROD && (
+            <div className="pt-6 border-t border-slate-200 space-y-3">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider">
+                <span className="flex items-center gap-1.5">
+                  <KeyRound className="w-4 h-4 text-indigo-600" />
+                  Quick Demo Login (Dev Mode)
+                </span>
+                <span className="text-[11px] text-slate-400 font-normal">Click to auto-fill</span>
+              </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {USERS.slice(0, 4).map((u) => (
-                <button
-                  key={u.userId}
-                  type="button"
-                  onClick={() => handleQuickDemoSelect(u)}
-                  className="p-3 rounded-xl bg-slate-50 hover:bg-indigo-50/60 border border-slate-200/90 hover:border-indigo-300 text-left transition-all cursor-pointer group"
-                >
-                  <div className="font-bold text-xs text-slate-900 group-hover:text-indigo-700 truncate">
-                    {u.name}
-                  </div>
-                  <div className="text-[11px] text-slate-500 truncate mt-0.5">
-                    {u.role} ({u.username})
-                  </div>
-                </button>
-              ))}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {USERS.slice(0, 4).map((u) => (
+                  <button
+                    key={u.userId}
+                    type="button"
+                    onClick={() => handleQuickDemoSelect(u)}
+                    className="p-3 rounded-xl bg-slate-50 hover:bg-indigo-50/60 border border-slate-200/90 hover:border-indigo-300 text-left transition-all cursor-pointer group"
+                  >
+                    <div className="font-bold text-xs text-slate-900 group-hover:text-indigo-700 truncate">
+                      {u.name}
+                    </div>
+                    <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                      {u.role} ({u.username})
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Support Note */}
           <div className="pt-4 text-center text-xs text-slate-400">
