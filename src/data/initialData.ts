@@ -14,7 +14,7 @@ import {
 export const INITIAL_NOTICE_BOARD: NoticeBoardItem[] = [
   {
     id: 'NB-01',
-    title: '🚨 Mandatory Daily Material Stock Count Audit at Central Store',
+    title: 'Mandatory Daily Material Stock Count Audit at Central Store',
     category: 'URGENT',
     content: 'All Store Keepers must verify physical bin counts against Google Sheets ledger by 05:00 PM every evening. Any stock discrepancies must be reported via Fms Store Check Stock module.',
     date: '09/10/2026',
@@ -23,7 +23,7 @@ export const INITIAL_NOTICE_BOARD: NoticeBoardItem[] = [
   },
   {
     id: 'NB-02',
-    title: '⚠️ Site Safety Protocol & Helmet Verification Checklist',
+    title: 'Site Safety Protocol & Helmet Verification Checklist',
     category: 'SAFETY',
     content: 'Mandatory safety check required for all field engineers at Siladehi & Bijetala sites before operating heavy equipment.',
     date: '08/10/2026',
@@ -32,7 +32,7 @@ export const INITIAL_NOTICE_BOARD: NoticeBoardItem[] = [
   },
   {
     id: 'NB-03',
-    title: '📢 Vendor Payment Voucher Fast-Tracking (SLA Update)',
+    title: 'Vendor Payment Voucher Fast-Tracking (SLA Update)',
     category: 'CIRCULAR',
     content: 'Accounts PO to Payment vouchers with bank approval SLA limits updated. Fast-track payments will now auto-alert Finance Manager after +1 hour delay.',
     date: '05/10/2026',
@@ -41,7 +41,7 @@ export const INITIAL_NOTICE_BOARD: NoticeBoardItem[] = [
   },
   {
     id: 'NB-04',
-    title: '🛠️ Equipment Part Repair Tracking Module Active',
+    title: 'Equipment Part Repair Tracking Module Active',
     category: 'SITE_OPS',
     content: 'All breakdown reports for plant machinery and vehicles should now be logged via FMS Equipment Part Repair flow.',
     date: '02/10/2026',

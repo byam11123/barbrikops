@@ -657,11 +657,11 @@ export const FmsAuditLedgerView: React.FC<FmsAuditLedgerViewProps> = ({
                                         const isChecked = stage.checkedCheckpoints?.includes(cp);
                                         return (
                                           <div key={cIdx} className="flex items-center gap-1.5 text-xs text-slate-700">
-                                            <span className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[10px] ${
-                                              isChecked ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-400'
-                                            }`}>
-                                              ✓
-                                            </span>
+                                            {isChecked ? (
+                                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                            ) : (
+                                              <span className="w-3.5 h-3.5 rounded border border-slate-300 shrink-0" />
+                                            )}
                                             <span className={isChecked ? 'font-medium text-slate-800' : 'text-slate-500'}>
                                               {cp}
                                             </span>

@@ -120,6 +120,22 @@ export interface NoticeBoardItem {
   isPinned?: boolean;
 }
 
+export type ShowcaseCategory = 'ALL' | 'NOTICE' | 'QUOTE' | 'CELEBRATION' | 'WISHES' | 'GALLERY';
+
+export interface DynamicShowcaseSlide {
+  id: string;
+  category: 'NOTICE' | 'QUOTE' | 'CELEBRATION' | 'WISHES' | 'GALLERY';
+  title: string;
+  subtitle?: string;
+  content: string;
+  authorOrTarget?: string;
+  date?: string;
+  imageUrl?: string;
+  badgeText?: string;
+  tagColor?: 'rose' | 'amber' | 'indigo' | 'emerald' | 'purple' | 'sky';
+  isPinned?: boolean;
+}
+
 export interface Department {
   departmentId: string;
   name: string;

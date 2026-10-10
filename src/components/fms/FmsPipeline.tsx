@@ -28,8 +28,8 @@ import {
   UserCheck,
   Wrench,
   Cog,
-  FileSpreadsheet,
   Zap,
+  FileSpreadsheet,
   Table,
   ClipboardList,
   Download
@@ -1696,8 +1696,8 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                         </span>
                       </div>
                       {isMyCurrentStage && (
-                        <div className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-bold mt-1 inline-block">
-                          ⚡ Waiting for you ({currentStage?.assignee})
+                        <div className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-bold mt-1 inline-flex items-center gap-1">
+                          <Zap className="w-3 h-3 text-amber-600" /> Waiting for you ({currentStage?.assignee})
                         </div>
                       )}
                       {/* Progress bar */}
@@ -2605,8 +2605,8 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                   <div className="m-5 p-4 rounded-xl border bg-amber-50/80 border-amber-300 ring-1 ring-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase text-white bg-amber-600 animate-pulse">
-                          ⚡ Your Action Required: Step {activeFlow.currentStageIndex + 1} / {activeFlow.totalStages}
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase text-white bg-amber-600 flex items-center gap-1 animate-pulse">
+                          <Zap className="w-3 h-3 text-white" /> Your Action Required: Step {activeFlow.currentStageIndex + 1} / {activeFlow.totalStages}
                         </span>
                         <h4 className="font-bold text-slate-900 text-sm">
                           {activeFlow.stages[activeFlow.currentStageIndex].stageName}

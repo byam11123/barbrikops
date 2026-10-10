@@ -32,6 +32,7 @@ import {
   Download
 } from 'lucide-react';
 import { downloadCsv } from '../../utils/csvExporter';
+import { CustomSelect } from '../common/CustomSelect';
 import { ChecklistItem, DelegationTask, FmsInstance, UserProfile, ProcessRemark, FmsStageDefinition, isUserSuperAdmin } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { 
@@ -970,31 +971,35 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         {/* Filters & Actions on Right */}
         <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap shrink-0">
           {/* Workload Status Selector Dropdown */}
-          <select
-            aria-label="Filter by workload status"
+          <CustomSelect
+            options={[
+              { value: 'ALL', label: `All (${unifiedItems.length})` },
+              { value: 'DUE_TODAY', label: `Due Today (${dueTodayItems.length})`, badge: 'Today' },
+              { value: 'OVERDUE', label: `Overdue (${overdueItems.length})`, badge: 'Alert' },
+              { value: 'PENDING', label: `Pending (${pendingItems.length})` },
+              { value: 'COMPLETED', label: `Completed (${completedItems.length})` },
+            ]}
             value={selectedCondition}
-            onChange={(e) => setSelectedCondition(e.target.value as StatCondition)}
-            className="text-xs bg-white border border-slate-300 rounded-lg h-8 py-1 px-2 font-bold text-slate-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 shrink-0"
-          >
-            <option value="ALL">All — {unifiedItems.length}</option>
-            <option value="DUE_TODAY">Due Today — {dueTodayItems.length}</option>
-            <option value="OVERDUE">Overdue — {overdueItems.length}</option>
-            <option value="PENDING">Pending — {pendingItems.length}</option>
-            <option value="COMPLETED">Completed — {completedItems.length}</option>
-          </select>
+            onChange={(val) => setSelectedCondition(val as StatCondition)}
+            size="xs"
+            variant="default"
+            className="w-36"
+          />
 
           {/* Module Dropdown */}
-          <select
-            aria-label="Filter by module type"
+          <CustomSelect
+            options={[
+              { value: 'ALL', label: 'All Modules' },
+              { value: 'FMS', label: 'FMS Pipeline' },
+              { value: 'CHECKLIST', label: 'Compliance Checklist' },
+              { value: 'DELEGATION', label: 'Delegated Tasks' },
+            ]}
             value={moduleFilter}
-            onChange={(e) => setModuleFilter(e.target.value as 'ALL' | 'FMS' | 'CHECKLIST' | 'DELEGATION')}
-            className="text-xs bg-white border border-slate-300 rounded-lg h-8 py-1 px-2 font-bold text-slate-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 shrink-0"
-          >
-            <option value="ALL">All Modules</option>
-            <option value="FMS">FMS Pipeline</option>
-            <option value="CHECKLIST">Compliance Checklist</option>
-            <option value="DELEGATION">Delegated Tasks</option>
-          </select>
+            onChange={(val) => setModuleFilter(val as 'ALL' | 'FMS' | 'CHECKLIST' | 'DELEGATION')}
+            size="xs"
+            variant="default"
+            className="w-40"
+          />
 
           {/* View Mode Toggle (Standard Card vs Enterprise Matrix 1000+ Scale) */}
           <div className="flex items-center bg-slate-50 p-0.5 rounded-lg border border-slate-200 h-8 shrink-0">
@@ -2124,7 +2129,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                   </div>
                 ) : (
                   <p className="text-slate-400 italic text-[11px] p-2 bg-slate-50 rounded-lg">
-                    No process remarks logged yet. Use the 💬 Remark button on the main row to add one.
+                    No process remarks logged yet. Use the 'Remark' button on the main row to add one.
                   </p>
                 )}
               </div>

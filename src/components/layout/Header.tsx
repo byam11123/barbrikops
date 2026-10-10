@@ -12,11 +12,13 @@ import {
   User,
   Users,
   Menu,
-  ShieldAlert
+  ShieldAlert,
+  Crown
 } from 'lucide-react';
 import { UserProfile, CentralRegistryConfig, isUserSuperAdmin } from '../../types';
 import { USERS } from '../../data/initialData';
 import { UserAvatar } from '../common/UserAvatar';
+import { CustomSelect } from '../common/CustomSelect';
 
 export type ViewScope = 'USER_ONLY' | 'ALL_ORG';
 
@@ -131,18 +133,18 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Scope Dropdown - Super Admin Only */}
         {isSuperAdmin && (
-          <div className="flex items-center bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs gap-1.5">
-            <User className="w-3.5 h-3.5 text-indigo-600" />
-            <select
-              value={viewScope}
-              onChange={(e) => onToggleScope(e.target.value as ViewScope)}
-              title="Switch view scope"
-              className="text-xs font-semibold bg-transparent border-none text-slate-700 hover:text-slate-900 focus:outline-none cursor-pointer py-0.5 font-sans"
-            >
-              <option value="USER_ONLY">My Items Only</option>
-              <option value="ALL_ORG">All Organization</option>
-            </select>
-          </div>
+          <CustomSelect
+            options={[
+              { value: 'USER_ONLY', label: 'My Items Only' },
+              { value: 'ALL_ORG', label: 'All Organization' },
+            ]}
+            value={viewScope}
+            onChange={(val) => onToggleScope(val as ViewScope)}
+            icon={<User className="w-3.5 h-3.5 text-indigo-600" />}
+            size="xs"
+            variant="subtle"
+            className="w-40"
+          />
         )}
 
         {/* Relocated PC Desk button - Super Admin Only */}
@@ -214,21 +216,21 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onOpenMyProfile}
           />
           {isSuperAdmin ? (
-            <select
-              aria-label="Active Staff Profile"
+            <CustomSelect
+              options={availableUsers.map((user) => ({
+                value: user.userId,
+                label: `${user.name.split(' ')[0]} (${user.role.slice(0, 8)})`,
+              }))}
               value={currentUser.userId}
-              onChange={(e) => {
-                const found = availableUsers.find((u) => u.userId === e.target.value);
+              onChange={(val) => {
+                const found = availableUsers.find((u) => u.userId === val);
                 if (found) onUserChange(found);
               }}
-              className="text-[11px] bg-slate-50 border border-slate-200 rounded-lg py-1 px-1.5 font-bold text-slate-800 max-w-[85px] truncate"
-            >
-              {availableUsers.map((user) => (
-                <option key={user.userId} value={user.userId}>
-                  {user.name.split(' ')[0]} ({user.role.slice(0, 8)})
-                </option>
-              ))}
-            </select>
+              size="xs"
+              variant="subtle"
+              align="right"
+              className="max-w-[120px]"
+            />
           ) : (
             <span className="text-[10px] bg-slate-50 border border-slate-200 rounded-lg py-1 px-1.5 font-bold text-slate-800 max-w-[90px] truncate">
               {currentUser.name.split(' ')[0]}
@@ -247,7 +249,8 @@ export const Header: React.FC<HeaderProps> = ({
             className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-lg text-xs transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
             title="Super Admin Governance Center"
           >
-            <span>👑 Super Admin</span>
+            <Crown className="w-3.5 h-3.5 text-slate-950" />
+            <span>Super Admin</span>
           </button>
         )}
 
@@ -269,23 +272,23 @@ export const Header: React.FC<HeaderProps> = ({
           
           {/* Super Admin only: User Switcher dropdown */}
           {isSuperAdmin && (
-            <div className="relative">
-              <select
-                aria-label="Active Staff Profile"
-                value={currentUser.userId}
-                onChange={(e) => {
-                  const found = availableUsers.find((u) => u.userId === e.target.value);
-                  if (found) onUserChange(found);
-                }}
-                className="text-xs bg-slate-50 border border-slate-300 rounded-lg py-1.5 px-2 font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer max-w-[150px] truncate"
-              >
-                {availableUsers.map((user) => (
-                  <option key={user.userId} value={user.userId}>
-                    {user.name} ({user.departmentName})
-                  </option>
-                ))}
-              </select>
-            </div>
+            <CustomSelect
+              options={availableUsers.map((user) => ({
+                value: user.userId,
+                label: user.name,
+                sublabel: user.departmentName,
+                badge: user.role,
+              }))}
+              value={currentUser.userId}
+              onChange={(val) => {
+                const found = availableUsers.find((u) => u.userId === val);
+                if (found) onUserChange(found);
+              }}
+              size="xs"
+              variant="subtle"
+              align="right"
+              className="w-48"
+            />
           )}
 
           {/* Logout Button */}

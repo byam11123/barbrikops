@@ -177,7 +177,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'super-admin' as NavTab,
       label: 'Super Admin',
       icon: ShieldCheck,
-      badge: '👑',
+      badge: 'Master',
       badgeColor: 'bg-amber-100 text-amber-900 border border-amber-300 font-extrabold',
       highlight: true
     },

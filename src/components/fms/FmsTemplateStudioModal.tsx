@@ -20,7 +20,8 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
-  RotateCcw
+  RotateCcw,
+  Settings
 } from 'lucide-react';
 import { FmsTemplateDefinition, FmsStageTemplate, FmsStageFieldConfig, FmsSubWorkflowTriggerConfig, Priority } from '../../types';
 import { 
@@ -1647,7 +1648,7 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
                   <ArrowUpDown className="w-3.5 h-3.5 text-indigo-600" />
                   Stage Sequence Switcher &amp; Navigator
                 </span>
-                <span className="text-[10px] text-slate-500 font-medium">Click ⬆️ ⬇️ to swap stage sequence instantly</span>
+                <span className="text-[10px] text-slate-500 font-medium">Click Up/Down arrows to swap stage sequence instantly</span>
               </div>
 
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
@@ -2236,7 +2237,7 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
                                     }`}
                                     title="Toggle showing backend technical keys like siteName, reqQuantity"
                                   >
-                                    <span>⚙️ {showTechnicalKeys ? 'Technical Keys: ON' : 'Show Technical Keys'}</span>
+                                    <span className="flex items-center gap-1"><Settings className="w-3 h-3" /> {showTechnicalKeys ? 'Technical Keys: ON' : 'Show Technical Keys'}</span>
                                   </button>
 
                                   <button

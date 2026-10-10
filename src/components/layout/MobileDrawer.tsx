@@ -192,7 +192,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
       id: 'super-admin' as NavTab,
       label: 'Super Admin Governance',
       icon: ShieldCheck,
-      badge: '👑 Master',
+      badge: 'Master',
       badgeColor: 'bg-amber-100 text-amber-900 border border-amber-300',
     },
   ];

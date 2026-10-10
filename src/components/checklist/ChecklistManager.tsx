@@ -24,6 +24,7 @@ import {
   Download
 } from 'lucide-react';
 import { downloadCsv } from '../../utils/csvExporter';
+import { CustomSelect } from '../common/CustomSelect';
 import { ChecklistItem, Frequency, UserProfile, ProcessRemark, isUserSuperAdmin, hasModulePermission } from '../../types';
 import { ViewScope } from '../layout/Header';
 
@@ -351,63 +352,63 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           {/* User scope selector as dropdown - Super Admin Only */}
           {isSuperAdmin && (
-            <div className="flex items-center bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs gap-1.5">
-              <User className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-              <select
-                aria-label="Filter by scope"
-                value={viewScope}
-                onChange={(e) => onToggleScope(e.target.value as any)}
-                className="text-xs font-bold bg-transparent border-none text-slate-700 hover:text-slate-900 focus:outline-none cursor-pointer py-0.5"
-              >
-                <option value="USER_ONLY">My Tasks — {myItemsTotal.length}</option>
-                <option value="ALL_ORG">All Staff — {items.length}</option>
-              </select>
-            </div>
+            <CustomSelect
+              options={[
+                { value: 'USER_ONLY', label: `My Tasks (${myItemsTotal.length})` },
+                { value: 'ALL_ORG', label: `All Staff (${items.length})` },
+              ]}
+              value={viewScope}
+              onChange={(val) => onToggleScope(val as any)}
+              icon={<User className="w-3.5 h-3.5 text-indigo-600" />}
+              size="xs"
+              variant="default"
+              className="w-40"
+            />
           )}
 
           {/* Frequency selector as dropdown */}
-          <div className="flex items-center bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs gap-1.5">
-            <Filter className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-            <select
-              aria-label="Filter by frequency"
-              value={activeFrequency}
-              onChange={(e) => setActiveFrequency(e.target.value as any)}
-              className="text-xs font-bold bg-transparent border-none text-slate-700 hover:text-slate-900 focus:outline-none cursor-pointer py-0.5"
-            >
-              <option value="ALL">All Frequencies</option>
-              <option value="W">Weekly</option>
-              <option value="M">Monthly</option>
-            </select>
-          </div>
+          <CustomSelect
+            options={[
+              { value: 'ALL', label: 'All Frequencies' },
+              { value: 'W', label: 'Weekly' },
+              { value: 'M', label: 'Monthly' },
+            ]}
+            value={activeFrequency}
+            onChange={(val) => setActiveFrequency(val as any)}
+            icon={<Filter className="w-3.5 h-3.5 text-indigo-600" />}
+            size="xs"
+            variant="default"
+            className="w-36"
+          />
 
           {/* Department filter (useful in ALL_ORG mode) - Super Admin Only */}
           {isSuperAdmin && viewScope === 'ALL_ORG' && (
-            <select
-              aria-label="Filter by department"
+            <CustomSelect
+              options={[
+                { value: 'ALL', label: 'All Depts' },
+                ...departments.map((dept) => ({ value: dept, label: dept })),
+              ]}
               value={departmentFilter}
-              onChange={(e) => setDepartmentFilter(e.target.value)}
-              className="text-xs bg-white border border-slate-300 rounded-lg py-1.5 px-2 text-slate-700 font-medium max-w-[150px] cursor-pointer"
-            >
-              <option value="ALL">All Depts</option>
-              {departments.map((dept) => (
-                <option key={dept} value={dept}>
-                  {dept}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setDepartmentFilter(val)}
+              size="xs"
+              variant="default"
+              className="w-36"
+            />
           )}
 
           {/* Status filter */}
-          <select
-            aria-label="Filter by status"
+          <CustomSelect
+            options={[
+              { value: 'ALL', label: 'All Status' },
+              { value: 'Done', label: 'Done' },
+              { value: 'Pending', label: 'Pending' },
+            ]}
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="text-xs bg-white border border-slate-300 rounded-lg py-1.5 px-2 text-slate-700 font-medium cursor-pointer"
-          >
-            <option value="ALL">All Status</option>
-            <option value="Done">Done</option>
-            <option value="Pending">Pending</option>
-          </select>
+            onChange={(val) => setStatusFilter(val)}
+            size="xs"
+            variant="default"
+            className="w-32"
+          />
 
           {/* Search box */}
           <div className="relative">
