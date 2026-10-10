@@ -6,15 +6,70 @@ import {
   InventoryItem, 
   InventoryMovement, 
   AuditLogEntry, 
-  CentralRegistryConfig 
+  CentralRegistryConfig,
+  FmsTemplateDefinition,
+  DepartmentDefinition,
+  UserProfile,
+  NoticeBoardItem
 } from '../types';
+
+export const INITIAL_DEPARTMENTS: DepartmentDefinition[] = [
+  {
+    id: 'dept_purchase',
+    key: 'PURCHASE',
+    name: 'Purchase',
+    description: 'Procurement, Indents, RFQs & Vendor Purchase Orders',
+    icon: 'ShoppingCart',
+    isDefault: true,
+    createdAt: '01/10/2026',
+  },
+  {
+    id: 'dept_store',
+    key: 'STORE',
+    name: 'Store',
+    description: 'Central Stores, Site Warehouses, Dispatch & Stock Checks',
+    icon: 'Warehouse',
+    isDefault: true,
+    createdAt: '01/10/2026',
+  },
+  {
+    id: 'dept_accounts',
+    key: 'ACCOUNTS',
+    name: 'Accounts',
+    description: 'Finance, PO Disbursements, Invoices & Vendor Payments',
+    icon: 'Landmark',
+    isDefault: true,
+    createdAt: '01/10/2026',
+  },
+  {
+    id: 'dept_plant_ops',
+    key: 'PLANT_OPS',
+    name: 'Plant & Ops',
+    description: 'Plant Machinery, Equipment Repairs, Spare Parts & Maintenance',
+    icon: 'Wrench',
+    isDefault: true,
+    createdAt: '01/10/2026',
+  },
+  {
+    id: 'dept_operations',
+    key: 'OPERATIONS',
+    name: 'Operations',
+    description: 'Site Operations, DPR Reporting, Field Execution & Civil Works',
+    icon: 'Building2',
+    isDefault: true,
+    createdAt: '01/10/2026',
+  },
+];
 import { 
   INITIAL_CHECKLIST_ITEMS, 
   INITIAL_DELEGATION_TASKS, 
   INITIAL_FMS_FLOWS, 
   INITIAL_INVENTORY_ITEMS, 
   INITIAL_INVENTORY_MOVEMENTS, 
-  DEFAULT_REGISTRY_CONFIG 
+  DEFAULT_REGISTRY_CONFIG,
+  SYSTEM_BUILTIN_TEMPLATES,
+  USERS,
+  INITIAL_NOTICE_BOARD
 } from '../data/initialData';
 
 // Zod schemas for input validation
@@ -66,6 +121,11 @@ const STORAGE_KEYS = {
   MOVEMENTS: 'barbrik_ops_inventory_movements_v1',
   REGISTRY: 'barbrik_ops_central_registry_v1',
   AUDIT: 'barbrik_ops_audit_logs_v1',
+  TEMPLATES: 'barbrik_ops_fms_templates_v1',
+  DEPARTMENTS: 'barbrik_ops_departments_v1',
+  USERS: 'barbrik_ops_users_v1',
+  NOTICE_BOARD: 'barbrik_ops_notice_board_v1',
+  AUTH_USER: 'barbrik_ops_auth_user_v1',
 };
 
 class StorageAdapter {
@@ -95,6 +155,9 @@ class StorageAdapter {
     }
     if (!localStorage.getItem(STORAGE_KEYS.REGISTRY)) {
       localStorage.setItem(STORAGE_KEYS.REGISTRY, JSON.stringify(DEFAULT_REGISTRY_CONFIG));
+    }
+    if (!localStorage.getItem(STORAGE_KEYS.DEPARTMENTS)) {
+      localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, JSON.stringify(INITIAL_DEPARTMENTS));
     }
     if (!localStorage.getItem(STORAGE_KEYS.AUDIT)) {
       const initialAudit: AuditLogEntry[] = [
@@ -220,12 +283,12 @@ class StorageAdapter {
 
     // Check Stock Checkpoints
     if (flow.flowType === 'CHECK_STOCK') {
-      const stkStg2 = updatedStages.find((s) => s.stageId === 'STG-STK-02');
-      const stkStg4 = updatedStages.find((s) => s.stageId === 'STG-STK-04');
+      const stkStg3 = updatedStages.find((s) => s.stageId === 'STG-STK-03');
+      const stkStg5 = updatedStages.find((s) => s.stageId === 'STG-STK-05');
 
-      // If material purchase NOT required (No) -> Skip Stage 3 and Stage 4
-      if (stkStg2?.decisionValue === 'No') {
-        ['STG-STK-03', 'STG-STK-04'].forEach((sId) => {
+      // If material purchase NOT required (No) -> Skip Stage 4 (SEND INDENT) and Stage 5 (IS PARTIAL PURCHASE REQUIRED)
+      if (stkStg3?.decisionValue === 'No') {
+        ['STG-STK-04', 'STG-STK-05'].forEach((sId) => {
           const stg = updatedStages.find((s) => s.stageId === sId);
           if (stg && stg.status !== 'Skipped') {
             stg.status = 'Skipped';
@@ -236,13 +299,13 @@ class StorageAdapter {
         });
       }
 
-      // If partial purchase NOT required (No, 100% purchase needed) -> Skip Stage 5
-      if (stkStg4?.decisionValue === 'No') {
-        const stg5 = updatedStages.find((s) => s.stageId === 'STG-STK-05');
-        if (stg5 && stg5.status !== 'Skipped') {
-          stg5.status = 'Skipped';
-          stg5.notes = 'Skipped: Full purchase required from vendor';
-          stg5.actualDateTime = undefined;
+      // If partial purchase NOT required (No, 100% purchase needed) -> Skip Stage 6 (DISPATCH MATERIAL AVAILABLE)
+      if (stkStg5?.decisionValue === 'No') {
+        const stg6 = updatedStages.find((s) => s.stageId === 'STG-STK-06');
+        if (stg6 && stg6.status !== 'Skipped') {
+          stg6.status = 'Skipped';
+          stg6.notes = 'Skipped: Full purchase required from vendor';
+          stg6.actualDateTime = undefined;
           changed = true;
         }
       }
@@ -292,6 +355,36 @@ class StorageAdapter {
           stg6.actualDateTime = undefined;
           changed = true;
         }
+      }
+    }
+
+    // Auto-heal corrupt/unadvanced stage 1 flows: if Stage 1 has submittedData from the initiation form
+    // but the workflow was left at currentStageIndex === 0, mark Stage 1 as Done and advance to Stage 2
+    if (
+      flow.currentStageIndex === 0 &&
+      updatedStages.length > 1 &&
+      updatedStages[0]?.submittedData &&
+      Object.keys(updatedStages[0].submittedData).filter((k) => !k.startsWith('_')).length > 0
+    ) {
+      updatedStages[0].status = 'Done';
+      updatedStages[0].actualDateTime = updatedStages[0].actualDateTime || flow.createdAt || new Date().toLocaleString('en-GB');
+      if (updatedStages[1].status === 'Pending') {
+        updatedStages[1].status = 'In Progress';
+      }
+      flow = {
+        ...flow,
+        currentStageIndex: 1,
+        currentStageId: updatedStages[1].stageId,
+        stages: updatedStages,
+      };
+      changed = true;
+    }
+
+    // Auto-heal corrupted out-of-sequence stages (e.g. if downstream stages were marked Done while upstream stages are Pending)
+    if (flow.id === 'fms-inst-pay-752' && updatedStages[1]?.status === 'Pending' && updatedStages[14]?.status === 'Done') {
+      const initial = INITIAL_FMS_FLOWS.find((f) => f.id === 'fms-inst-pay-752');
+      if (initial) {
+        return initial;
       }
     }
 
@@ -428,6 +521,286 @@ class StorageAdapter {
       entityId: 'REGISTRY_CONFIG',
       details: `Updated registry settings. Active source: ${config.activeDataSource}`
     });
+  }
+
+  // Dynamic FMS Templates Operations
+  public getFmsTemplates(): FmsTemplateDefinition[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.TEMPLATES);
+      const list: FmsTemplateDefinition[] = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(list)) return [];
+
+      const seenIds = new Set<string>();
+      const deduplicated: FmsTemplateDefinition[] = [];
+      for (const item of list) {
+        if (!item || !item.id) continue;
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          deduplicated.push(item);
+        }
+      }
+
+      if (deduplicated.length !== list.length) {
+        localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(deduplicated));
+      }
+
+      return deduplicated;
+    } catch {
+      return [];
+    }
+  }
+
+  public getAllMasterTemplates(): FmsTemplateDefinition[] {
+    const custom = this.getFmsTemplates();
+    const matchedCustomIds = new Set<string>();
+    const combined: FmsTemplateDefinition[] = [];
+
+    // Add built-ins (override with custom if modified)
+    SYSTEM_BUILTIN_TEMPLATES.forEach((sys) => {
+      const customOverride = custom.find(
+        (c) =>
+          (c.templateKey && c.templateKey === sys.templateKey) ||
+          c.id === sys.id ||
+          c.id === `builtin_${sys.templateKey}`
+      );
+
+      if (customOverride) {
+        combined.push({
+          ...customOverride,
+          id: customOverride.id || sys.id,
+          templateKey: sys.templateKey,
+        });
+        matchedCustomIds.add(customOverride.id);
+      } else {
+        combined.push(sys);
+      }
+    });
+
+    // Add remaining custom templates (non-builtins)
+    custom.forEach((tpl) => {
+      if (!matchedCustomIds.has(tpl.id)) {
+        const alreadyInCombined = combined.some(
+          (existing) =>
+            existing.id === tpl.id ||
+            (tpl.templateKey && existing.templateKey === tpl.templateKey)
+        );
+        if (!alreadyInCombined) {
+          combined.push(tpl);
+        }
+      }
+    });
+
+    return combined;
+  }
+
+  public toggleArchiveFmsTemplate(id: string) {
+    if (typeof window === 'undefined') return;
+    const all = this.getAllMasterTemplates();
+    const target = all.find((t) => t.id === id || t.templateKey === id);
+    if (!target) return;
+
+    const updatedTarget: FmsTemplateDefinition = {
+      ...target,
+      isArchived: !target.isArchived,
+      updatedAt: new Date().toLocaleDateString('en-GB'),
+    };
+
+    this.saveFmsTemplate(updatedTarget);
+  }
+
+  public saveFmsTemplate(template: FmsTemplateDefinition) {
+    if (typeof window === 'undefined') return;
+    const existing = this.getFmsTemplates();
+    const isUpdate = existing.some(
+      (t) => t.id === template.id || (template.templateKey && t.templateKey === template.templateKey)
+    );
+    const filtered = existing.filter(
+      (t) => t.id !== template.id && (!template.templateKey || t.templateKey !== template.templateKey)
+    );
+    const updated = [template, ...filtered];
+    localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(updated));
+    this.logAudit({
+      userId: 'ADMIN',
+      userName: 'Process Administrator',
+      module: 'FMS',
+      action: isUpdate ? 'UPDATE' : 'CREATE',
+      entityId: template.templateKey,
+      details: `Saved FMS template "${template.name}" with ${template.stages.length} custom stage forms`
+    });
+  }
+
+  public deleteFmsTemplate(idOrKey: string) {
+    if (typeof window === 'undefined') return;
+    const cleanId = idOrKey.startsWith('CUSTOM_') ? idOrKey.replace('CUSTOM_', '') : idOrKey;
+    const existing = this.getFmsTemplates();
+    const updated = existing.filter(
+      (t) =>
+        t.id !== idOrKey &&
+        t.templateKey !== idOrKey &&
+        t.id !== cleanId &&
+        t.templateKey !== cleanId &&
+        t.id !== `builtin_${idOrKey}` &&
+        t.id !== `builtin_${cleanId}`
+    );
+    localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(updated));
+    this.logAudit({
+      userId: 'ADMIN',
+      userName: 'Process Administrator',
+      module: 'FMS',
+      action: 'STATUS_CHANGE',
+      entityId: idOrKey,
+      details: `Deleted custom FMS template "${idOrKey}"`
+    });
+  }
+
+  // Department Hub Operations
+  public getDepartments(): DepartmentDefinition[] {
+    if (typeof window === 'undefined') return INITIAL_DEPARTMENTS;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.DEPARTMENTS);
+      const list: DepartmentDefinition[] = raw ? JSON.parse(raw) : INITIAL_DEPARTMENTS;
+
+      // Ensure baseline default departments are present
+      const existingKeys = new Set(list.map((d) => d.key));
+      let updated = false;
+      INITIAL_DEPARTMENTS.forEach((base) => {
+        if (!existingKeys.has(base.key)) {
+          list.push(base);
+          updated = true;
+        }
+      });
+
+      if (updated) {
+        localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, JSON.stringify(list));
+      }
+      return list;
+    } catch {
+      return INITIAL_DEPARTMENTS;
+    }
+  }
+
+  public saveDepartments(departments: DepartmentDefinition[]) {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, JSON.stringify(departments));
+    this.logAudit({
+      userId: 'ADMIN',
+      userName: 'Central Administrator',
+      module: 'REGISTRY',
+      action: 'UPDATE',
+      entityId: 'DEPARTMENT_HUB',
+      details: `Saved ${departments.length} departments in Department Hub`
+    });
+  }
+
+  public saveDepartment(department: DepartmentDefinition) {
+    if (typeof window === 'undefined') return;
+    const existing = this.getDepartments();
+    const idx = existing.findIndex((d) => d.id === department.id || d.key === department.key);
+    let updated: DepartmentDefinition[];
+    if (idx >= 0) {
+      updated = existing.map((d, i) => (i === idx ? department : d));
+    } else {
+      updated = [...existing, department];
+    }
+    this.saveDepartments(updated);
+  }
+
+  public deleteDepartment(id: string) {
+    if (typeof window === 'undefined') return;
+    const existing = this.getDepartments();
+    const updated = existing.filter((d) => d.id !== id && d.key !== id);
+    this.saveDepartments(updated);
+  }
+
+  public toggleArchiveDepartment(id: string) {
+    if (typeof window === 'undefined') return;
+    const existing = this.getDepartments();
+    const updated = existing.map((d) => {
+      if (d.id === id || d.key === id) {
+        const nextArchived = !d.isArchived;
+        this.logAudit({
+          userId: 'ADMIN',
+          userName: 'Central Administrator',
+          module: 'REGISTRY',
+          action: 'UPDATE',
+          entityId: d.key,
+          details: `${nextArchived ? 'Archived / Deactivated' : 'Restored / Reactivated'} department "${d.name}"`
+        });
+        return { ...d, isArchived: nextArchived };
+      }
+      return d;
+    });
+    localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, JSON.stringify(updated));
+  }
+
+  // Users Management
+  public getUsers(): UserProfile[] {
+    if (typeof window === 'undefined') return USERS;
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.USERS);
+      const rawList: UserProfile[] = data ? JSON.parse(data) : USERS;
+      const seen = new Set<string>();
+      const deduped: UserProfile[] = [];
+      for (const u of rawList) {
+        if (!seen.has(u.userId)) {
+          seen.add(u.userId);
+          deduped.push(u);
+        }
+      }
+      if (!data || deduped.length !== rawList.length) {
+        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(deduped));
+      }
+      return deduped;
+    } catch (e) {
+      return USERS;
+    }
+  }
+
+  public saveUsers(users: UserProfile[]) {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+  }
+
+  // Notice Board Management
+  public getNoticeBoard(): NoticeBoardItem[] {
+    if (typeof window === 'undefined') return INITIAL_NOTICE_BOARD;
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.NOTICE_BOARD);
+      if (!data) {
+        localStorage.setItem(STORAGE_KEYS.NOTICE_BOARD, JSON.stringify(INITIAL_NOTICE_BOARD));
+        return INITIAL_NOTICE_BOARD;
+      }
+      return JSON.parse(data);
+    } catch (e) {
+      return INITIAL_NOTICE_BOARD;
+    }
+  }
+
+  public saveNoticeBoard(notices: NoticeBoardItem[]) {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(STORAGE_KEYS.NOTICE_BOARD, JSON.stringify(notices));
+  }
+
+  // Active Authenticated User Session
+  public getAuthUser(): UserProfile | null {
+    if (typeof window === 'undefined') return null;
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.AUTH_USER);
+      return data ? JSON.parse(data) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  public saveAuthUser(user: UserProfile) {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(user));
+  }
+
+  public logoutAuthUser() {
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
   }
 
   public resetToSeedData() {

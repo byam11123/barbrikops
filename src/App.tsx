@@ -6,11 +6,17 @@
 import React, { useState, useEffect } from 'react';
 import { Header, ViewScope } from './components/layout/Header';
 import { Sidebar, NavTab } from './components/layout/Sidebar';
+import { MobileBottomNav } from './components/layout/MobileBottomNav';
+import { MobileDrawer } from './components/layout/MobileDrawer';
+import { MobileQuickActionModal } from './components/layout/MobileQuickActionModal';
 import { UnifiedWorkSummary } from './components/summary/UnifiedWorkSummary';
 import { MisDashboard } from './components/mis/MisDashboard';
 import { FmsPipeline } from './components/fms/FmsPipeline';
+import { FmsAuditLedgerView } from './components/fms/FmsAuditLedgerView';
 import { CreateFmsModal } from './components/fms/CreateFmsModal';
 import { FmsDetailModal } from './components/fms/FmsDetailModal';
+import { StageActionModal } from './components/fms/StageActionModal';
+import { FmsTemplateStudioModal } from './components/fms/FmsTemplateStudioModal';
 import { DelegationBoard } from './components/delegation/DelegationBoard';
 import { NewTaskModal } from './components/delegation/NewTaskModal';
 import { ReviseTaskModal } from './components/delegation/ReviseTaskModal';
@@ -20,6 +26,13 @@ import { InventoryManager } from './components/ims/InventoryManager';
 import { StockMovementModal } from './components/ims/StockMovementModal';
 import { CentralRegistryView } from './components/registry/CentralRegistryView';
 import { AuditLogView } from './components/audit/AuditLogView';
+import { LoginPage } from './components/auth/LoginPage';
+import { MyProfileModal } from './components/user/MyProfileModal';
+import { MyProfilePage } from './components/user/MyProfilePage';
+import { SuperAdminModal } from './components/user/SuperAdminModal';
+import { SuperAdminGovernanceView } from './components/user/SuperAdminGovernanceView';
+import { GlobalSearchModal } from './components/common/GlobalSearchModal';
+import { Plus } from 'lucide-react';
 
 import { 
   ChecklistItem, 
@@ -30,7 +43,11 @@ import {
   UserProfile, 
   CentralRegistryConfig, 
   AuditLogEntry,
-  ProcessRemark 
+  ProcessRemark,
+  FmsTemplateDefinition,
+  NoticeBoardItem,
+  isUserSuperAdmin,
+  hasModulePermission
 } from './types';
 import { 
   USERS, 
@@ -38,7 +55,9 @@ import {
   FMS_STANDARD_PURCHASE_STAGES, 
   FMS_PO_PAYMENT_STAGES,
   FMS_PURCHASE_TO_STORE_DISPATCH_STAGES,
-  FMS_PAYMENT_TO_DISPATCH_STAGES 
+  FMS_STORE_TO_SITE_DISPATCH_STAGES,
+  FMS_PAYMENT_TO_DISPATCH_STAGES,
+  FMS_SITE_RECEIVE_STAGES
 } from './data/initialData';
 import { isFlowAwaitingUserAction } from './services/stageAssignment';
 import { storageAdapter } from './services/storageAdapter';
@@ -46,13 +65,24 @@ import { storageAdapter } from './services/storageAdapter';
 export default function App() {
   // Land by default on the unified daily work summary
   const [activeTab, setActiveTab] = useState<NavTab>('summary');
-  const [currentUser, setCurrentUser] = useState<UserProfile>(USERS[0]);
+  
+  // User Management & Authentication States
+  const [usersList, setUsersList] = useState<UserProfile[]>(() => storageAdapter.getUsers());
+  const [noticeBoardItems, setNoticeBoardItems] = useState<NoticeBoardItem[]>(() => storageAdapter.getNoticeBoard());
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => storageAdapter.getAuthUser() !== null);
+  const [currentUser, setCurrentUser] = useState<UserProfile>(() => storageAdapter.getAuthUser() || USERS[0]);
+  const isSuperAdmin = isUserSuperAdmin(currentUser);
+  const [isMyProfileOpen, setIsMyProfileOpen] = useState<boolean>(false);
+  const [isSuperAdminOpen, setIsSuperAdminOpen] = useState<boolean>(false);
+
   // Default to USER_ONLY so staff members see only what belongs to them first
   const [viewScope, setViewScope] = useState<ViewScope>('USER_ONLY');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [pcDeskActive, setPcDeskActive] = useState<boolean>(false);
 
   // Data states
   const [flows, setFlows] = useState<FmsInstance[]>([]);
+  const [selectedFmsDepartment, setSelectedFmsDepartment] = useState<string | null>(null);
   const [delegationTasks, setDelegationTasks] = useState<DelegationTask[]>([]);
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
@@ -61,13 +91,21 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
 
   // Modals
+  const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
   const [isCreateFmsOpen, setIsCreateFmsOpen] = useState(false);
+  const [isTemplateStudioOpen, setIsTemplateStudioOpen] = useState(false);
+  const [templateStudioKey, setTemplateStudioKey] = useState<string | null>(null);
+  const [stageActionTarget, setStageActionTarget] = useState<{ flow: FmsInstance; stageIndex: number } | null>(null);
   const [selectedFmsDetail, setSelectedFmsDetail] = useState<FmsInstance | null>(null);
   const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
   const [selectedTaskForRevision, setSelectedTaskForRevision] = useState<DelegationTask | null>(null);
   const [isNewChecklistOpen, setIsNewChecklistOpen] = useState(false);
   const [isStockMovementOpen, setIsStockMovementOpen] = useState(false);
   const [preselectedInventoryItem, setPreselectedInventoryItem] = useState<InventoryItem | null>(null);
+  
+  // Mobile Native navigation states
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+  const [isQuickActionModalOpen, setIsQuickActionModalOpen] = useState(false);
 
   // Toast notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -75,6 +113,31 @@ export default function App() {
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const handleUpdateUsersList = (updatedUsers: UserProfile[]) => {
+    setUsersList(updatedUsers);
+    storageAdapter.saveUsers(updatedUsers);
+  };
+
+  const handleUpdateNoticeBoard = (updatedNotices: NoticeBoardItem[]) => {
+    setNoticeBoardItems(updatedNotices);
+    storageAdapter.saveNoticeBoard(updatedNotices);
+  };
+
+  const handleUpdateCurrentUser = (updatedUser: UserProfile) => {
+    setCurrentUser(updatedUser);
+    storageAdapter.saveAuthUser(updatedUser);
+    const nextList = usersList.map((u) => (u.userId === updatedUser.userId ? updatedUser : u));
+    handleUpdateUsersList(nextList);
+  };
+
+  const handleLogout = () => {
+    storageAdapter.logoutAuthUser();
+    setIsAuthenticated(false);
+    setIsMyProfileOpen(false);
+    setIsSuperAdminOpen(false);
+    showToast('Signed out of session.');
   };
 
   const handleAddProcessRemark = (
@@ -215,7 +278,23 @@ export default function App() {
     loadAllData();
   }, []);
 
+  // Global Keyboard Shortcut: Ctrl+K or Cmd+K to open universal search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsGlobalSearchOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const handleToggleScope = (newScope: ViewScope) => {
+    if (!isSuperAdmin) {
+      setViewScope('USER_ONLY');
+      return;
+    }
     setViewScope(newScope);
     showToast(
       newScope === 'USER_ONLY'
@@ -224,14 +303,53 @@ export default function App() {
     );
   };
 
+  const handleTabChange = (tab: NavTab) => {
+    if (tab === 'profile') {
+      setActiveTab('profile');
+      return;
+    }
+    if (tab === 'super-admin') {
+      if (isSuperAdmin) {
+        setActiveTab('super-admin');
+      }
+      return;
+    }
+    if (!isSuperAdmin && !hasModulePermission(currentUser, tab, 'view')) {
+      if (hasModulePermission(currentUser, 'summary', 'view')) {
+        setActiveTab('summary');
+      } else if (hasModulePermission(currentUser, 'mis', 'view')) {
+        setActiveTab('mis');
+      } else {
+        setActiveTab('profile');
+      }
+      return;
+    }
+    setActiveTab(tab);
+  };
+
   const handleUserChange = (newUser: UserProfile) => {
     setCurrentUser(newUser);
-    const isPc = newUser.role.toLowerCase().includes('process coordinator') || newUser.name.toLowerCase().includes('ritu sahu');
-    if (isPc) {
-      setViewScope('ALL_ORG');
-      showToast(`Switched active profile to ${newUser.name} (${newUser.role}). Scope automatically expanded to view ALL user data across all departments!`);
-    } else {
+    const newIsSuper = isUserSuperAdmin(newUser);
+    if (!newIsSuper) {
+      setViewScope('USER_ONLY');
+      setPcDeskActive(false);
+      setActiveTab((prev) => {
+        if (prev === 'profile') return prev;
+        if (hasModulePermission(newUser, prev, 'view')) return prev;
+        if (hasModulePermission(newUser, 'summary', 'view')) return 'summary';
+        if (hasModulePermission(newUser, 'mis', 'view')) return 'mis';
+        return 'profile';
+      });
       showToast(`Switched active profile to ${newUser.name} (${newUser.role})`);
+    } else {
+      const isPc = newUser.role.toLowerCase().includes('process coordinator') || newUser.name.toLowerCase().includes('ritu sahu');
+      setPcDeskActive(isPc);
+      if (isPc) {
+        setViewScope('ALL_ORG');
+        showToast(`Switched active profile to ${newUser.name} (${newUser.role}). Scope automatically expanded to view ALL user data across all departments!`);
+      } else {
+        showToast(`Switched active profile to ${newUser.name} (${newUser.role})`);
+      }
     }
   };
 
@@ -252,24 +370,61 @@ export default function App() {
     showToast(`Indent #${newFlow.indentNo} successfully registered in 12-stage FMS pipeline!`);
   };
 
-  const handleAdvanceCurrentStage = (flow: FmsInstance, decision?: 'Yes' | 'No') => {
+  const handleAdvanceCurrentStage = (
+    flow: FmsInstance, 
+    decision?: 'Yes' | 'No',
+    submittedData?: Record<string, any>
+  ) => {
     const updatedStages = [...flow.stages];
     const currentIndex = flow.currentStageIndex;
     const currentStage = updatedStages[currentIndex];
 
     if (!currentStage) return;
 
-    const now = new Date().toLocaleString('en-GB');
+    const now = new Date();
+    const formattedNow = now.toLocaleString('en-GB');
     currentStage.status = 'Done';
-    currentStage.actualDateTime = now;
+    currentStage.actualDateTime = formattedNow;
     if (decision) {
       currentStage.decisionValue = decision;
+    }
+    if (submittedData) {
+      currentStage.submittedData = submittedData;
+      if (Array.isArray(submittedData._checkpoints)) {
+        currentStage.checkedCheckpoints = submittedData._checkpoints;
+      }
     }
 
     let nextIndex = currentIndex + 1;
 
     // Checkpoint branching rules:
-    if (flow.flowType === 'CHECK_STOCK') {
+    // 1. Custom configured conditional jump commands from Template Studio:
+    if (currentStage.logic?.gatewayType === 'CONDITIONAL_JUMP') {
+      const dec = decision || (currentStage.submittedData?.status === 'APPROVED' ? 'Yes' : currentStage.submittedData?.status === 'REJECTED' ? 'No' : undefined);
+      if (dec === 'Yes' && typeof currentStage.logic.yesTargetStageIndex === 'number') {
+        const target = currentStage.logic.yesTargetStageIndex;
+        if (target > currentIndex + 1) {
+          for (let i = currentIndex + 1; i < target && i < updatedStages.length; i++) {
+            if (updatedStages[i]) {
+              updatedStages[i].status = 'Skipped';
+              updatedStages[i].notes = `Skipped by conditional jump from Stage #${currentIndex + 1} ('Yes' branch)`;
+            }
+          }
+        }
+        nextIndex = target;
+      } else if (dec === 'No' && typeof currentStage.logic.noTargetStageIndex === 'number') {
+        const target = currentStage.logic.noTargetStageIndex;
+        if (target > currentIndex + 1) {
+          for (let i = currentIndex + 1; i < target && i < updatedStages.length; i++) {
+            if (updatedStages[i]) {
+              updatedStages[i].status = 'Skipped';
+              updatedStages[i].notes = `Skipped by conditional jump from Stage #${currentIndex + 1} ('No' branch)`;
+            }
+          }
+        }
+        nextIndex = target;
+      }
+    } else if (flow.flowType === 'CHECK_STOCK') {
       // 1. Stage 2: IS MATERIAL PURCHASE REQUIRED?
       if (currentStage.stageId === 'STG-STK-02') {
         if (decision === 'No') {
@@ -434,13 +589,10 @@ export default function App() {
 
     if (!isComplete && updatedStages[nextIndex]) {
       updatedStages[nextIndex].status = 'In Progress';
-      if (!updatedStages[nextIndex].plannedDateTime) {
-        const def = stageDefs.find((s) => s.stageId === updatedStages[nextIndex].stageId);
-        const sla = def?.slaHours || 2;
-        const targetDate = new Date();
-        targetDate.setHours(targetDate.getHours() + sla);
-        updatedStages[nextIndex].plannedDateTime = targetDate.toLocaleString('en-GB');
-      }
+      const def = stageDefs.find((s) => s.stageId === updatedStages[nextIndex].stageId);
+      const sla = def?.slaHours || 1;
+      const targetDate = new Date(now.getTime() + sla * 3600000);
+      updatedStages[nextIndex].plannedDateTime = targetDate.toLocaleString('en-GB');
     }
 
     const updatedFlow: FmsInstance = {
@@ -448,11 +600,106 @@ export default function App() {
       currentStageIndex: isComplete ? updatedStages.length : nextIndex,
       currentStageId: nextStageId,
       status: isComplete ? 'Completed' : 'In Progress',
-      updatedAt: now,
+      updatedAt: formattedNow,
       stages: updatedStages,
+      ...(submittedData?.vendorName ? { vendorName: String(submittedData.vendorName) } : {}),
+      ...(submittedData?.amountToBePaid ? { poAmount: parseFloat(submittedData.amountToBePaid) || flow.poAmount } : {}),
+      ...(submittedData?.modeOfPayment ? { paymentMode: submittedData.modeOfPayment } : {}),
+      ...(submittedData?.billNoOrPo ? { poNumber: String(submittedData.billNoOrPo) } : {}),
     };
 
     let updatedFlowsList = flows.map((f) => (f.id === updatedFlow.id ? updatedFlow : f));
+
+    // DYNAMIC SUB-WORKFLOW TRIGGER EVALUATOR (Configured via Template Studio)
+    if (currentStage.subWorkflowTrigger && currentStage.subWorkflowTrigger.enabled && currentStage.subWorkflowTrigger.targetTemplateKey) {
+      const trigger = currentStage.subWorkflowTrigger;
+      let conditionMet = false;
+      if (trigger.triggerCondition === 'ON_DECISION_YES' && decision === 'Yes') conditionMet = true;
+      else if (trigger.triggerCondition === 'ON_DECISION_NO' && decision === 'No') conditionMet = true;
+      else if (!trigger.triggerCondition || trigger.triggerCondition === 'ON_COMPLETE') conditionMet = true;
+
+      if (conditionMet) {
+        const targetType = trigger.targetTemplateKey;
+        const mappings = trigger.fieldMappings || [];
+        
+        // Map submittedData and flow variables
+        const mappedData: Record<string, any> = {};
+        mappings.forEach((m) => {
+          const val = submittedData?.[m.sourceField] || (submittedData as any)?.[m.targetField] || (flow as any)[m.sourceField] || (flow as any)[m.targetField];
+          if (val !== undefined && val !== '') {
+            mappedData[m.targetField] = val;
+          }
+        });
+
+        const existingChildIndex = updatedFlowsList.findIndex(
+          (f) => f.linkedFlowId === flow.flowId || (f.indentNo === flow.indentNo && f.flowType === targetType)
+        );
+
+        const targetPoNumber = mappedData.poNumber || submittedData?.poNumber || flow.poNumber || `RAO/PO/${flow.indentNo}-001`;
+        const targetVendor = mappedData.vendorName || submittedData?.vendorName || flow.vendorName || 'AUTHORISED OEM VENDOR';
+        const targetAmount = mappedData.poAmount ? parseFloat(mappedData.poAmount) : (submittedData?.amountToBePaid ? parseFloat(submittedData.amountToBePaid) : (flow.poAmount || 50000));
+        const targetMode = mappedData.paymentMode || submittedData?.modeOfPayment || flow.paymentMode || 'ACCOUNT';
+        const targetRemarks = mappedData.remarks || submittedData?.paymentRemarks || submittedData?.remarks || `Automated workflow trigger from ${flow.indentNo} stage ${currentStage.stageName}`;
+
+        if (existingChildIndex >= 0) {
+          const existingChild = updatedFlowsList[existingChildIndex];
+          const updatedChild: FmsInstance = {
+            ...existingChild,
+            poNumber: targetPoNumber,
+            vendorName: targetVendor,
+            poAmount: targetAmount,
+            paymentMode: targetMode,
+            remarks: targetRemarks,
+            updatedAt: formattedNow,
+          };
+          updatedFlowsList = updatedFlowsList.map((f, idx) => (idx === existingChildIndex ? updatedChild : f));
+          showToast(`Dynamic sub-workflow (${targetType}) updated automatically from Template Studio rule for Indent #${flow.indentNo}.`);
+        } else {
+          let childStages = FMS_PO_PAYMENT_STAGES;
+          if (targetType === 'CHECK_STOCK') childStages = FMS_CHECK_STOCK_STAGES;
+          else if (targetType === 'PURCHASE_TO_STORE_DISPATCH') childStages = FMS_PURCHASE_TO_STORE_DISPATCH_STAGES;
+          else if (targetType === 'STORE_TO_SITE_DISPATCH') childStages = FMS_STORE_TO_SITE_DISPATCH_STAGES;
+          else if (targetType === 'PAYMENT_TO_DISPATCH') childStages = FMS_PAYMENT_TO_DISPATCH_STAGES;
+          else if (targetType === 'SITE_RECEIVE') childStages = FMS_SITE_RECEIVE_STAGES;
+
+          const newChildFlow: FmsInstance = {
+            id: `fms-inst-${targetType.toLowerCase()}-${flow.indentNo}-${Date.now().toString().slice(-4)}`,
+            flowId: `FLOW-${targetType}-${flow.indentNo}`,
+            flowType: targetType,
+            linkedFlowId: flow.flowId,
+            poNumber: targetPoNumber,
+            vendorName: targetVendor,
+            poAssignTo: 'MANISH KOSHLE',
+            indentNo: flow.indentNo,
+            indentDate: flow.indentDate || formattedNow,
+            poDate: formattedNow,
+            poAmount: targetAmount,
+            siteName: flow.siteName,
+            priority: flow.priority,
+            currentStageId: childStages[0]?.stageId || 'STG-01',
+            currentStageIndex: 0,
+            totalStages: childStages.length,
+            status: 'In Progress',
+            createdAt: formattedNow,
+            updatedAt: formattedNow,
+            totalDelayHours: 0,
+            remarks: targetRemarks,
+            paymentMode: targetMode,
+            stages: childStages.map((s, sIdx) => ({
+              stageId: s.stageId,
+              stageName: s.name,
+              assignee: s.whoDefaultAssignee,
+              how: s.howChannel,
+              status: sIdx === 0 ? 'In Progress' : 'Pending',
+              plannedDateTime: sIdx === 0 ? formattedNow : undefined,
+              formResponseRef: s.formUrl,
+            }))
+          };
+          updatedFlowsList = [newChildFlow, ...updatedFlowsList];
+          showToast(`Linked sub-workflow (${targetType}) triggered automatically via Template Studio rule for Indent #${flow.indentNo}!`);
+        }
+      }
+    }
 
     // 1. When Check Stock Stage 3 completes (indent submitted to Purchase Dept):
     // Automatically spawn / ensure Indent to PO Flow exists in Purchase Department!
@@ -468,15 +715,15 @@ export default function App() {
           linkedFlowId: flow.flowId,
           requisitionNumber: flow.requisitionNumber || `Indent #${flow.indentNo}`,
           indentNo: flow.indentNo,
-          indentDate: flow.indentDate || now,
+          indentDate: flow.indentDate || formattedNow,
           siteName: flow.siteName,
           priority: flow.priority,
           currentStageId: 'STG-01',
           currentStageIndex: 0,
           totalStages: 12,
           status: 'In Progress',
-          createdAt: now,
-          updatedAt: now,
+          createdAt: formattedNow,
+          updatedAt: formattedNow,
           totalDelayHours: 0,
           remarks: `Material indent forwarded from Store Stock Check #${flow.indentNo}`,
           stages: FMS_STANDARD_PURCHASE_STAGES.map((s, sIdx) => ({
@@ -485,7 +732,7 @@ export default function App() {
             assignee: s.whoDefaultAssignee,
             how: s.howChannel,
             status: sIdx === 0 ? 'In Progress' : 'Pending',
-            plannedDateTime: sIdx === 0 ? now : undefined,
+            plannedDateTime: sIdx === 0 ? formattedNow : undefined,
             formResponseRef: s.formUrl,
           })),
         };
@@ -494,46 +741,79 @@ export default function App() {
       }
     }
 
-    // 2. When Indent Purchase Stage 10 approves advance payment (decision = 'Yes'):
-    // Automatically link / ensure Accounts PO-to-Payment FMS exists!
-    if (flow.flowType === 'INDENT_PURCHASE' && currentStage.stageId === 'STG-10' && decision === 'Yes') {
-      const existingPayFlow = flows.find((f) => f.linkedFlowId === flow.flowId || (f.indentNo === flow.indentNo && f.flowType === 'PO_TO_PAYMENT'));
-      if (!existingPayFlow) {
+    // 2. When Indent Purchase Stage 10 approves advance payment (decision = 'Yes')
+    // OR Stage 11 completes "SEND FOR PAYMENT":
+    // Automatically link / ensure Accounts PO-to-Payment FMS exists and is updated!
+    if (
+      flow.flowType === 'INDENT_PURCHASE' &&
+      ((currentStage.stageId === 'STG-10' && decision === 'Yes') || currentStage.stageId === 'STG-11')
+    ) {
+      const existingPayFlowIndex = updatedFlowsList.findIndex(
+        (f) => f.linkedFlowId === flow.flowId || (f.indentNo === flow.indentNo && f.flowType === 'PO_TO_PAYMENT')
+      );
+
+      const resolvedPoNumber = submittedData?.poNumber ? String(submittedData.poNumber) : (flow.poNumber || `RAO/PO/${flow.indentNo}-001`);
+      const resolvedVendor = submittedData?.vendorName ? String(submittedData.vendorName) : (flow.vendorName || 'M/S AUTHORIZED OEM VENDOR');
+      const resolvedAmount = submittedData?.amountToBePaid ? (parseFloat(submittedData.amountToBePaid) || 50000) : (flow.poAmount || 50000);
+      const resolvedMode = submittedData?.modeOfPayment || flow.paymentMode || 'ACCOUNT';
+      const resolvedRemarks = submittedData?.paymentRemarks || submittedData?.remarks || `Payment dossier transferred from Indent #${flow.indentNo} for Accounts disbursement`;
+
+      if (existingPayFlowIndex >= 0) {
+        // Update existing Accounts flow with any refined PO/Vendor/Amount details submitted in Stage 11
+        const existing = updatedFlowsList[existingPayFlowIndex];
+        const updatedPayFlow: FmsInstance = {
+          ...existing,
+          poNumber: resolvedPoNumber,
+          vendorName: resolvedVendor,
+          poAmount: resolvedAmount,
+          paymentMode: resolvedMode,
+          remarks: resolvedRemarks,
+          updatedAt: formattedNow,
+        };
+        updatedFlowsList = updatedFlowsList.map((f, idx) => (idx === existingPayFlowIndex ? updatedPayFlow : f));
+        if (currentStage.stageId === 'STG-11') {
+          showToast(`Payment details synced to Accounts PO-to-Payment FMS for Indent #${flow.indentNo}.`);
+        }
+      } else {
         const newPayFlow: FmsInstance = {
           id: `fms-inst-pay-${flow.indentNo}`,
           flowId: `FLOW-PAY-${flow.indentNo}-001`,
           flowType: 'PO_TO_PAYMENT',
           linkedFlowId: flow.flowId,
-          poNumber: `RAO/PO/${flow.indentNo}-001`,
-          vendorName: 'M/S AUTHORIZED OEM VENDOR',
+          poNumber: resolvedPoNumber,
+          vendorName: resolvedVendor,
           poAssignTo: 'MANISH KOSHLE',
           indentNo: flow.indentNo,
-          indentDate: flow.indentDate || now,
-          poDate: now,
-          poAmount: 50000,
+          indentDate: flow.indentDate || formattedNow,
+          poDate: formattedNow,
+          poAmount: resolvedAmount,
           siteName: flow.siteName,
           priority: flow.priority,
           currentStageId: 'STG-PAY-01',
           currentStageIndex: 0,
           totalStages: 15,
           status: 'In Progress',
-          createdAt: now,
-          updatedAt: now,
+          createdAt: formattedNow,
+          updatedAt: formattedNow,
           totalDelayHours: 0,
-          remarks: `Advance payment dossier transferred from Indent #${flow.indentNo} for Accounts disbursement`,
-          paymentMode: 'PENDING',
+          remarks: resolvedRemarks,
+          paymentMode: resolvedMode,
           stages: FMS_PO_PAYMENT_STAGES.map((s, sIdx) => ({
             stageId: s.stageId,
             stageName: s.name,
             assignee: s.whoDefaultAssignee,
             how: s.howChannel,
             status: sIdx === 0 ? 'In Progress' : 'Pending',
-            plannedDateTime: sIdx === 0 ? now : undefined,
+            plannedDateTime: sIdx === 0 ? formattedNow : undefined,
             formResponseRef: s.formUrl,
           }))
         };
         updatedFlowsList = [newPayFlow, ...updatedFlowsList];
-        showToast(`Advance payment approved! Accounts PO-to-Payment flow initialized for Indent #${flow.indentNo}.`);
+        showToast(
+          currentStage.stageId === 'STG-11'
+            ? `Dossier submitted! Accounts PO-to-Payment flow initialized for Indent #${flow.indentNo}.`
+            : `Advance payment approved! Accounts PO-to-Payment flow initialized for Indent #${flow.indentNo}.`
+        );
       }
     }
 
@@ -551,15 +831,15 @@ export default function App() {
           linkedFlowId: flow.flowId,
           requisitionNumber: flow.indentNo,
           indentNo: flow.indentNo,
-          indentDate: flow.indentDate || now,
+          indentDate: flow.indentDate || formattedNow,
           siteName: flow.siteName,
           priority: flow.priority,
           currentStageId: 'STG-PSD-01',
           currentStageIndex: 0,
           totalStages: 10,
           status: 'In Progress',
-          createdAt: now,
-          updatedAt: now,
+          createdAt: formattedNow,
+          updatedAt: formattedNow,
           totalDelayHours: 0,
           remarks: `Material received at warehouse. Purchase to Store to Dispatch workflow initiated for Indent #${flow.indentNo}`,
           stages: FMS_PURCHASE_TO_STORE_DISPATCH_STAGES.map((s, sIdx) => ({
@@ -568,7 +848,7 @@ export default function App() {
             assignee: s.whoDefaultAssignee,
             how: s.howChannel,
             status: sIdx === 0 ? 'In Progress' : 'Pending',
-            plannedDateTime: sIdx === 0 ? now : undefined,
+            plannedDateTime: sIdx === 0 ? formattedNow : undefined,
             formResponseRef: s.formUrl,
           })),
         };
@@ -591,289 +871,18 @@ export default function App() {
     showToast(`FMS #${updatedFlow.poNumber || updatedFlow.indentNo} advanced to stage: ${updatedFlow.stages[updatedFlow.currentStageIndex]?.stageName || 'Completed'}`);
   };
 
-  const handleCompleteFmsStage = (flow: FmsInstance, stageIndex: number, decision?: 'Yes' | 'No') => {
-    const updatedStages = [...flow.stages];
-    const targetStage = updatedStages[stageIndex];
-    if (!targetStage) return;
-
-    const isCurrentlyDone = targetStage.status === 'Done';
-    const now = new Date().toLocaleString('en-GB');
-
-    targetStage.status = isCurrentlyDone ? 'Pending' : 'Done';
-    targetStage.actualDateTime = isCurrentlyDone ? undefined : now;
-    if (decision) {
-      targetStage.decisionValue = decision;
+  const handleCompleteFmsStage = (
+    flow: FmsInstance, 
+    stageIndex: number, 
+    decision?: 'Yes' | 'No',
+    submittedData?: Record<string, any>
+  ) => {
+    // FMS stages are strictly sequential: can ONLY action the active stage in an in-progress flow!
+    if (flow.status !== 'In Progress' || stageIndex !== flow.currentStageIndex) {
+      showToast(`Stage ${stageIndex + 1} cannot be actioned out of sequence. Active stage is Stage ${flow.currentStageIndex + 1}.`);
+      return;
     }
-
-    let nextIndex = stageIndex + 1;
-
-    // Checkpoint branching rules:
-    if (flow.flowType === 'CHECK_STOCK') {
-      if (targetStage.stageId === 'STG-STK-02') {
-        if (decision === 'No') {
-          if (updatedStages[2]) {
-            updatedStages[2].status = 'Skipped';
-            updatedStages[2].notes = 'Skipped: Stock available in store, no purchase needed';
-          }
-          if (updatedStages[3]) {
-            updatedStages[3].status = 'Skipped';
-            updatedStages[3].notes = 'Skipped: Stock available in store, no purchase needed';
-          }
-          nextIndex = 4;
-        } else if (decision === 'Yes') {
-          nextIndex = 2;
-        }
-      }
-
-      if (targetStage.stageId === 'STG-STK-04') {
-        if (decision === 'Yes') {
-          nextIndex = 4;
-        } else if (decision === 'No') {
-          if (updatedStages[4]) {
-            updatedStages[4].status = 'Skipped';
-            updatedStages[4].notes = 'Skipped: Full purchase required from vendor';
-          }
-          nextIndex = 5;
-        }
-      }
-    } else if (flow.flowType === 'PO_TO_PAYMENT') {
-      if (targetStage.stageId === 'STG-PAY-01') {
-        if (decision === 'Yes') {
-          [10, 11, 12, 13].forEach((idx) => {
-            if (updatedStages[idx]) {
-              updatedStages[idx].status = 'Skipped';
-              updatedStages[idx].notes = 'Skipped: Paid via Bank Account route';
-            }
-          });
-          nextIndex = 1;
-        } else if (decision === 'No') {
-          for (let i = 1; i <= 9; i++) {
-            if (updatedStages[i]) {
-              updatedStages[i].status = 'Skipped';
-              updatedStages[i].notes = 'Skipped: Routed via UPI QR code payment';
-            }
-          }
-          nextIndex = 10;
-        }
-      }
-
-      if (targetStage.stageId === 'STG-PAY-02') {
-        if (decision === 'Yes') {
-          for (let i = 2; i <= 5; i++) {
-            if (updatedStages[i]) {
-              updatedStages[i].status = 'Skipped';
-              updatedStages[i].notes = 'Skipped: Account already verified in internet banking';
-            }
-          }
-          nextIndex = 6;
-        } else if (decision === 'No') {
-          nextIndex = 2;
-        }
-      }
-
-      if (targetStage.stageId === 'STG-PAY-10') {
-        nextIndex = 14;
-      }
-
-      if (targetStage.stageId === 'STG-PAY-14') {
-        nextIndex = 14;
-      }
-    } else if (flow.flowType === 'PURCHASE_TO_STORE_DISPATCH') {
-      if (targetStage.stageId === 'STG-PSD-05') {
-        if (decision === 'No') {
-          [5, 6].forEach((idx) => {
-            if (updatedStages[idx]) {
-              updatedStages[idx].status = 'Skipped';
-              updatedStages[idx].notes = 'Skipped: E-Way Bill not required for this consignment';
-            }
-          });
-          nextIndex = 7;
-        } else if (decision === 'Yes') {
-          nextIndex = 5;
-        }
-      }
-    } else if (flow.flowType === 'PAYMENT_TO_DISPATCH') {
-      if (targetStage.stageId === 'STG-DISP-03') {
-        if (decision === 'Yes') {
-          [3, 4, 5].forEach((idx) => {
-            if (updatedStages[idx]) {
-              updatedStages[idx].status = 'Skipped';
-              updatedStages[idx].notes = 'Skipped: Material accepted as per PO specifications';
-            }
-          });
-          nextIndex = 6;
-        } else if (decision === 'No') {
-          nextIndex = 3;
-        }
-      }
-
-      if (targetStage.stageId === 'STG-DISP-05') {
-        if (decision === 'Yes') {
-          if (updatedStages[5]) {
-            updatedStages[5].status = 'Skipped';
-            updatedStages[5].notes = 'Skipped: Material successfully replaced by vendor';
-          }
-          nextIndex = 6;
-        } else if (decision === 'No') {
-          nextIndex = 5;
-        }
-      }
-    } else {
-      // Checkpoint branching rules from Sheet 1:
-      if (targetStage.stageId === 'STG-02' && decision === 'No') {
-        if (updatedStages[2]) {
-          updatedStages[2].status = 'Skipped';
-          updatedStages[2].notes = 'Skipped: No degraded materials returned';
-          nextIndex = 3;
-        }
-      }
-
-      if (targetStage.stageId === 'STG-06' && decision === 'No') {
-        if (updatedStages[6]) {
-          updatedStages[6].status = 'Skipped';
-          updatedStages[6].notes = 'Skipped: Single OEM quotation sufficient';
-          nextIndex = 7;
-        }
-      }
-
-      if (targetStage.stageId === 'STG-10' && decision === 'No') {
-        if (updatedStages[10]) {
-          updatedStages[10].status = 'Skipped';
-          updatedStages[10].notes = 'Skipped: No advance payment required';
-          nextIndex = 11; // Skips Stage 11 (SEND FOR PAYMENT) and jumps directly to Stage 12 (MATERIAL COLLECTION PO)
-        }
-      }
-    }
-
-    if (stageIndex < flow.currentStageIndex && !isCurrentlyDone) {
-      nextIndex = Math.max(flow.currentStageIndex, nextIndex);
-    }
-
-    const isComplete = nextIndex >= updatedStages.length;
-    const stageDefs = flow.flowType === 'CHECK_STOCK'
-      ? FMS_CHECK_STOCK_STAGES
-      : flow.flowType === 'PO_TO_PAYMENT' 
-      ? FMS_PO_PAYMENT_STAGES 
-      : flow.flowType === 'PURCHASE_TO_STORE_DISPATCH'
-      ? FMS_PURCHASE_TO_STORE_DISPATCH_STAGES
-      : flow.flowType === 'PAYMENT_TO_DISPATCH'
-      ? FMS_PAYMENT_TO_DISPATCH_STAGES
-      : FMS_STANDARD_PURCHASE_STAGES;
-
-    if (!isComplete && updatedStages[nextIndex] && updatedStages[nextIndex].status !== 'Done') {
-      updatedStages[nextIndex].status = 'In Progress';
-      if (!updatedStages[nextIndex].plannedDateTime) {
-        const def = stageDefs.find((s) => s.stageId === updatedStages[nextIndex].stageId);
-        const sla = def?.slaHours || 2;
-        const targetDate = new Date();
-        targetDate.setHours(targetDate.getHours() + sla);
-        updatedStages[nextIndex].plannedDateTime = targetDate.toLocaleString('en-GB');
-      }
-    }
-
-    const updatedFlow: FmsInstance = {
-      ...flow,
-      currentStageIndex: isComplete ? updatedStages.length : nextIndex,
-      currentStageId: isComplete ? 'COMPLETED' : (updatedStages[nextIndex]?.stageId || 'COMPLETED'),
-      status: isComplete ? 'Completed' : 'In Progress',
-      updatedAt: now,
-      stages: updatedStages,
-    };
-
-    let updated = flows.map((f) => (f.id === updatedFlow.id ? updatedFlow : f));
-
-    // When Check Stock Stage 3 completes in modal/table:
-    if (flow.flowType === 'CHECK_STOCK' && targetStage.stageId === 'STG-STK-03' && !isCurrentlyDone) {
-      const existingIndentFlow = flows.find(
-        (f) => f.linkedFlowId === flow.flowId || (f.indentNo === flow.indentNo && f.flowType === 'INDENT_PURCHASE')
-      );
-      if (!existingIndentFlow) {
-        const newIndentFlow: FmsInstance = {
-          id: `fms-inst-ind-${flow.indentNo}`,
-          flowId: `FLOW-IND-${flow.indentNo}`,
-          flowType: 'INDENT_PURCHASE',
-          linkedFlowId: flow.flowId,
-          requisitionNumber: flow.requisitionNumber || `Indent #${flow.indentNo}`,
-          indentNo: flow.indentNo,
-          indentDate: flow.indentDate || now,
-          siteName: flow.siteName,
-          priority: flow.priority,
-          currentStageId: 'STG-01',
-          currentStageIndex: 0,
-          totalStages: 12,
-          status: 'In Progress',
-          createdAt: now,
-          updatedAt: now,
-          totalDelayHours: 0,
-          remarks: `Material indent forwarded from Store Stock Check #${flow.indentNo}`,
-          stages: FMS_STANDARD_PURCHASE_STAGES.map((s, sIdx) => ({
-            stageId: s.stageId,
-            stageName: s.name,
-            assignee: s.whoDefaultAssignee,
-            how: s.howChannel,
-            status: sIdx === 0 ? 'In Progress' : 'Pending',
-            plannedDateTime: sIdx === 0 ? now : undefined,
-            formResponseRef: s.formUrl,
-          })),
-        };
-        updated = [newIndentFlow, ...updated];
-        showToast(`Stock Check requisition sent! Purchase Dept Indent-to-PO Flow created for Indent #${flow.indentNo}.`);
-      }
-    }
-
-    // When Accounts completes Stage 15 in modal/table:
-    if (flow.flowType === 'PO_TO_PAYMENT' && targetStage.stageId === 'STG-PAY-15' && !isCurrentlyDone) {
-      const existingDispFlow = flows.find(
-        (f) => f.linkedFlowId === flow.flowId || (f.poNumber === flow.poNumber && f.flowType === 'PAYMENT_TO_DISPATCH')
-      );
-      if (!existingDispFlow) {
-        const newDispFlow: FmsInstance = {
-          id: `fms-inst-disp-${flow.indentNo}-${Date.now()}`,
-          flowId: `FLOW-DISP-${flow.indentNo}-001`,
-          flowType: 'PAYMENT_TO_DISPATCH',
-          linkedFlowId: flow.flowId,
-          poNumber: flow.poNumber || `RAO/PO/${flow.indentNo}-001`,
-          vendorName: flow.vendorName || 'Authorized Vendor',
-          poAssignTo: 'MR. VIVEK',
-          indentNo: flow.indentNo,
-          indentDate: flow.indentDate || now,
-          poDate: flow.poDate || now,
-          siteName: flow.siteName,
-          priority: flow.priority,
-          currentStageId: 'STG-DISP-01',
-          currentStageIndex: 0,
-          totalStages: 7,
-          status: 'In Progress',
-          createdAt: now,
-          updatedAt: now,
-          totalDelayHours: 0,
-          remarks: `Material receipt and site dispatch triggered post-payment for PO #${flow.poNumber || flow.indentNo}`,
-          stages: FMS_PAYMENT_TO_DISPATCH_STAGES.map((s, sIdx) => ({
-            stageId: s.stageId,
-            stageName: s.name,
-            assignee: s.whoDefaultAssignee,
-            how: s.howChannel,
-            status: sIdx === 0 ? 'In Progress' : 'Pending',
-            plannedDateTime: sIdx === 0 ? now : undefined,
-            formResponseRef: s.formUrl,
-          })),
-        };
-        updated = [newDispFlow, ...updated];
-        showToast(`Payment completed! Payment to Dispatch Flow created for PO #${flow.poNumber || flow.indentNo}.`);
-      }
-    }
-    setFlows(updated);
-    storageAdapter.saveFmsFlows(updated);
-    storageAdapter.logAudit({
-      userId: currentUser.userId,
-      userName: currentUser.name,
-      module: 'FMS',
-      action: 'STAGE_ADVANCE',
-      entityId: updatedFlow.flowId,
-      details: `${isCurrentlyDone ? 'Reopened' : 'Completed'} Stage ${stageIndex + 1}: ${targetStage.stageName} (Decision: ${decision || targetStage.decisionValue || 'Done'})`
-    });
-    setAuditLogs(storageAdapter.getAuditLogs());
-    showToast(`Stage ${stageIndex + 1}: ${targetStage.stageName} marked as ${targetStage.status}!`);
+    handleAdvanceCurrentStage(flow, decision, submittedData);
   };
 
   // Delegation Handlers
@@ -1111,8 +1120,22 @@ export default function App() {
     lowStockCount: inventoryItems.filter((i) => i.currentStock <= i.minThreshold).length,
   };
 
+  if (!isAuthenticated) {
+    return (
+      <LoginPage
+        onLoginSuccess={(u) => {
+          storageAdapter.saveAuthUser(u);
+          setCurrentUser(u);
+          setIsAuthenticated(true);
+          showToast(`Welcome back, ${u.name}!`);
+        }}
+        noticeItems={noticeBoardItems}
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-900 antialiased">
+    <div className="min-h-screen bg-white flex flex-col font-sans text-slate-900 antialiased">
       {/* Toast */}
       {toastMessage && (
         <div className="fixed bottom-5 right-5 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-xl border border-slate-700 text-xs font-semibold flex items-center gap-2 animate-bounce">
@@ -1124,29 +1147,68 @@ export default function App() {
       {/* Header with scope toggle and user switcher */}
       <Header
         currentUser={currentUser}
-        onUserChange={handleUserChange}
+        onUserChange={(newUser) => {
+          setCurrentUser(newUser);
+          storageAdapter.saveAuthUser(newUser);
+          const deptName = (newUser.departmentName || newUser.role || '').toUpperCase();
+          if (deptName.includes('PURCHASE')) {
+            setSelectedFmsDepartment('PURCHASE');
+          } else if (deptName.includes('STORE')) {
+            setSelectedFmsDepartment('STORE');
+          } else if (deptName.includes('ACCOUNT') || deptName.includes('FINANCE')) {
+            setSelectedFmsDepartment('ACCOUNTS');
+          } else if (deptName.includes('PLANT') || deptName.includes('EQUIPMENT') || deptName.includes('STRUCTURE')) {
+            setSelectedFmsDepartment('PLANT_OPS');
+          } else {
+            setSelectedFmsDepartment(null);
+          }
+        }}
         registryConfig={registryConfig}
         activeTab={activeTab}
         onRefresh={loadAllData}
-        viewScope={viewScope}
+        viewScope={isSuperAdmin ? viewScope : 'USER_ONLY'}
         onToggleScope={handleToggleScope}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        pcDeskActive={isSuperAdmin ? pcDeskActive : false}
+        onTogglePcDesk={isSuperAdmin ? () => {
+          const next = !pcDeskActive;
+          setPcDeskActive(next);
+          showToast(next ? "PC Desk Mode Enabled" : "PC Desk Mode Disabled");
+        } : undefined}
+        onOpenMobileMenu={() => setIsMobileDrawerOpen(true)}
+        onOpenMyProfile={() => handleTabChange('profile')}
+        onOpenSuperAdmin={isSuperAdmin ? () => setActiveTab('super-admin') : undefined}
+        onLogout={handleLogout}
+        onOpenGlobalSearch={() => setIsGlobalSearchOpen(true)}
       />
 
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar */}
         <Sidebar
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={(tab) => {
+            handleTabChange(tab);
+            if (tab === 'fms') {
+              setSelectedFmsDepartment(null);
+            }
+          }}
           badgeCounts={badgeCounts}
           isOpen={isSidebarOpen}
+          flows={flows}
+          selectedDepartment={selectedFmsDepartment}
+          onSelectDepartmentFms={(deptKey) => {
+            handleTabChange('fms');
+            setSelectedFmsDepartment(deptKey);
+          }}
+          currentUser={currentUser}
+          onOpenMyProfile={() => handleTabChange('profile')}
         />
 
         {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-6 pb-28 md:pb-6 bg-white">
           <div className="max-w-7xl mx-auto">
-            {activeTab === 'summary' && (
+            {activeTab === 'summary' && (isSuperAdmin || hasModulePermission(currentUser, 'summary', 'view')) && (
               <UnifiedWorkSummary
                 currentUser={currentUser}
                 checklistItems={checklistItems}
@@ -1158,89 +1220,144 @@ export default function App() {
                 onCompleteFmsStage={handleCompleteFmsStage}
                 onReviseDelegation={(task) => setSelectedTaskForRevision(task)}
                 onSelectFmsDetail={(flow) => setSelectedFmsDetail(flow)}
-                onNavigateTab={(tab) => setActiveTab(tab)}
+                onNavigateTab={(tab) => handleTabChange(tab)}
                 onAddProcessRemark={handleAddProcessRemark}
                 onNudgeItem={handleNudgeItem}
+                pcDeskActive={isSuperAdmin ? pcDeskActive : false}
+                onTogglePcDesk={isSuperAdmin ? (active) => setPcDeskActive(active) : undefined}
+                onCreateFmsFlow={(isSuperAdmin || hasModulePermission(currentUser, 'summary', 'edit')) ? () => setIsCreateFmsOpen(true) : undefined}
+                onOpenStageAction={(flow, stageIndex) => setStageActionTarget({ flow, stageIndex })}
               />
             )}
 
-            {activeTab === 'mis' && (
+            {activeTab === 'mis' && (isSuperAdmin || hasModulePermission(currentUser, 'mis', 'view')) && (
               <MisDashboard
                 flows={flows}
                 delegationTasks={delegationTasks}
                 checklistItems={checklistItems}
                 inventoryItems={inventoryItems}
                 currentUser={currentUser}
-                viewScope={viewScope}
+                viewScope={isSuperAdmin ? viewScope : 'USER_ONLY'}
                 onToggleScope={handleToggleScope}
-                onNavigateTab={(tab) => setActiveTab(tab)}
+                onNavigateTab={(tab) => handleTabChange(tab)}
+                usersList={usersList}
               />
             )}
 
-            {activeTab === 'fms' && (
+            {activeTab === 'fms' && (isSuperAdmin || hasModulePermission(currentUser, 'fms', 'view')) && (
               <FmsPipeline
                 flows={flows}
                 currentUser={currentUser}
-                viewScope={viewScope}
+                viewScope={isSuperAdmin ? viewScope : 'USER_ONLY'}
                 onToggleScope={handleToggleScope}
                 onUpdateFlow={(flow) => {
                   const updated = flows.map((f) => (f.id === flow.id ? flow : f));
                   setFlows(updated);
                   storageAdapter.saveFmsFlows(updated);
                 }}
-                onCreateFlow={() => setIsCreateFmsOpen(true)}
+                onCreateFlow={(isSuperAdmin || hasModulePermission(currentUser, 'fms', 'edit')) ? () => setIsCreateFmsOpen(true) : undefined}
+                onSelectFlow={(f) => setSelectedFmsDetail(f)}
+                onOpenTemplateStudio={(isSuperAdmin || hasModulePermission(currentUser, 'fms', 'edit')) ? (key) => {
+                  setTemplateStudioKey(key || null);
+                  setIsTemplateStudioOpen(true);
+                } : undefined}
+                onOpenStageAction={(flow, stageIndex) => setStageActionTarget({ flow, stageIndex })}
+                selectedDepartmentFilter={selectedFmsDepartment}
+                onClearDepartmentFilter={() => setSelectedFmsDepartment(null)}
+              />
+            )}
+
+            {activeTab === 'fms-audit' && (isSuperAdmin || hasModulePermission(currentUser, 'fms-audit', 'view')) && (
+              <FmsAuditLedgerView
+                flows={flows}
+                currentUser={currentUser}
                 onSelectFlow={(f) => setSelectedFmsDetail(f)}
               />
             )}
 
-            {activeTab === 'delegation' && (
+            {activeTab === 'delegation' && (isSuperAdmin || hasModulePermission(currentUser, 'delegation', 'view')) && (
               <DelegationBoard
                 tasks={delegationTasks}
                 currentUser={currentUser}
-                viewScope={viewScope}
+                viewScope={isSuperAdmin ? viewScope : 'USER_ONLY'}
                 onToggleScope={handleToggleScope}
                 onUpdateTask={handleUpdateDelegationTask}
-                onNewTask={() => setIsNewTaskOpen(true)}
+                onNewTask={(isSuperAdmin || hasModulePermission(currentUser, 'delegation', 'edit')) ? () => setIsNewTaskOpen(true) : undefined}
                 onReviseTask={(task) => setSelectedTaskForRevision(task)}
+                onAddProcessRemark={handleAddProcessRemark}
               />
             )}
 
-            {activeTab === 'checklist' && (
+            {activeTab === 'checklist' && (isSuperAdmin || hasModulePermission(currentUser, 'checklist', 'view')) && (
               <ChecklistManager
                 items={checklistItems}
                 currentUser={currentUser}
-                viewScope={viewScope}
+                viewScope={isSuperAdmin ? viewScope : 'USER_ONLY'}
                 onToggleScope={handleToggleScope}
                 onUpdateItem={handleUpdateChecklistItem}
-                onNewItem={() => setIsNewChecklistOpen(true)}
-                onBatchGenerateNextCycle={handleBatchGenerateNextCycle}
+                onNewItem={(isSuperAdmin || hasModulePermission(currentUser, 'checklist', 'edit')) ? () => setIsNewChecklistOpen(true) : undefined}
+                onBatchGenerateNextCycle={(isSuperAdmin || hasModulePermission(currentUser, 'checklist', 'edit')) ? handleBatchGenerateNextCycle : undefined}
+                onAddProcessRemark={handleAddProcessRemark}
               />
             )}
 
-            {activeTab === 'ims' && (
+            {activeTab === 'ims' && (isSuperAdmin || hasModulePermission(currentUser, 'ims', 'view')) && (
               <InventoryManager
                 items={inventoryItems}
                 movements={inventoryMovements}
                 currentUser={currentUser}
                 onUpdateItem={handleUpdateInventoryItem}
-                onNewMovement={() => {
+                onNewMovement={(isSuperAdmin || hasModulePermission(currentUser, 'ims', 'edit')) ? () => {
                   setPreselectedInventoryItem(null);
                   setIsStockMovementOpen(true);
-                }}
+                } : undefined}
                 onReturnDegraded={handleReturnDegradedFromInventory}
               />
             )}
 
-            {activeTab === 'registry' && (
+            {activeTab === 'registry' && (isSuperAdmin || hasModulePermission(currentUser, 'registry', 'view')) && (
               <CentralRegistryView
                 config={registryConfig}
                 onSaveConfig={handleSaveRegistryConfig}
                 onResetSeedData={handleResetSeedData}
+                onOpenTemplateStudio={(key) => {
+                  setTemplateStudioKey(key || null);
+                  setIsTemplateStudioOpen(true);
+                }}
+                onCreateFlow={() => setIsCreateFmsOpen(true)}
               />
             )}
 
-            {activeTab === 'audit' && (
+            {activeTab === 'audit' && (isSuperAdmin || hasModulePermission(currentUser, 'audit', 'view')) && (
               <AuditLogView logs={auditLogs} />
+            )}
+
+            {activeTab === 'super-admin' && isSuperAdmin && (
+              <SuperAdminGovernanceView
+                usersList={usersList}
+                onUpdateUsersList={handleUpdateUsersList}
+                noticeBoardItems={noticeBoardItems}
+                onUpdateNoticeBoard={handleUpdateNoticeBoard}
+                onImpersonateUser={(u) => {
+                  setCurrentUser(u);
+                  storageAdapter.saveAuthUser(u);
+                  showToast(`Now viewing portal as ${u.name}`);
+                }}
+                currentUser={currentUser}
+              />
+            )}
+            {activeTab === 'profile' && (
+              <MyProfilePage
+                currentUser={currentUser}
+                onUpdateProfile={handleUpdateCurrentUser}
+                onLogout={handleLogout}
+                onNavigateToScoreboard={() => handleTabChange('mis')}
+                onBackToDashboard={() => handleTabChange('summary')}
+                fmsFlows={flows}
+                delegationTasks={delegationTasks}
+                checklistItems={checklistItems}
+                auditLogs={auditLogs}
+              />
             )}
           </div>
         </main>
@@ -1252,6 +1369,35 @@ export default function App() {
         onClose={() => setIsCreateFmsOpen(false)}
         currentUser={currentUser}
         onCreate={handleCreateFlow}
+        onOpenTemplateStudio={() => {
+          setIsCreateFmsOpen(false);
+          setIsTemplateStudioOpen(true);
+        }}
+      />
+
+      <StageActionModal
+        isOpen={Boolean(stageActionTarget)}
+        flow={stageActionTarget ? flows.find(f => f.id === stageActionTarget.flow.id) || stageActionTarget.flow : null}
+        stageIndex={stageActionTarget ? stageActionTarget.stageIndex : 0}
+        currentUser={currentUser}
+        onClose={() => setStageActionTarget(null)}
+        onSubmitStage={(flow, stageIndex, submittedData, decision) => {
+          handleAdvanceCurrentStage(flow, decision, submittedData);
+          setStageActionTarget(null);
+        }}
+      />
+
+      <FmsTemplateStudioModal
+        isOpen={isTemplateStudioOpen}
+        initialTemplateKey={templateStudioKey}
+        onClose={() => {
+          setIsTemplateStudioOpen(false);
+          setTemplateStudioKey(null);
+        }}
+        onSaveTemplate={(template) => {
+          storageAdapter.saveFmsTemplate(template);
+          showToast(`FMS Template "${template.name}" with ${template.stages.length} custom stage forms saved!`);
+        }}
       />
 
       <FmsDetailModal
@@ -1290,6 +1436,140 @@ export default function App() {
         currentUser={currentUser}
         preselectedItem={preselectedInventoryItem}
         onRecord={handleRecordStockMovement}
+      />
+
+      {/* Desktop Floating Action Button (FAB) */}
+      <div className="hidden md:flex fixed bottom-6 right-6 z-40">
+        <button
+          type="button"
+          onClick={() => setIsQuickActionModalOpen(true)}
+          className="h-14 w-14 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow-xl hover:shadow-2xl ring-4 ring-indigo-100/90 hover:scale-105 active:scale-95 transition-all cursor-pointer group"
+          title="Quick Action: Create New Entry (+)"
+          aria-label="Create New Entry"
+        >
+          <Plus className="w-7 h-7 stroke-[2.5] group-hover:rotate-90 transition-transform duration-200" />
+        </button>
+      </div>
+
+      {/* Mobile Native Experience Components (md:hidden) */}
+      <MobileBottomNav
+        activeTab={activeTab}
+        onTabChange={(tab) => {
+          handleTabChange(tab);
+          if (tab === 'fms') {
+            setSelectedFmsDepartment(null);
+          }
+        }}
+        badgeCounts={badgeCounts}
+        onOpenMobileMenu={() => setIsMobileDrawerOpen(true)}
+        onOpenQuickAction={() => setIsQuickActionModalOpen(true)}
+        currentUser={currentUser}
+      />
+
+      <MobileDrawer
+        isOpen={isMobileDrawerOpen}
+        onClose={() => setIsMobileDrawerOpen(false)}
+        activeTab={activeTab}
+        onTabChange={(tab) => {
+          handleTabChange(tab);
+          if (tab === 'fms') {
+            setSelectedFmsDepartment(null);
+          }
+        }}
+        currentUser={currentUser}
+        onUserChange={handleUserChange}
+        viewScope={isSuperAdmin ? viewScope : 'USER_ONLY'}
+        onToggleScope={handleToggleScope}
+        pcDeskActive={isSuperAdmin ? pcDeskActive : false}
+        onTogglePcDesk={isSuperAdmin ? () => {
+          const next = !pcDeskActive;
+          setPcDeskActive(next);
+          showToast(next ? "PC Desk Mode Enabled" : "PC Desk Mode Disabled");
+        } : undefined}
+        badgeCounts={badgeCounts}
+        flows={flows}
+        selectedDepartment={selectedFmsDepartment}
+        onSelectDepartmentFms={(deptKey) => {
+          handleTabChange('fms');
+          setSelectedFmsDepartment(deptKey);
+        }}
+        onOpenQuickAction={isSuperAdmin ? () => {
+          setIsMobileDrawerOpen(false);
+          setIsQuickActionModalOpen(true);
+        } : undefined}
+        onRefresh={loadAllData}
+      />
+
+      <MobileQuickActionModal
+        isOpen={isQuickActionModalOpen}
+        onClose={() => setIsQuickActionModalOpen(false)}
+        onCreateFms={() => setIsCreateFmsOpen(true)}
+        onNewTask={() => setIsNewTaskOpen(true)}
+        onNewChecklist={() => setIsNewChecklistOpen(true)}
+        onStockMovement={() => {
+          setPreselectedInventoryItem(null);
+          setIsStockMovementOpen(true);
+        }}
+        onOpenTemplateStudio={() => {
+          setTemplateStudioKey(null);
+          setIsTemplateStudioOpen(true);
+        }}
+      />
+
+      {/* User Profile Modal */}
+      <MyProfileModal
+        isOpen={isMyProfileOpen}
+        onClose={() => setIsMyProfileOpen(false)}
+        currentUser={currentUser}
+        onUpdateProfile={handleUpdateCurrentUser}
+        onLogout={handleLogout}
+        onNavigateToScoreboard={() => {
+          setIsMyProfileOpen(false);
+          setActiveTab('mis');
+        }}
+        fmsFlows={flows}
+        delegationTasks={delegationTasks}
+        checklistItems={checklistItems}
+        auditLogs={auditLogs}
+      />
+
+      {/* Super Admin Governance Center Modal */}
+      <SuperAdminModal
+        isOpen={isSuperAdminOpen}
+        onClose={() => setIsSuperAdminOpen(false)}
+        usersList={usersList}
+        onUpdateUsersList={handleUpdateUsersList}
+        noticeBoardItems={noticeBoardItems}
+        onUpdateNoticeBoard={handleUpdateNoticeBoard}
+        onImpersonateUser={(u) => {
+          setCurrentUser(u);
+          storageAdapter.saveAuthUser(u);
+          showToast(`Now viewing portal as ${u.name}`);
+        }}
+      />
+
+      {/* Global Universal Search Modal */}
+      <GlobalSearchModal
+        isOpen={isGlobalSearchOpen}
+        onClose={() => setIsGlobalSearchOpen(false)}
+        flows={flows}
+        delegationTasks={delegationTasks}
+        checklistItems={checklistItems}
+        inventoryItems={inventoryItems}
+        usersList={usersList}
+        noticeBoardItems={noticeBoardItems}
+        onNavigateTab={(tab) => setActiveTab(tab)}
+        onSelectFlowDetail={(flow) => setSelectedFmsDetail(flow)}
+        onSelectInventoryItem={(item) => {
+          setPreselectedInventoryItem(item);
+          setIsStockMovementOpen(true);
+        }}
+        onSelectDelegationTask={(task) => setSelectedTaskForRevision(task)}
+        onImpersonateUser={(u) => {
+          setCurrentUser(u);
+          storageAdapter.saveAuthUser(u);
+          showToast(`Now viewing portal as ${u.name}`);
+        }}
       />
     </div>
   );

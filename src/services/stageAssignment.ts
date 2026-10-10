@@ -61,6 +61,31 @@ export const isUserResponsibleForStage = (
 
   const userName = user.name.toLowerCase().trim();
   const userRole = user.role.toLowerCase().trim();
+  const targetAssignee = (stageExec?.assignee || stageDef.whoDefaultAssignee || '').toLowerCase().trim();
+
+  // 1. Direct Explicit Assignee Name Check
+  if (targetAssignee) {
+    const userParts = userName.split(/[\s,._/-]+/).filter(Boolean);
+    const hasNameMatch = userParts.some(p => p.length >= 3 && targetAssignee.includes(p));
+    if (hasNameMatch) return true;
+
+    // List of specific individuals in the organization
+    const knownIndividuals = [
+      'khushboo', 'pranjal', 'bramhanand', 'shyam', 'rajnikant', 
+      'rajendra', 'vivek', 'amanat', 'sumant', 'hemant', 
+      'garima', 'mamta', 'khilesh', 'nandita', 'pranay', 
+      'chakravarti', 'byamkesh', 'manish', 'priyanka', 'ritu'
+    ];
+
+    // If this stage is explicitly assigned to a known individual other than the current user, reject
+    const assignedToOtherIndividual = knownIndividuals.some(ind => 
+      targetAssignee.includes(ind) && !userName.includes(ind)
+    );
+
+    if (assignedToOtherIndividual) {
+      return false;
+    }
+  }
 
   // Equipment Part Repair FMS Stages
   if (stageDef.stageId?.startsWith('STG-EQP-')) {
@@ -349,35 +374,38 @@ export const isUserResponsibleForStage = (
 
   // Accounts PO to Payment FMS Stages
   if (stageDef.stageId?.startsWith('STG-PAY-')) {
-    // Finance approvals: STG-PAY-01, 05, 08, 12
+    // Finance approvals: STG-PAY-01, 05, 08, 12 -> Pranjal Agrawal / Khushboo Sahu
     if (['STG-PAY-01', 'STG-PAY-05', 'STG-PAY-08', 'STG-PAY-12'].includes(stageDef.stageId)) {
       return userName.includes('pranjal') || 
              userName.includes('khushboo') || 
-             userRole.includes('finance') || 
-             userRole.includes('approver') ||
-             userRole.includes('ea');
+             userRole.includes('finance');
     }
-    // Accounts bank addition & payment processing: STG-PAY-02, 04, 06, 09, 10, 15
+    // Accounts bank addition & payment processing: STG-PAY-02, 04, 06, 09, 10, 15 -> Byamkesh Kaiwartya / Manish / Priyanka
     if (['STG-PAY-02', 'STG-PAY-04', 'STG-PAY-06', 'STG-PAY-09', 'STG-PAY-10', 'STG-PAY-15'].includes(stageDef.stageId)) {
       return userName.includes('byamkesh') || 
              userName.includes('manish') || 
              userName.includes('priyanka') || 
              userRole.includes('accounts');
     }
-    // Purchase liaison: STG-PAY-03, 07
+    // Purchase liaison: STG-PAY-03, 07 -> Shyam Rao Sureshe / Rajnikant
     if (['STG-PAY-03', 'STG-PAY-07'].includes(stageDef.stageId)) {
       return userName.includes('shyam') || 
              userName.includes('rajnikant') || 
              userRole.includes('purchase');
     }
-    // UPI execution & verification: STG-PAY-11, 13, 14
-    if (['STG-PAY-11', 'STG-PAY-13', 'STG-PAY-14'].includes(stageDef.stageId)) {
+    // Stage 11 & Stage 14: Payment Approval Form (UPI) & Make Payment (UPI) -> Khushboo Sahu (EA)
+    if (['STG-PAY-11', 'STG-PAY-14'].includes(stageDef.stageId)) {
       return userName.includes('khushboo') || 
-             userName.includes('byamkesh') || 
+             userName.includes('pranjal') || 
+             userRole.includes('ea');
+    }
+    // Stage 13: Get QR Code -> Purchaser (Rajnikant / Vivek / Rajendra)
+    if (stageDef.stageId === 'STG-PAY-13') {
+      return userName.includes('rajnikant') || 
              userName.includes('vivek') || 
-             userName.includes('raj') || 
-             userRole.includes('ea') || 
-             userRole.includes('accounts');
+             userName.includes('rajendra') || 
+             userName.includes('shyam') || 
+             userRole.includes('purchaser');
     }
   }
 
@@ -569,6 +597,10 @@ export const getStageSlaStatus = (
     return { status: 'DONE', label: 'Completed', badgeClass: 'bg-emerald-100 text-emerald-800' };
   }
 
+  if (slaHours === 0 || !slaHours) {
+    return { status: 'ON_TRACK', label: 'As Needed (No SLA)', badgeClass: 'bg-indigo-50 text-indigo-700 border border-indigo-200 font-medium' };
+  }
+
   // Reference date matching system time: 05/10/2026
   const now = new Date(2026, 9, 5, 12, 0).getTime();
   
@@ -640,5 +672,80 @@ export const getLinkedFmsChain = (currentFlow: FmsInstance, allFlows: FmsInstanc
   });
 
   return Array.from(new Set(chain));
+};
+
+/**
+ * Resolves the department key for any FMS flow instance
+ */
+export const getFlowDepartmentKey = (
+  flow: FmsInstance, 
+  customTemplates?: Array<{ id: string; departmentHub?: string; templateKey?: string }>
+): string => {
+  if (flow.customTemplateId && customTemplates) {
+    const tpl = customTemplates.find((t) => t.id === flow.customTemplateId);
+    if (tpl?.departmentHub) {
+      const hub = tpl.departmentHub.toUpperCase();
+      if (hub === 'PROCUREMENT') return 'PURCHASE';
+      if (hub === 'SITE_LOGISTICS') return 'STORE';
+      if (hub === 'FINANCE_ACCOUNTS') return 'ACCOUNTS';
+      if (hub === 'HR_EQUIPMENT') return 'PLANT_OPS';
+      return hub;
+    }
+  }
+
+  const ft = flow.flowType;
+  if (['CHECK_STOCK', 'STORE_TO_SITE_DISPATCH', 'PURCHASE_TO_STORE_DISPATCH', 'SITE_RECEIVE', 'FUEL_ISSUE'].includes(ft)) {
+    return 'STORE';
+  }
+  if (['INDENT_PURCHASE', 'SUBCONTRACTOR_BILLING'].includes(ft)) {
+    return 'PURCHASE';
+  }
+  if (['PO_TO_PAYMENT', 'ACCOUNTS_INVOICE_COLLECTION', 'PAYROLL'].includes(ft)) {
+    return 'ACCOUNTS';
+  }
+  if (['BREAKDOWN_REPORTING', 'EQUIPMENT_PART_REPAIR', 'DPR_REPORTING', 'HR_ATTENDANCE_PAYMENT', 'LEAVE_SUBMISSION'].includes(ft)) {
+    return 'PLANT_OPS';
+  }
+  return 'OPERATIONS';
+};
+
+import { storageAdapter } from './storageAdapter';
+
+/**
+ * Returns formatted label for department keys based on Department Hub configuration
+ */
+export const getDepartmentBranchLabel = (deptKey: string): string => {
+  if (!deptKey) return 'General';
+
+  try {
+    const configuredDepts = storageAdapter.getDepartments();
+    const match = configuredDepts.find(
+      (d) => d.key.toUpperCase() === deptKey.toUpperCase() || d.id === deptKey
+    );
+    if (match && match.name) {
+      return match.name;
+    }
+  } catch {
+    // Fallback if storage not ready
+  }
+
+  switch (deptKey.toUpperCase()) {
+    case 'PURCHASE':
+    case 'PROCUREMENT':
+      return 'Purchase';
+    case 'STORE':
+    case 'SITE_LOGISTICS':
+      return 'Store';
+    case 'ACCOUNTS':
+    case 'FINANCE_ACCOUNTS':
+      return 'Accounts';
+    case 'PLANT_OPS':
+    case 'HR_EQUIPMENT':
+      return 'Plant & Ops';
+    case 'OPERATIONS':
+      return 'Operations';
+    default:
+      return deptKey.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  }
 };
 

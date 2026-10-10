@@ -19,7 +19,7 @@ interface InventoryManagerProps {
   movements: InventoryMovement[];
   currentUser: UserProfile;
   onUpdateItem: (item: InventoryItem) => void;
-  onNewMovement: () => void;
+  onNewMovement?: () => void;
   onReturnDegraded: (item: InventoryItem) => void;
 }
 
@@ -56,39 +56,73 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     <div className="space-y-5">
       {/* Top Inventory Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-xs font-medium text-slate-500">Tracked SKUs / Items</span>
-          <div className="flex items-baseline justify-between mt-1">
-            <span className="text-2xl font-bold text-slate-900">{items.length}</span>
-            <span className="text-xs text-slate-400">4 Locations</span>
+        {/* Tracked SKUs */}
+        <div className="p-5 rounded-2xl border bg-white border-slate-200 hover:border-indigo-300 hover:shadow-xs transition-all text-slate-900">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-indigo-600">
+              Tracked Items
+            </span>
+            <Boxes className="w-5 h-5 text-indigo-500" />
           </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-xs font-medium text-slate-500">Low Stock Alerts</span>
-          <div className="flex items-baseline justify-between mt-1">
-            <span className="text-2xl font-bold text-orange-600">{lowStockCount}</span>
-            <span className="text-xs text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded font-medium">
-              Below Min Threshold
+          <div className="mt-3 flex items-baseline justify-between">
+            <span className="text-3xl sm:text-4xl font-black text-slate-900">
+              {items.length}
+            </span>
+            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+              4 Locations
             </span>
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-xs font-medium text-slate-500">Degraded / Scrap Items</span>
-          <div className="flex items-baseline justify-between mt-1">
-            <span className="text-2xl font-bold text-rose-600">{degradedCount}</span>
-            <span className="text-xs text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded font-medium">
-              FMS Stage 2 Check
+        {/* Low Stock Alerts */}
+        <div className="p-5 rounded-2xl border bg-white border-slate-200 hover:border-amber-300 hover:shadow-xs transition-all text-slate-900">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-amber-600">
+              Low Stock Alerts
+            </span>
+            <AlertTriangle className="w-5 h-5 text-amber-500" />
+          </div>
+          <div className="mt-3 flex items-baseline justify-between">
+            <span className="text-3xl sm:text-4xl font-black text-slate-900">
+              {lowStockCount}
+            </span>
+            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
+              Below Threshold
             </span>
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-xs font-medium text-slate-500">Movement Transactions</span>
-          <div className="flex items-baseline justify-between mt-1">
-            <span className="text-2xl font-bold text-indigo-600">{movements.length}</span>
-            <span className="text-xs text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-medium">
+        {/* Degraded Items */}
+        <div className="p-5 rounded-2xl border bg-white border-slate-200 hover:border-rose-300 hover:shadow-xs transition-all text-slate-900">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-rose-600">
+              Degraded / Scrap
+            </span>
+            <AlertTriangle className="w-5 h-5 text-rose-500" />
+          </div>
+          <div className="mt-3 flex items-baseline justify-between">
+            <span className="text-3xl sm:text-4xl font-black text-slate-900">
+              {degradedCount}
+            </span>
+            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-100">
+              Action Required
+            </span>
+          </div>
+        </div>
+
+        {/* Movement Transactions */}
+        <div className="p-5 rounded-2xl border bg-white border-slate-200 hover:border-emerald-300 hover:shadow-xs transition-all text-slate-900">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-emerald-600">
+              Movement Logs
+            </span>
+            <ArrowRightLeft className="w-5 h-5 text-emerald-500" />
+          </div>
+          <div className="mt-3 flex items-baseline justify-between">
+            <span className="text-3xl sm:text-4xl font-black text-slate-900">
+              {movements.length}
+            </span>
+            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
               Audit Tracked
             </span>
           </div>
@@ -98,12 +132,12 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       {/* Control bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex bg-slate-100 p-1 rounded-lg">
+          <div className="flex bg-white p-1 rounded-lg border border-slate-200">
             <button
               onClick={() => setActiveTab('STOCK')}
               className={`px-3 py-1 text-xs rounded-md font-semibold transition-all ${
                 activeTab === 'STOCK'
-                  ? 'bg-white text-slate-900 shadow-xs'
+                  ? 'bg-slate-100 text-slate-900 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -113,7 +147,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
               onClick={() => setActiveTab('MOVEMENTS')}
               className={`px-3 py-1 text-xs rounded-md font-semibold transition-all ${
                 activeTab === 'MOVEMENTS'
-                  ? 'bg-white text-slate-900 shadow-xs'
+                  ? 'bg-slate-100 text-slate-900 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -130,7 +164,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                   placeholder="Search item, SKU..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg w-44 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg w-44 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
 
@@ -138,7 +172,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                 aria-label="Filter by location"
                 value={locationFilter}
                 onChange={(e) => setLocationFilter(e.target.value)}
-                className="text-xs bg-slate-50 border border-slate-300 rounded-lg py-1.5 px-2 text-slate-700 font-medium"
+                className="text-xs bg-white border border-slate-300 rounded-lg py-1.5 px-2 text-slate-700 font-medium"
               >
                 <option value="ALL">All Locations</option>
                 <option value="Siladehi Site">Siladehi Site</option>
@@ -151,7 +185,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                 aria-label="Filter by condition"
                 value={conditionFilter}
                 onChange={(e) => setConditionFilter(e.target.value)}
-                className="text-xs bg-slate-50 border border-slate-300 rounded-lg py-1.5 px-2 text-slate-700 font-medium"
+                className="text-xs bg-white border border-slate-300 rounded-lg py-1.5 px-2 text-slate-700 font-medium"
               >
                 <option value="ALL">All Conditions</option>
                 <option value="Good">Good</option>
@@ -163,13 +197,15 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
           )}
         </div>
 
-        <button
-          onClick={onNewMovement}
-          className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors shrink-0"
-        >
-          <ArrowRightLeft className="w-4 h-4" />
-          <span>Record Stock Transfer / Issue</span>
-        </button>
+        {onNewMovement && (
+          <button
+            onClick={onNewMovement}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors shrink-0"
+          >
+            <ArrowRightLeft className="w-4 h-4" />
+            <span>Record Stock Transfer / Issue</span>
+          </button>
+        )}
       </div>
 
       {/* Stock Master Table or Movement Logs */}
@@ -177,7 +213,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+              <thead className="bg-white text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
                 <tr>
                   <th className="py-3 px-3">Item ID</th>
                   <th className="py-3 px-4">Item Name</th>
@@ -272,12 +308,22 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
               </tbody>
             </table>
           </div>
+
+          {/* Table Footer */}
+          <div className="px-4 py-3 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
+            <div>
+              Showing <span className="font-semibold text-slate-800">{filteredItems.length}</span> items ({lowStockCount} low stock alerts)
+            </div>
+            <div className="text-[11px] font-medium text-slate-400">
+              IMS Inventory Management System • Location: {locationFilter}
+            </div>
+          </div>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+              <thead className="bg-white text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
                 <tr>
                   <th className="py-3 px-3">Transaction ID</th>
                   <th className="py-3 px-3">Timestamp</th>
@@ -336,6 +382,16 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Table Footer */}
+          <div className="px-4 py-3 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
+            <div>
+              Showing <span className="font-semibold text-slate-800">{movements.length}</span> logged stock transactions
+            </div>
+            <div className="text-[11px] font-medium text-slate-400">
+              Immutable Stock Movement Ledger • Real-time Traceability
+            </div>
           </div>
         </div>
       )}

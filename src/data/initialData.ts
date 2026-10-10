@@ -4,38 +4,139 @@ import {
   DelegationTask, 
   FmsInstance, 
   FmsStageDefinition, 
+  FmsTemplateDefinition,
   InventoryItem, 
   InventoryMovement, 
-  UserProfile 
+  UserProfile,
+  NoticeBoardItem
 } from '../types';
+
+export const INITIAL_NOTICE_BOARD: NoticeBoardItem[] = [
+  {
+    id: 'NB-01',
+    title: '🚨 Mandatory Daily Material Stock Count Audit at Central Store',
+    category: 'URGENT',
+    content: 'All Store Keepers must verify physical bin counts against Google Sheets ledger by 05:00 PM every evening. Any stock discrepancies must be reported via Fms Store Check Stock module.',
+    date: '09/10/2026',
+    author: 'System Super Admin',
+    isPinned: true
+  },
+  {
+    id: 'NB-02',
+    title: '⚠️ Site Safety Protocol & Helmet Verification Checklist',
+    category: 'SAFETY',
+    content: 'Mandatory safety check required for all field engineers at Siladehi & Bijetala sites before operating heavy equipment.',
+    date: '08/10/2026',
+    author: 'Operations & Safety Head',
+    isPinned: true
+  },
+  {
+    id: 'NB-03',
+    title: '📢 Vendor Payment Voucher Fast-Tracking (SLA Update)',
+    category: 'CIRCULAR',
+    content: 'Accounts PO to Payment vouchers with bank approval SLA limits updated. Fast-track payments will now auto-alert Finance Manager after +1 hour delay.',
+    date: '05/10/2026',
+    author: 'Finance & Accounts Manager',
+    isPinned: false
+  },
+  {
+    id: 'NB-04',
+    title: '🛠️ Equipment Part Repair Tracking Module Active',
+    category: 'SITE_OPS',
+    content: 'All breakdown reports for plant machinery and vehicles should now be logged via FMS Equipment Part Repair flow.',
+    date: '02/10/2026',
+    author: 'Plant & Machinery In-Charge',
+    isPinned: false
+  }
+];
 
 export const USERS: UserProfile[] = [
   {
+    userId: 'USR-000',
+    name: 'System Super Admin',
+    username: 'admin',
+    password: 'pass123',
+    role: 'SUPER_ADMIN',
+    systemRole: 'SUPER_ADMIN',
+    departmentId: 'DEPT-ADMIN',
+    departmentName: 'Executive Control & Governance',
+    departmentKeys: ['PURCHASE', 'STORE', 'ACCOUNTS', 'PLANT_OPS', 'OPERATIONS'],
+    phone: '9999999999',
+    email: 'superadmin@barbrik.in',
+    siteLocation: 'Raipur Headquarters',
+    shiftHours: '24/7 System Governance',
+    status: 'ACTIVE',
+    approvalPin: '0000',
+    lastLoginAt: '09/10/2026 09:30 AM'
+  },
+  {
     userId: 'USR-001',
     name: 'Amanat Bharadwaj',
+    username: 'amanat',
+    password: 'pass123',
     role: 'Store Manager',
+    systemRole: 'DEPT_ADMIN',
     departmentId: 'DEPT-STORE',
-    departmentName: 'Store in charge',
+    departmentName: 'Central Stores & Logistics',
+    departmentKeys: ['STORE', 'SITE_LOGISTICS'],
     phone: '8084801020',
-    email: 'rws.store1@gmail.com'
+    email: 'rws.store1@gmail.com',
+    siteLocation: 'Central Store - Raipur',
+    shiftHours: '08:00 AM - 06:00 PM',
+    status: 'ACTIVE',
+    approvalPin: '1234',
+    lastLoginAt: '09/10/2026 08:15 AM'
   },
   {
     userId: 'USR-002',
     name: 'Bramhanand Patel',
+    username: 'bramhanand',
+    password: 'pass123',
     role: 'Asst. Manager Purchase & Store',
+    systemRole: 'PROCESS_MANAGER',
     departmentId: 'DEPT-PURCHASE',
     departmentName: 'Purchase & Store',
+    departmentKeys: ['PURCHASE', 'STORE'],
     phone: '9827100011',
-    email: 'purchase.mgr@barbrik.in'
+    email: 'purchase.mgr@barbrik.in',
+    siteLocation: 'Raipur Office',
+    shiftHours: '09:00 AM - 06:30 PM',
+    status: 'ACTIVE',
+    approvalPin: '1234'
   },
   {
     userId: 'USR-003',
     name: 'Shyam Rao Sureshe',
+    username: 'shyam',
+    password: 'pass123',
     role: 'Purchase Executive',
+    systemRole: 'OPERATIONAL_USER',
     departmentId: 'DEPT-PURCHASE',
-    departmentName: 'Purchase & Store',
+    departmentName: 'Purchase & Procurement',
+    departmentKeys: ['PURCHASE'],
     phone: '9827100022',
-    email: 'purchase.exec@barbrik.in'
+    email: 'purchase.exec@barbrik.in',
+    siteLocation: 'Raipur Office',
+    shiftHours: '09:30 AM - 06:30 PM',
+    status: 'ACTIVE',
+    approvalPin: '1234'
+  },
+  {
+    userId: 'USR-012',
+    name: 'Priyanka',
+    username: 'priyanka',
+    password: 'pass123',
+    role: 'Accounts Manager',
+    systemRole: 'DEPT_ADMIN',
+    departmentId: 'DEPT-ACCOUNTS',
+    departmentName: 'Accounts & Finance',
+    departmentKeys: ['ACCOUNTS'],
+    phone: '9827100055',
+    email: 'accounts.mgr@barbrik.in',
+    siteLocation: 'Raipur Headquarters',
+    shiftHours: '10:00 AM - 07:00 PM',
+    status: 'ACTIVE',
+    approvalPin: '1234'
   },
   {
     userId: 'USR-004',
@@ -108,15 +209,6 @@ export const USERS: UserProfile[] = [
     departmentName: 'Sr. Structure',
     phone: '9827100099',
     email: 'bijetala.it2@gmail.com'
-  },
-  {
-    userId: 'USR-012',
-    name: 'Priyanka',
-    role: 'Accounts Manager',
-    departmentId: 'DEPT-ACCOUNTS',
-    departmentName: 'Accounts & Finance',
-    phone: '9827100055',
-    email: 'accounts.mgr@barbrik.in'
   },
   {
     userId: 'USR-013',
@@ -223,6 +315,17 @@ export const FMS_CHECK_STOCK_STAGES: FmsStageDefinition[] = [
   {
     stageId: 'STG-STK-01',
     stageNumber: 1,
+    name: 'RECEIVE MATERIAL REQUISITION',
+    what: 'Receive material requisition details from site or company requester with required items',
+    whoRole: 'REQUESTER / STORE MANAGER',
+    whoDefaultAssignee: 'Amanat Bharadwaj',
+    howChannel: 'GOOGLE FORM / REQUISITION SLIP',
+    slaHours: 1,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-STK-02',
+    stageNumber: 2,
     name: 'CHECK STOCK',
     what: 'Verify physical stock at site store and central warehouse against requisition',
     whoRole: 'STORE MANAGER',
@@ -232,20 +335,20 @@ export const FMS_CHECK_STOCK_STAGES: FmsStageDefinition[] = [
     hasYesNoDecision: false
   },
   {
-    stageId: 'STG-STK-02',
-    stageNumber: 2,
+    stageId: 'STG-STK-03',
+    stageNumber: 3,
     name: 'IS MATERIAL PURCHASE REQUIRED?',
     what: 'Check if requisition can be fulfilled from existing stock or new purchase is required',
     whoRole: 'STORE MANAGER',
     whoDefaultAssignee: 'Amanat Bharadwaj',
     howChannel: 'WHATSAPP / EMAIL / PHYSICALLY',
-    slaHours: 4,
+    slaHours: 1,
     isCheckpoint: true,
     hasYesNoDecision: true
   },
   {
-    stageId: 'STG-STK-03',
-    stageNumber: 3,
+    stageId: 'STG-STK-04',
+    stageNumber: 4,
     name: 'SEND INDENT FOR MATERIAL TO BE PURCHASED',
     what: 'Submit material indent requisition to Purchase Department via Google Form',
     whoRole: 'STORE MANAGER',
@@ -256,20 +359,20 @@ export const FMS_CHECK_STOCK_STAGES: FmsStageDefinition[] = [
     hasYesNoDecision: false
   },
   {
-    stageId: 'STG-STK-04',
-    stageNumber: 4,
+    stageId: 'STG-STK-05',
+    stageNumber: 5,
     name: 'IS PARTIAL PURCHASE REQUIRED?',
     what: 'Determine if partial available stock should be dispatched while balance is purchased',
     whoRole: 'STORE MANAGER',
     whoDefaultAssignee: 'Amanat Bharadwaj',
     howChannel: 'WHATSAPP / EMAIL / PHYSICALLY',
-    slaHours: 4,
+    slaHours: 1,
     isCheckpoint: true,
     hasYesNoDecision: true
   },
   {
-    stageId: 'STG-STK-05',
-    stageNumber: 5,
+    stageId: 'STG-STK-06',
+    stageNumber: 6,
     name: 'DISPATCH MATERIAL AVAILABLE',
     what: 'Dispatch available store stock to site and record gate pass/issue entry',
     whoRole: 'STORE MANAGER',
@@ -3073,8 +3176,8 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
     siteName: 'BIJETALA',
     priority: 'Urgent',
     currentStageId: 'COMPLETED',
-    currentStageIndex: 5,
-    totalStages: 5,
+    currentStageIndex: 6,
+    totalStages: 6,
     status: 'Completed',
     createdAt: '07/08/2026 16:55:36',
     updatedAt: '08/08/2026 10:58:51',
@@ -3083,6 +3186,16 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
     stages: [
       {
         stageId: 'STG-STK-01',
+        stageName: 'RECEIVE MATERIAL REQUISITION',
+        assignee: 'Amanat Bharadwaj',
+        how: 'GOOGLE FORM / REQUISITION SLIP',
+        plannedDateTime: '07/08/2026 17:55:36',
+        actualDateTime: '07/08/2026 16:55:36',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-STK-02',
         stageName: 'CHECK STOCK',
         assignee: 'Amanat Bharadwaj',
         how: 'WHATSAPP/EMAIL/PHYSICALLY',
@@ -3092,7 +3205,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         timeDelayHours: 0
       },
       {
-        stageId: 'STG-STK-02',
+        stageId: 'STG-STK-03',
         stageName: 'IS MATERIAL PURCHASE REQUIRED?',
         assignee: 'Amanat Bharadwaj',
         how: 'WHATSAPP/EMAIL/PHYSICALLY',
@@ -3103,7 +3216,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         timeDelayHours: 0
       },
       {
-        stageId: 'STG-STK-03',
+        stageId: 'STG-STK-04',
         stageName: 'SEND INDENT FOR MATERIAL TO BE PURCHASED',
         assignee: 'Amanat Bharadwaj',
         how: 'GOOGLE FORM INDENT TO PO',
@@ -3114,7 +3227,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLScYfRmZ4-SDR0DH5l680-0CK0Y0P5l8xAJVb6SWG9ALdAZDyQ/viewform'
       },
       {
-        stageId: 'STG-STK-04',
+        stageId: 'STG-STK-05',
         stageName: 'IS PARTIAL PURCHASE REQUIRED?',
         assignee: 'Amanat Bharadwaj',
         how: 'WHATSAPP/EMAIL/PHYSICALLY',
@@ -3125,7 +3238,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         timeDelayHours: 0
       },
       {
-        stageId: 'STG-STK-05',
+        stageId: 'STG-STK-06',
         stageName: 'DISPATCH MATERIAL AVAILABLE',
         assignee: 'Amanat Bharadwaj',
         how: 'GOOGLE FORM STOCK TO DISPATCH',
@@ -3146,9 +3259,9 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
     indentDate: '10/07/2026',
     siteName: 'SILADEHI',
     priority: 'Urgent',
-    currentStageId: 'STG-STK-05',
-    currentStageIndex: 4,
-    totalStages: 5,
+    currentStageId: 'STG-STK-06',
+    currentStageIndex: 5,
+    totalStages: 6,
     status: 'In Progress',
     createdAt: '10/07/2026 14:00:00',
     updatedAt: '10/07/2026 15:25:00',
@@ -3157,6 +3270,16 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
     stages: [
       {
         stageId: 'STG-STK-01',
+        stageName: 'RECEIVE MATERIAL REQUISITION',
+        assignee: 'Amanat Bharadwaj',
+        how: 'GOOGLE FORM / REQUISITION SLIP',
+        plannedDateTime: '10/07/2026 15:00:00',
+        actualDateTime: '10/07/2026 14:00:00',
+        status: 'Done',
+        timeDelayHours: 0
+      },
+      {
+        stageId: 'STG-STK-02',
         stageName: 'CHECK STOCK',
         assignee: 'Amanat Bharadwaj',
         how: 'WHATSAPP / EMAIL / PHYSICALLY',
@@ -3166,7 +3289,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         timeDelayHours: 0
       },
       {
-        stageId: 'STG-STK-02',
+        stageId: 'STG-STK-03',
         stageName: 'IS MATERIAL PURCHASE REQUIRED?',
         assignee: 'Amanat Bharadwaj',
         how: 'WHATSAPP / EMAIL / PHYSICALLY',
@@ -3177,7 +3300,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         timeDelayHours: 0
       },
       {
-        stageId: 'STG-STK-03',
+        stageId: 'STG-STK-04',
         stageName: 'SEND INDENT FOR MATERIAL TO BE PURCHASED',
         assignee: 'Amanat Bharadwaj',
         how: 'GOOGLE FORM INDENT TO PO',
@@ -3188,7 +3311,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLScYfRmZ4-SDR0DH5l680-0CK0Y0P5l8xAJVb6SWG9ALdAZDyQ/viewform'
       },
       {
-        stageId: 'STG-STK-04',
+        stageId: 'STG-STK-05',
         stageName: 'IS PARTIAL PURCHASE REQUIRED?',
         assignee: 'Amanat Bharadwaj',
         how: 'WHATSAPP / EMAIL / PHYSICALLY',
@@ -3199,7 +3322,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         timeDelayHours: 0
       },
       {
-        stageId: 'STG-STK-05',
+        stageId: 'STG-STK-06',
         stageName: 'DISPATCH MATERIAL AVAILABLE',
         assignee: 'Amanat Bharadwaj',
         how: 'GOOGLE FORM STOCK TO DISPATCH',
@@ -3409,6 +3532,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageName: 'IS ACCOUNT ALREADY ADDED?',
         assignee: 'Byamkesh Kaiwartya',
         how: 'WHATSAPP / PHONE / EMAIL',
+        plannedDateTime: '06/10/2026 11:30:00',
         status: 'Pending'
       },
       {
@@ -3416,6 +3540,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageName: 'GET CANCELLED CHEQUE/PASSBOOK COPY',
         assignee: 'Shyam Rao Sureshe',
         how: 'WHATSAPP / CALL / MANUAL',
+        plannedDateTime: '06/10/2026 13:00:00',
         status: 'Pending'
       },
       {
@@ -3424,6 +3549,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         assignee: 'Byamkesh Kaiwartya',
         how: 'GOOGLE FORM',
         formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSfQBM1AEyn_ZDxlUOO3nzBSKZlgEedLNNKNOy8ViF2le6MJxA/viewform',
+        plannedDateTime: '06/10/2026 14:30:00',
         status: 'Pending'
       },
       {
@@ -3431,6 +3557,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageName: 'GET APPROVAL (BENEFICIARY)',
         assignee: 'Pranjal Agrawal / Khushboo Sahu',
         how: 'WHATSAPP / CALL / MANUAL',
+        plannedDateTime: '06/10/2026 15:30:00',
         status: 'Pending'
       },
       {
@@ -3438,6 +3565,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageName: 'ADD ACCOUNT ONLINE',
         assignee: 'Byamkesh Kaiwartya',
         how: 'WHATSAPP / CALL / MANUAL',
+        plannedDateTime: '06/10/2026 16:30:00',
         status: 'Pending'
       },
       {
@@ -3446,6 +3574,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         assignee: 'Shyam Rao Sureshe',
         how: 'GOOGLE FORM',
         formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSdF41kXu3ZViSeY9u3Kk7I1O4xsfBOLFZHPo2rgh-64IjuMgQ/viewform',
+        plannedDateTime: '06/10/2026 17:30:00',
         status: 'Pending'
       },
       {
@@ -3453,6 +3582,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageName: 'GET APPROVAL (PAYMENT)',
         assignee: 'Pranjal Agrawal / Khushboo',
         how: 'WHATSAPP / CALL / MANUAL',
+        plannedDateTime: '07/10/2026 10:00:00',
         status: 'Pending'
       },
       {
@@ -3460,6 +3590,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageName: 'BANK PAYMENT ENTRY',
         assignee: 'Byamkesh Kaiwartya',
         how: 'WHATSAPP / CALL / MANUAL',
+        plannedDateTime: '07/10/2026 11:30:00',
         status: 'Pending'
       },
       {
@@ -3467,6 +3598,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageName: 'GET ONLINE PAYMENT APPROVAL / PAYMENT DONE',
         assignee: 'Pranjal Agrawal / Khushboo',
         how: 'WHATSAPP / CALL / MANUAL',
+        plannedDateTime: '07/10/2026 14:00:00',
         status: 'Pending'
       },
       {
@@ -3475,6 +3607,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         assignee: 'Khushboo Sahu',
         how: 'GOOGLE FORM',
         formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSf82paFNXOtDZHBEXR3aEddrOuGsvcdafFaoG_ZM9RFydNBHA/viewform',
+        plannedDateTime: '07/10/2026 15:00:00',
         status: 'Pending'
       },
       {
@@ -3482,6 +3615,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageName: 'GET APPROVAL (UPI)',
         assignee: 'Pranjal Agrawal / Khushboo Sahu',
         how: 'WHATSAPP / CALL / MANUAL',
+        plannedDateTime: '07/10/2026 16:00:00',
         status: 'Pending'
       },
       {
@@ -3489,6 +3623,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageName: 'GET QR CODE',
         assignee: 'Rajnikant / Vivek / Raj',
         how: 'WHATSAPP / CALL / MANUAL',
+        plannedDateTime: '07/10/2026 16:30:00',
         status: 'Pending'
       },
       {
@@ -3496,6 +3631,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageName: 'MAKE PAYMENT (UPI)',
         assignee: 'Khushboo Sahu',
         how: 'WHATSAPP / CALL / MANUAL',
+        plannedDateTime: '07/10/2026 17:00:00',
         status: 'Pending'
       },
       {
@@ -3504,6 +3640,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         assignee: 'Byamkesh Kaiwartya / Khushboo',
         how: 'GOOGLE FORM',
         formResponseRef: 'https://forms.gle/o5PsEMYntAYXWZbJ8',
+        plannedDateTime: '07/10/2026 17:30:00',
         status: 'Pending'
       }
     ]
@@ -3726,8 +3863,8 @@ export const INITIAL_DELEGATION_TASKS: DelegationTask[] = [
     name: 'POOJA RAO (MIS Executive)',
     rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
     task: 'SUBCONTRACTOR BILLING FMS',
-    firstDate: '01/10/2026',
-    latestRevision: '01/10/2026',
+    firstDate: '01/10/2026 10:00 AM',
+    latestRevision: '01/10/2026 10:00 AM',
     totalRevisions: 0,
     status: 'Pending',
     priority: 'Urgent'
@@ -3738,8 +3875,8 @@ export const INITIAL_DELEGATION_TASKS: DelegationTask[] = [
     name: 'BYAMKESH KAIWARTYA (IT Executive)',
     rolePhone: 'BYAMKESH KAIWARTYA (IT Executive) - 9977853230',
     task: 'return washing machine',
-    firstDate: '30/09/2026',
-    latestRevision: '30/09/2026',
+    firstDate: '30/09/2026 11:30 AM',
+    latestRevision: '30/09/2026 11:30 AM',
     totalRevisions: 0,
     status: 'Pending',
     priority: 'Normal'
@@ -3750,8 +3887,8 @@ export const INITIAL_DELEGATION_TASKS: DelegationTask[] = [
     name: 'POOJA RAO (MIS Executive)',
     rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
     task: 'CREATE SYSTEM MASTER FOR ACTIVE & INACTIVE SHEET',
-    firstDate: '18/09/2026',
-    latestRevision: '18/09/2026',
+    firstDate: '18/09/2026 10:00 AM',
+    latestRevision: '18/09/2026 10:00 AM',
     totalRevisions: 0,
     status: 'Completed',
     completedAt: '18/09/2026 17:45:00'
@@ -3762,8 +3899,8 @@ export const INITIAL_DELEGATION_TASKS: DelegationTask[] = [
     name: 'POOJA RAO (MIS Executive)',
     rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
     task: 'IBT ROLL OUT',
-    firstDate: '18/09/2026',
-    latestRevision: '18/09/2026',
+    firstDate: '18/09/2026 10:00 AM',
+    latestRevision: '18/09/2026 10:00 AM',
     totalRevisions: 0,
     status: 'Completed',
     completedAt: '18/09/2026 18:10:00'
@@ -3774,8 +3911,8 @@ export const INITIAL_DELEGATION_TASKS: DelegationTask[] = [
     name: 'POOJA RAO (MIS Executive)',
     rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
     task: 'BENIFICEIARY ROLL OUT',
-    firstDate: '18/09/2026',
-    latestRevision: '18/09/2026',
+    firstDate: '18/09/2026 10:00 AM',
+    latestRevision: '18/09/2026 10:00 AM',
     totalRevisions: 0,
     status: 'Completed',
     completedAt: '18/09/2026 18:30:00'
@@ -3786,8 +3923,8 @@ export const INITIAL_DELEGATION_TASKS: DelegationTask[] = [
     name: 'RAJNIKANT BEHERA (PURCHASER)',
     rolePhone: 'RAJNIKANT BEHERA (PURCHASER) - 9348371469',
     task: 'TABLE CLOCK REPAIRING',
-    firstDate: '19/09/2026',
-    latestRevision: '19/09/2026',
+    firstDate: '19/09/2026 10:00 AM',
+    latestRevision: '19/09/2026 10:00 AM',
     totalRevisions: 0,
     status: 'Completed',
     completedAt: '19/09/2026 16:00:00'
@@ -3798,8 +3935,8 @@ export const INITIAL_DELEGATION_TASKS: DelegationTask[] = [
     name: 'VINOD TIWARI (LIASING)',
     rolePhone: 'VINOD TIWARI (LIASING) - 78692 34640',
     task: 'FINAL DOCCUMENT COLLECTION',
-    firstDate: '30/09/2026',
-    latestRevision: '30/09/2026',
+    firstDate: '30/09/2026 02:00 PM',
+    latestRevision: '30/09/2026 02:00 PM',
     totalRevisions: 0,
     status: 'Pending',
     priority: 'Urgent'
@@ -3810,8 +3947,8 @@ export const INITIAL_DELEGATION_TASKS: DelegationTask[] = [
     name: 'MAMTA KUMARI (HR)',
     rolePhone: 'MAMTA KUMARI (HR) - 870 989 7038',
     task: 'MIS Required: Timing 10 am to 8 pm, Location: Julum Tekari, Old Dhamtari Road, Raipur. Salary 20-25k',
-    firstDate: '26/09/2026',
-    latestRevision: '26/09/2026',
+    firstDate: '26/09/2026 10:00 AM',
+    latestRevision: '26/09/2026 10:00 AM',
     totalRevisions: 0,
     status: 'Pending',
     priority: 'Normal'
@@ -3822,8 +3959,8 @@ export const INITIAL_DELEGATION_TASKS: DelegationTask[] = [
     name: 'RAJNIKANT BEHERA (PURCHASER)',
     rolePhone: 'RAJNIKANT BEHERA (PURCHASER) - 9348371469',
     task: 'ALUM STONE & BOX',
-    firstDate: '21/09/2026',
-    latestRevision: '21/09/2026',
+    firstDate: '21/09/2026 10:00 AM',
+    latestRevision: '21/09/2026 10:00 AM',
     totalRevisions: 0,
     status: 'Completed',
     completedAt: '21/09/2026 15:20:00'
@@ -3834,8 +3971,8 @@ export const INITIAL_DELEGATION_TASKS: DelegationTask[] = [
     name: 'RAJENDRA SARTHI (PURCHASER)',
     rolePhone: 'RAJENDRA SARTHI (PURCHASER) - 9343318047',
     task: 'DOCCUMENT DROP TO RKC',
-    firstDate: '21/09/2026',
-    latestRevision: '21/09/2026',
+    firstDate: '21/09/2026 10:00 AM',
+    latestRevision: '21/09/2026 10:00 AM',
     totalRevisions: 0,
     status: 'Completed',
     completedAt: '21/09/2026 17:00:00'
@@ -3846,26 +3983,26 @@ export const INITIAL_DELEGATION_TASKS: DelegationTask[] = [
     name: 'RAJNIKANT BEHERA (PURCHASER)',
     rolePhone: 'RAJNIKANT BEHERA (PURCHASER) - 9348371469',
     task: 'Purchase dog food',
-    firstDate: '24/09/2026',
-    revision1: '25/09/2026',
-    revision2: '25/09/2026',
-    latestRevision: '25/09/2026',
+    firstDate: '24/09/2026 10:00 AM',
+    revision1: '25/09/2026 10:00 AM',
+    revision2: '25/09/2026 02:00 PM',
+    latestRevision: '25/09/2026 02:00 PM',
     totalRevisions: 2,
     status: 'Week Shifted',
     priority: 'Normal',
     revisionHistory: [
       {
         revisionNumber: 1,
-        previousDate: '24/09/2026',
-        newDate: '25/09/2026',
+        previousDate: '24/09/2026 10:00 AM',
+        newDate: '25/09/2026 10:00 AM',
         reason: 'Vendor store stock unavailable',
         timestamp: '24/09/2026 14:00',
         revisedBy: 'Rajnikant Behera'
       },
       {
         revisionNumber: 2,
-        previousDate: '25/09/2026',
-        newDate: '25/09/2026',
+        previousDate: '25/09/2026 10:00 AM',
+        newDate: '25/09/2026 02:00 PM',
         reason: 'Shifted to weekend bulk transport run',
         timestamp: '25/09/2026 09:30',
         revisedBy: 'Bramhanand Patel'
@@ -3878,8 +4015,8 @@ export const INITIAL_DELEGATION_TASKS: DelegationTask[] = [
     name: 'POOJA RAO (MIS Executive)',
     rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
     task: 'attendance collation fms',
-    firstDate: '24/09/2026',
-    latestRevision: '24/09/2026',
+    firstDate: '24/09/2026 10:00 AM',
+    latestRevision: '24/09/2026 10:00 AM',
     totalRevisions: 0,
     status: 'Completed',
     completedAt: '24/09/2026 19:00:00'
@@ -3890,8 +4027,8 @@ export const INITIAL_DELEGATION_TASKS: DelegationTask[] = [
     name: 'POOJA RAO (MIS Executive)',
     rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
     task: 'LEAVE SUBMISSION FMS',
-    firstDate: '24/09/2026',
-    latestRevision: '24/09/2026',
+    firstDate: '24/09/2026 10:00 AM',
+    latestRevision: '24/09/2026 10:00 AM',
     totalRevisions: 0,
     status: 'Completed',
     completedAt: '24/09/2026 19:30:00'
@@ -3902,11 +4039,35 @@ export const INITIAL_DELEGATION_TASKS: DelegationTask[] = [
     name: 'POOJA RAO (MIS Executive)',
     rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
     task: 'MATETIAL ISSUE TO SUBCONTRACTOR FMS',
-    firstDate: '05/10/2026',
-    latestRevision: '05/10/2026',
+    firstDate: '05/10/2026 10:00 AM',
+    latestRevision: '05/10/2026 10:00 AM',
     totalRevisions: 0,
     status: 'Pending',
     priority: 'Urgent'
+  },
+  {
+    id: 'del-due-today-01',
+    taskId: 'dt01byam',
+    name: 'BYAMKESH KAIWARTYA (IT Executive)',
+    rolePhone: 'BYAMKESH KAIWARTYA (IT Executive) - 9977853230',
+    task: 'Configure VPN tunnels for Bijetala site office router',
+    firstDate: '06/10/2026 11:30 AM',
+    latestRevision: '06/10/2026 11:30 AM',
+    totalRevisions: 0,
+    status: 'Pending',
+    priority: 'Urgent'
+  },
+  {
+    id: 'del-due-today-02',
+    taskId: 'dt02pooja',
+    name: 'POOJA RAO (MIS Executive)',
+    rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
+    task: 'Daily Indent SLA Compliance Audit Summary for Management',
+    firstDate: '06/10/2026 03:00 PM',
+    latestRevision: '06/10/2026 03:00 PM',
+    totalRevisions: 0,
+    status: 'Pending',
+    priority: 'Normal'
   },
   {
     id: 'del-571x65t',
@@ -3914,8 +4075,8 @@ export const INITIAL_DELEGATION_TASKS: DelegationTask[] = [
     name: 'PRANAY GHOSH (Project Manager)',
     rolePhone: 'PRANAY GHOSH (Project Manager) - 9437342135',
     task: 'ELECTRIC POLE',
-    firstDate: '29/09/2026',
-    latestRevision: '29/09/2026',
+    firstDate: '29/09/2026 10:00 AM',
+    latestRevision: '29/09/2026 10:00 AM',
     totalRevisions: 0,
     status: 'Pending',
     priority: 'Urgent'
@@ -3926,8 +4087,8 @@ export const INITIAL_DELEGATION_TASKS: DelegationTask[] = [
     name: 'POOJA RAO (MIS Executive)',
     rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
     task: 'SALARY PREPARATION/PAYROLL PROCESSING FMS',
-    firstDate: '26/09/2026',
-    latestRevision: '26/09/2026',
+    firstDate: '26/09/2026 10:00 AM',
+    latestRevision: '26/09/2026 10:00 AM',
     totalRevisions: 0,
     status: 'Pending',
     priority: 'Urgent'
@@ -3938,8 +4099,8 @@ export const INITIAL_DELEGATION_TASKS: DelegationTask[] = [
     name: 'POOJA RAO (MIS Executive)',
     rolePhone: 'POOJA RAO (MIS Executive) - 9301242522',
     task: 'FUEL ISSUE FMS',
-    firstDate: '25/09/2026',
-    latestRevision: '25/09/2026',
+    firstDate: '25/09/2026 10:00 AM',
+    latestRevision: '25/09/2026 10:00 AM',
     totalRevisions: 0,
     status: 'Completed',
     completedAt: '25/09/2026 18:00:00'
@@ -3956,8 +4117,8 @@ export const INITIAL_CHECKLIST_ITEMS: ChecklistItem[] = [
     department: 'Store in charge',
     frequency: 'W',
     task: 'All Computer/Laptop Cleaning (CSR)',
-    plannedDate: '18/06/2026',
-    actualDate: '24/06/2026',
+    plannedDate: '18/06/2026 10:00 AM',
+    actualDate: '24/06/2026 04:30 PM',
     status: 'Done',
     createdAt: '18/06/2026 08:00',
     updatedAt: '24/06/2026 16:30'
@@ -3970,8 +4131,8 @@ export const INITIAL_CHECKLIST_ITEMS: ChecklistItem[] = [
     department: 'Store in charge',
     frequency: 'W',
     task: 'All Computer/Laptop Check Running (CSR)',
-    plannedDate: '18/06/2026',
-    actualDate: '24/06/2026',
+    plannedDate: '18/06/2026 10:00 AM',
+    actualDate: '24/06/2026 04:40 PM',
     status: 'Done',
     createdAt: '18/06/2026 08:00',
     updatedAt: '24/06/2026 16:40'
@@ -3984,8 +4145,8 @@ export const INITIAL_CHECKLIST_ITEMS: ChecklistItem[] = [
     department: 'Store in charge',
     frequency: 'W',
     task: 'All Camera Check/Maintenance (CSR)',
-    plannedDate: '18/06/2026',
-    actualDate: '24/06/2026',
+    plannedDate: '18/06/2026 10:00 AM',
+    actualDate: '24/06/2026 05:00 PM',
     status: 'Done',
     createdAt: '18/06/2026 08:00',
     updatedAt: '24/06/2026 17:00'
@@ -3998,8 +4159,8 @@ export const INITIAL_CHECKLIST_ITEMS: ChecklistItem[] = [
     department: 'Store in charge',
     frequency: 'W',
     task: 'All Switch/Modem Check/Maintenance (CSR)',
-    plannedDate: '18/06/2026',
-    actualDate: '24/06/2026',
+    plannedDate: '18/06/2026 10:00 AM',
+    actualDate: '24/06/2026 05:15 PM',
     status: 'Done',
     createdAt: '18/06/2026 08:00',
     updatedAt: '24/06/2026 17:15'
@@ -4012,8 +4173,8 @@ export const INITIAL_CHECKLIST_ITEMS: ChecklistItem[] = [
     department: 'Store in charge',
     frequency: 'M',
     task: 'All Printer Check/Maintenance (CSR)',
-    plannedDate: '18/06/2026',
-    actualDate: '24/06/2026',
+    plannedDate: '18/06/2026 10:00 AM',
+    actualDate: '24/06/2026 05:30 PM',
     status: 'Done',
     createdAt: '18/06/2026 08:00',
     updatedAt: '24/06/2026 17:30'
@@ -4026,8 +4187,8 @@ export const INITIAL_CHECKLIST_ITEMS: ChecklistItem[] = [
     department: 'Store in charge',
     frequency: 'M',
     task: 'All Printer Ink/Cartridge Check/Maintenance (CSR)',
-    plannedDate: '18/06/2026',
-    actualDate: '24/06/2026',
+    plannedDate: '18/06/2026 10:00 AM',
+    actualDate: '24/06/2026 05:45 PM',
     status: 'Done',
     createdAt: '18/06/2026 08:00',
     updatedAt: '24/06/2026 17:45'
@@ -4041,8 +4202,8 @@ export const INITIAL_CHECKLIST_ITEMS: ChecklistItem[] = [
     department: 'IT Eng.',
     frequency: 'W',
     task: 'All Computer/Laptop Cleaning (Raipur office)',
-    plannedDate: '20/06/2026',
-    actualDate: '24/06/2026',
+    plannedDate: '20/06/2026 10:00 AM',
+    actualDate: '24/06/2026 02:00 PM',
     status: 'Done',
     createdAt: '20/06/2026 08:00',
     updatedAt: '24/06/2026 14:00'
@@ -4055,8 +4216,8 @@ export const INITIAL_CHECKLIST_ITEMS: ChecklistItem[] = [
     department: 'IT Eng.',
     frequency: 'W',
     task: 'All Computer/Laptop Check Running (Raipur office)',
-    plannedDate: '20/06/2026',
-    actualDate: '24/06/2026',
+    plannedDate: '20/06/2026 10:00 AM',
+    actualDate: '24/06/2026 02:20 PM',
     status: 'Done',
     createdAt: '20/06/2026 08:00',
     updatedAt: '24/06/2026 14:20'
@@ -4069,8 +4230,8 @@ export const INITIAL_CHECKLIST_ITEMS: ChecklistItem[] = [
     department: 'IT Eng.',
     frequency: 'W',
     task: 'All Camera Check/Maintenance (Raipur office)',
-    plannedDate: '20/06/2026',
-    actualDate: '24/06/2026',
+    plannedDate: '20/06/2026 10:00 AM',
+    actualDate: '24/06/2026 02:40 PM',
     status: 'Done',
     createdAt: '20/06/2026 08:00',
     updatedAt: '24/06/2026 14:40'
@@ -4083,8 +4244,8 @@ export const INITIAL_CHECKLIST_ITEMS: ChecklistItem[] = [
     department: 'IT Eng.',
     frequency: 'W',
     task: 'All Switch/Modem Check/Maintenance (Raipur office)',
-    plannedDate: '20/06/2026',
-    actualDate: '24/06/2026',
+    plannedDate: '20/06/2026 10:00 AM',
+    actualDate: '24/06/2026 03:00 PM',
     status: 'Done',
     createdAt: '20/06/2026 08:00',
     updatedAt: '24/06/2026 15:00'
@@ -4097,8 +4258,8 @@ export const INITIAL_CHECKLIST_ITEMS: ChecklistItem[] = [
     department: 'IT Eng.',
     frequency: 'W',
     task: 'All Intercom equipments Check/Maintenance (Raipur office)',
-    plannedDate: '20/06/2026',
-    actualDate: '24/06/2026',
+    plannedDate: '20/06/2026 10:00 AM',
+    actualDate: '24/06/2026 03:20 PM',
     status: 'Done',
     createdAt: '20/06/2026 08:00',
     updatedAt: '24/06/2026 15:20'
@@ -4111,8 +4272,8 @@ export const INITIAL_CHECKLIST_ITEMS: ChecklistItem[] = [
     department: 'IT Eng.',
     frequency: 'M',
     task: 'All Printer Check/Maintenance (Raipur office)',
-    plannedDate: '20/06/2026',
-    actualDate: '24/06/2026',
+    plannedDate: '20/06/2026 10:00 AM',
+    actualDate: '24/06/2026 03:40 PM',
     status: 'Done',
     createdAt: '20/06/2026 08:00',
     updatedAt: '24/06/2026 15:40'
@@ -4125,8 +4286,8 @@ export const INITIAL_CHECKLIST_ITEMS: ChecklistItem[] = [
     department: 'IT Eng.',
     frequency: 'M',
     task: 'All Printer Ink/Cartridge Check/Maintenance (Raipur office)',
-    plannedDate: '20/06/2026',
-    actualDate: '24/06/2026',
+    plannedDate: '20/06/2026 10:00 AM',
+    actualDate: '24/06/2026 04:00 PM',
     status: 'Done',
     createdAt: '20/06/2026 08:00',
     updatedAt: '24/06/2026 16:00'
@@ -4140,8 +4301,8 @@ export const INITIAL_CHECKLIST_ITEMS: ChecklistItem[] = [
     department: 'Sr. Structure',
     frequency: 'W',
     task: 'All Computer/Laptop Cleaning (Bijetala)',
-    plannedDate: '20/06/2026',
-    actualDate: '24/06/2026',
+    plannedDate: '20/06/2026 10:00 AM',
+    actualDate: '24/06/2026 04:20 PM',
     status: 'Done',
     createdAt: '20/06/2026 08:00',
     updatedAt: '24/06/2026 16:20'
@@ -4154,8 +4315,8 @@ export const INITIAL_CHECKLIST_ITEMS: ChecklistItem[] = [
     department: 'Structure',
     frequency: 'W',
     task: 'All Computer/Laptop Cleaning (Siladehi)',
-    plannedDate: '20/06/2026',
-    actualDate: '24/06/2026',
+    plannedDate: '20/06/2026 10:00 AM',
+    actualDate: '24/06/2026 04:30 PM',
     status: 'Done',
     createdAt: '20/06/2026 08:00',
     updatedAt: '24/06/2026 16:30'
@@ -4169,7 +4330,7 @@ export const INITIAL_CHECKLIST_ITEMS: ChecklistItem[] = [
     department: 'Store in charge',
     frequency: 'W',
     task: 'Physical Verification of Degraded Materials in Store Bay 4',
-    plannedDate: '06/10/2026',
+    plannedDate: '06/10/2026 11:30 AM',
     status: 'Pending',
     createdAt: '01/10/2026 08:00',
     updatedAt: '01/10/2026 08:00'
@@ -4182,10 +4343,36 @@ export const INITIAL_CHECKLIST_ITEMS: ChecklistItem[] = [
     department: 'IT Eng.',
     frequency: 'W',
     task: 'Server Room UPS & Backup Battery Health Check',
-    plannedDate: '05/10/2026',
+    plannedDate: '05/10/2026 10:00 AM',
     status: 'Pending',
     createdAt: '01/10/2026 08:00',
     updatedAt: '01/10/2026 08:00'
+  },
+  {
+    id: 'chk-cur-03',
+    taskId: '903',
+    name: 'Amanat Bharadwaj (8084801020)',
+    email: 'rws.store1@gmail.com',
+    department: 'Store in charge',
+    frequency: 'D',
+    task: 'Daily Forklift & Heavy Store Handling Equipment Inspection',
+    plannedDate: '06/10/2026 03:00 PM',
+    status: 'Pending',
+    createdAt: '06/10/2026 08:00',
+    updatedAt: '06/10/2026 08:00'
+  },
+  {
+    id: 'chk-cur-04',
+    taskId: '904',
+    name: 'Byamkesh Kaiwartya (9977853230)',
+    email: 'itrpr@barbrik.in',
+    department: 'IT Eng.',
+    frequency: 'W',
+    task: 'Biometric Attendance Device Sync & Audit',
+    plannedDate: '06/10/2026 04:30 PM',
+    status: 'Pending',
+    createdAt: '06/10/2026 08:00',
+    updatedAt: '06/10/2026 08:00'
   }
 ];
 
@@ -4323,3 +4510,234 @@ export const DEFAULT_REGISTRY_CONFIG: CentralRegistryConfig = {
   },
   databaseSchemaReady: true
 };
+
+export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
+  {
+    id: 'tpl_indent_purchase',
+    templateKey: 'INDENT_PURCHASE',
+    name: 'Indent to Purchase Order Workflow',
+    departmentHub: 'PURCHASE',
+    referenceLabel: 'Indent No. / Requisition Ref',
+    defaultPriority: 'Normal',
+    description: '12-stage requisition, RFQ quotation, approval & PO generation process.',
+    createdAt: '01/10/2026',
+    updatedAt: '01/10/2026',
+    stages: FMS_STANDARD_PURCHASE_STAGES.map((s) => ({
+      stageId: s.stageId,
+      stageName: s.name,
+      whoRole: s.whoRole,
+      whoDefaultAssignee: s.whoDefaultAssignee,
+      howChannel: s.howChannel,
+      slaHours: s.slaHours,
+    })),
+  },
+  {
+    id: 'tpl_check_stock',
+    templateKey: 'CHECK_STOCK',
+    name: 'Stock Check & Requisition Workflow',
+    departmentHub: 'STORE',
+    referenceLabel: 'Requisition No. / Indent Ref',
+    defaultPriority: 'Normal',
+    description: '6-stage site store inventory verification, stock availability check, and material requisition.',
+    createdAt: '01/10/2026',
+    updatedAt: '01/10/2026',
+    stages: FMS_CHECK_STOCK_STAGES.map((s) => ({
+      stageId: s.stageId,
+      stageName: s.name,
+      whoRole: s.whoRole,
+      whoDefaultAssignee: s.whoDefaultAssignee,
+      howChannel: s.howChannel,
+      slaHours: s.slaHours,
+    })),
+  },
+  {
+    id: 'tpl_po_to_payment',
+    templateKey: 'PO_TO_PAYMENT',
+    name: 'PO to Payment Disbursement Workflow',
+    departmentHub: 'ACCOUNTS',
+    referenceLabel: 'PO Number / Voucher No.',
+    defaultPriority: 'Normal',
+    description: '14-stage accounts voucher creation, multi-level verification, bank account/UPI payment route.',
+    createdAt: '01/10/2026',
+    updatedAt: '01/10/2026',
+    stages: FMS_PO_PAYMENT_STAGES.map((s) => ({
+      stageId: s.stageId,
+      stageName: s.name,
+      whoRole: s.whoRole,
+      whoDefaultAssignee: s.whoDefaultAssignee,
+      howChannel: s.howChannel,
+      slaHours: s.slaHours,
+    })),
+  },
+  {
+    id: 'tpl_purchase_to_store',
+    templateKey: 'PURCHASE_TO_STORE_DISPATCH',
+    name: 'Purchase Vendor to Central Store Dispatch',
+    departmentHub: 'STORE',
+    referenceLabel: 'PO / Lorry Receipt (LR) No.',
+    defaultPriority: 'Normal',
+    description: '10-stage vendor dispatch tracking, LR verification, gate entry & warehouse intake.',
+    createdAt: '01/10/2026',
+    updatedAt: '01/10/2026',
+    stages: FMS_PURCHASE_TO_STORE_DISPATCH_STAGES.map((s) => ({
+      stageId: s.stageId,
+      stageName: s.name,
+      whoRole: s.whoRole,
+      whoDefaultAssignee: s.whoDefaultAssignee,
+      howChannel: s.howChannel,
+      slaHours: s.slaHours,
+    })),
+  },
+  {
+    id: 'tpl_store_to_site',
+    templateKey: 'STORE_TO_SITE_DISPATCH',
+    name: 'Central Store to Site Material Issue',
+    departmentHub: 'STORE',
+    referenceLabel: 'Store Issue Voucher (SIV)',
+    defaultPriority: 'Normal',
+    description: '8-stage central warehouse issue voucher, loading, transit & site store gate receipt.',
+    createdAt: '01/10/2026',
+    updatedAt: '01/10/2026',
+    stages: FMS_STORE_TO_SITE_DISPATCH_STAGES.map((s) => ({
+      stageId: s.stageId,
+      stageName: s.name,
+      whoRole: s.whoRole,
+      whoDefaultAssignee: s.whoDefaultAssignee,
+      howChannel: s.howChannel,
+      slaHours: s.slaHours,
+    })),
+  },
+  {
+    id: 'tpl_site_receive',
+    templateKey: 'SITE_RECEIVE',
+    name: 'Site Material Receive (MRN) Workflow',
+    departmentHub: 'STORE',
+    referenceLabel: 'MRN / Delivery Challan',
+    defaultPriority: 'Normal',
+    description: '8-stage material receipt note (MRN), physical inspection, quality check & store register entry.',
+    createdAt: '01/10/2026',
+    updatedAt: '01/10/2026',
+    stages: FMS_SITE_RECEIVE_STAGES.map((s) => ({
+      stageId: s.stageId,
+      stageName: s.name,
+      whoRole: s.whoRole,
+      whoDefaultAssignee: s.whoDefaultAssignee,
+      howChannel: s.howChannel,
+      slaHours: s.slaHours,
+    })),
+  },
+  {
+    id: 'tpl_payment_to_dispatch',
+    templateKey: 'PAYMENT_TO_DISPATCH',
+    name: 'Vendor Payment to Dispatch Clearance',
+    departmentHub: 'PURCHASE',
+    referenceLabel: 'PO Number / Payment Ref',
+    defaultPriority: 'Normal',
+    description: '7-stage payment confirmation, vendor dispatch advice, lorry receipt collection & clearance.',
+    createdAt: '01/10/2026',
+    updatedAt: '01/10/2026',
+    stages: FMS_PAYMENT_TO_DISPATCH_STAGES.map((s) => ({
+      stageId: s.stageId,
+      stageName: s.name,
+      whoRole: s.whoRole,
+      whoDefaultAssignee: s.whoDefaultAssignee,
+      howChannel: s.howChannel,
+      slaHours: s.slaHours,
+    })),
+  },
+  {
+    id: 'tpl_accounts_invoice',
+    templateKey: 'ACCOUNTS_INVOICE_COLLECTION',
+    name: 'Accounts Invoice Collection Workflow',
+    departmentHub: 'ACCOUNTS',
+    referenceLabel: 'Invoice / PO Reference',
+    defaultPriority: 'Normal',
+    description: '6-stage tax invoice collection, GSTR 2B reconciliation, 3-way matching & accounts posting.',
+    createdAt: '01/10/2026',
+    updatedAt: '01/10/2026',
+    stages: FMS_ACCOUNTS_INVOICE_COLLECTION_STAGES.map((s) => ({
+      stageId: s.stageId,
+      stageName: s.name,
+      whoRole: s.whoRole,
+      whoDefaultAssignee: s.whoDefaultAssignee,
+      howChannel: s.howChannel,
+      slaHours: s.slaHours,
+    })),
+  },
+  {
+    id: 'tpl_hr_attendance',
+    templateKey: 'HR_ATTENDANCE_PAYMENT',
+    name: 'Labour Attendance & Payment Workflow',
+    departmentHub: 'PLANT_OPS',
+    referenceLabel: 'Attendance Cycle Ref',
+    defaultPriority: 'Normal',
+    description: '9-stage daily site labour muster roll, wage calculation, site engineer approval & payout.',
+    createdAt: '01/10/2026',
+    updatedAt: '01/10/2026',
+    stages: FMS_HR_ATTENDANCE_PAYMENT_STAGES.map((s) => ({
+      stageId: s.stageId,
+      stageName: s.name,
+      whoRole: s.whoRole,
+      whoDefaultAssignee: s.whoDefaultAssignee,
+      howChannel: s.howChannel,
+      slaHours: s.slaHours,
+    })),
+  },
+  {
+    id: 'tpl_breakdown',
+    templateKey: 'BREAKDOWN_REPORTING',
+    name: 'Machine Breakdown & Repair Workflow',
+    departmentHub: 'PLANT_OPS',
+    referenceLabel: 'Machine ID / Breakdown Ref',
+    defaultPriority: 'Urgent',
+    description: '13-stage plant machinery breakdown alert, mechanic assignment, spares indent, repair & job card.',
+    createdAt: '01/10/2026',
+    updatedAt: '01/10/2026',
+    stages: FMS_BREAKDOWN_REPORTING_STAGES.map((s) => ({
+      stageId: s.stageId,
+      stageName: s.name,
+      whoRole: s.whoRole,
+      whoDefaultAssignee: s.whoDefaultAssignee,
+      howChannel: s.howChannel,
+      slaHours: s.slaHours,
+    })),
+  },
+  {
+    id: 'tpl_part_repair',
+    templateKey: 'EQUIPMENT_PART_REPAIR',
+    name: 'Equipment Part Repair Workflow',
+    departmentHub: 'PLANT_OPS',
+    referenceLabel: 'Part Serial No.',
+    defaultPriority: 'Normal',
+    description: '18-stage heavy equipment component overhaul, workshop dispatch, quotation, repair & testing.',
+    createdAt: '01/10/2026',
+    updatedAt: '01/10/2026',
+    stages: FMS_EQUIPMENT_PART_REPAIR_STAGES.map((s) => ({
+      stageId: s.stageId,
+      stageName: s.name,
+      whoRole: s.whoRole,
+      whoDefaultAssignee: s.whoDefaultAssignee,
+      howChannel: s.howChannel,
+      slaHours: s.slaHours,
+    })),
+  },
+  {
+    id: 'tpl_dpr',
+    templateKey: 'DPR_REPORTING',
+    name: 'Daily Progress Report (DPR) Workflow',
+    departmentHub: 'OPERATIONS',
+    referenceLabel: 'DPR Sheet Date/Code',
+    defaultPriority: 'Normal',
+    description: '6-stage site engineer daily execution log, machinery hours, material usage & project manager sign-off.',
+    createdAt: '01/10/2026',
+    updatedAt: '01/10/2026',
+    stages: FMS_DPR_REPORTING_STAGES.map((s) => ({
+      stageId: s.stageId,
+      stageName: s.name,
+      whoRole: s.whoRole,
+      whoDefaultAssignee: s.whoDefaultAssignee,
+      howChannel: s.howChannel,
+      slaHours: s.slaHours,
+    })),
+  },
+];

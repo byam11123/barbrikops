@@ -31,9 +31,12 @@ import {
   FileSpreadsheet,
   Zap,
   Table,
-  ClipboardList
+  ClipboardList,
+  Download
 } from 'lucide-react';
-import { FmsInstance, FmsStageExecution, FmsStageDefinition, Priority, UserProfile } from '../../types';
+import { downloadCsv } from '../../utils/csvExporter';
+import { FmsMasterCatalogView } from './FmsMasterCatalogView';
+import { FmsInstance, FmsStageExecution, FmsStageDefinition, Priority, UserProfile, isUserSuperAdmin } from '../../types';
 import { 
   FMS_CHECK_STOCK_STAGES, 
   FMS_STANDARD_PURCHASE_STAGES, 
@@ -48,7 +51,8 @@ import {
   FMS_EQUIPMENT_PART_REPAIR_STAGES,
   FMS_DPR_REPORTING_STAGES 
 } from '../../data/initialData';
-import { isUserResponsibleForStage, isFlowAwaitingUserAction, getFmsDomainCategory } from '../../services/stageAssignment';
+import { isUserResponsibleForStage, isFlowAwaitingUserAction, getFmsDomainCategory, getFlowDepartmentKey, getDepartmentBranchLabel } from '../../services/stageAssignment';
+import { storageAdapter } from '../../services/storageAdapter';
 import { ViewScope } from '../layout/Header';
 
 interface FmsPipelineProps {
@@ -57,16 +61,21 @@ interface FmsPipelineProps {
   viewScope: ViewScope;
   onToggleScope: (scope: ViewScope) => void;
   onUpdateFlow: (flow: FmsInstance) => void;
-  onCreateFlow: () => void;
+  onCreateFlow?: () => void;
   onSelectFlow: (flow: FmsInstance) => void;
+  onOpenTemplateStudio?: (templateKey?: string) => void;
+  onOpenStageAction?: (flow: FmsInstance, stageIndex: number) => void;
+  selectedDepartmentFilter?: string | null;
+  onClearDepartmentFilter?: () => void;
 }
 
 export function parseDateTimeStr(str: string | undefined): Date | null {
-  if (!str || str === '—' || str.includes('Target Pending')) return null;
+  if (!str || typeof str !== 'string') return null;
+  const clean = str.replace(',', ' ').trim();
+  if (!clean || clean === '—' || clean === '-' || clean.toLowerCase().includes('pending')) return null;
   
-  // Custom DD/MM/YYYY parsing to avoid standard Date interpreting it as MM/DD/YYYY
+  // 1. Custom DD/MM/YYYY or DD-MM-YYYY parsing
   try {
-    const clean = str.replace(',', '').trim();
     const match = clean.match(/^(\d{1,2})[\s/:_.-]+(\d{1,2})[\s/:_.-]+(\d{4})/);
     if (match) {
       const day = parseInt(match[1], 10);
@@ -78,15 +87,12 @@ export function parseDateTimeStr(str: string | undefined): Date | null {
       let sec = 0;
       
       const timePart = clean.substring(match[0].length).trim();
-      const timeParts = timePart.split(/[\s/:_.-]+/);
-      if (timeParts.length >= 2) {
-        hour = parseInt(timeParts[0], 10);
-        min = parseInt(timeParts[1], 10);
-        if (timeParts[2]) {
-          const secVal = parseInt(timeParts[2], 10);
-          if (!isNaN(secVal)) {
-            sec = secVal;
-          }
+      if (timePart) {
+        const timeMatch = timePart.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+        if (timeMatch) {
+          hour = parseInt(timeMatch[1], 10);
+          min = parseInt(timeMatch[2], 10);
+          if (timeMatch[3]) sec = parseInt(timeMatch[3], 10);
         }
       }
       
@@ -100,9 +106,51 @@ export function parseDateTimeStr(str: string | undefined): Date | null {
     }
   } catch (e) {}
 
+  // 2. Fallback to native Date parsing (handles ISO format YYYY-MM-DD etc.)
   const parsed = new Date(str);
   if (!isNaN(parsed.getTime())) return parsed;
   return null;
+}
+
+export function getStageDelayHours(stage?: FmsStageExecution, fallbackPlanned?: string): number {
+  if (!stage) return 0;
+  if (typeof stage.timeDelayHours === 'number' && stage.timeDelayHours > 0) {
+    return stage.timeDelayHours;
+  }
+  if (typeof stage.delayHours === 'number' && stage.delayHours > 0) {
+    return stage.delayHours;
+  }
+  const plannedDate = parseDateTimeStr(stage.plannedDateTime || fallbackPlanned);
+  if (!plannedDate) return 0;
+
+  if (stage.actualDateTime && stage.actualDateTime !== '—') {
+    const actualDate = parseDateTimeStr(stage.actualDateTime);
+    if (actualDate) {
+      const diffMs = actualDate.getTime() - plannedDate.getTime();
+      if (diffMs > 0) return diffMs / (1000 * 60 * 60);
+    }
+  } else if (stage.status === 'Delayed') {
+    const diffMs = Date.now() - plannedDate.getTime();
+    return Math.max(diffMs > 0 ? diffMs / (1000 * 60 * 60) : 0, 1);
+  } else if (stage.status === 'In Progress' || stage.status === 'Pending') {
+    const diffMs = Date.now() - plannedDate.getTime();
+    if (diffMs > 0) return diffMs / (1000 * 60 * 60);
+  }
+  return 0;
+}
+
+export function getFlowTotalDelay(flow: FmsInstance): number {
+  const explicit = flow.totalDelayHours || 0;
+  let stagesSum = 0;
+  if (flow.stages && flow.stages.length > 0) {
+    flow.stages.forEach((s) => {
+      stagesSum += getStageDelayHours(s);
+    });
+  }
+  if (stagesSum > 0) return Math.max(explicit, stagesSum);
+  if (explicit > 0) return explicit;
+  if (flow.stages?.some(s => s.status === 'Delayed')) return 1;
+  return 0;
 }
 
 export function getDelayHours(plannedStr: string | undefined, actualStr: string | undefined, isCompleted: boolean): number {
@@ -119,7 +167,7 @@ export function getDelayHours(plannedStr: string | undefined, actualStr: string 
 }
 
 export function formatDelayVariance(delayHours: number): string {
-  if (delayHours <= 0) return '—';
+  if (!delayHours || delayHours <= 0) return '—';
   const totalSeconds = Math.round(delayHours * 3600);
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
@@ -130,7 +178,7 @@ export function formatDelayVariance(delayHours: number): string {
   const baseTime = `${hStr}:${mStr}:${sStr}`;
   if (h >= 24) {
     const days = (delayHours / 24).toFixed(1);
-    return `${baseTime}(${days} D)`;
+    return `${baseTime} (${days} D)`;
   }
   return baseTime;
 }
@@ -143,6 +191,10 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
   onUpdateFlow,
   onCreateFlow,
   onSelectFlow,
+  onOpenTemplateStudio,
+  onOpenStageAction,
+  selectedDepartmentFilter = null,
+  onClearDepartmentFilter,
 }) => {
   const [domainFilter, setDomainFilter] = useState<'ALL' | 'PROCUREMENT' | 'FINANCE_ACCOUNTS' | 'SITE_LOGISTICS' | 'HR_EQUIPMENT'>('ALL');
   const [pipelineTypeFilter, setPipelineTypeFilter] = useState<string>('ALL');
@@ -155,13 +207,21 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
   const [matrixPageSize, setMatrixPageSize] = useState<number>(25);
   const [matrixSelectedIds, setMatrixSelectedIds] = useState<string[]>([]);
   const [cardFilter, setCardFilter] = useState<'ALL' | 'PENDING' | 'COMPLETED' | 'DELAYED' | 'AWAITING_ME'>('ALL');
+  const [viewModeTab, setViewModeTab] = useState<'RUNNING_PIPELINE' | 'MASTER_CATALOG'>('RUNNING_PIPELINE');
+
+  const isSuperAdmin = isUserSuperAdmin(currentUser);
 
   // Stage display filter: User should see only his stage by default!
   const [stageFilterMode, setStageFilterMode] = useState<'MY_STAGES' | 'ALL_STAGES'>('MY_STAGES');
 
   useEffect(() => {
-    setStageFilterMode(viewScope === 'USER_ONLY' ? 'MY_STAGES' : 'ALL_STAGES');
-  }, [viewScope]);
+    if (!isSuperAdmin) {
+      setStageFilterMode('MY_STAGES');
+      setViewModeTab('RUNNING_PIPELINE');
+    } else {
+      setStageFilterMode(viewScope === 'USER_ONLY' ? 'MY_STAGES' : 'ALL_STAGES');
+    }
+  }, [viewScope, isSuperAdmin]);
 
   // Helper to check if a specific stage definition belongs to currentUser
   const isMyStage = (def: FmsStageDefinition, stageExec?: FmsStageExecution): boolean => {
@@ -175,7 +235,14 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
 
   const myFlowsCount = flows.filter(isMyFlowAction).length;
 
+  const customTemplates = storageAdapter.getFmsTemplates();
+
   const filteredFlows = flows.filter((f) => {
+    // Department Filter from Sidebar
+    if (selectedDepartmentFilter) {
+      const flowDept = getFlowDepartmentKey(f, customTemplates);
+      if (flowDept !== selectedDepartmentFilter) return false;
+    }
     // 0. Domain Filter
     if (domainFilter !== 'ALL') {
       const cat = getFmsDomainCategory(f.flowType);
@@ -209,14 +276,33 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
     // 5. Card Filter
     if (cardFilter === 'PENDING' && f.status !== 'In Progress') return false;
     if (cardFilter === 'COMPLETED' && f.status !== 'Completed') return false;
-    if (cardFilter === 'DELAYED' && !(f.totalDelayHours > 0 || f.stages.some(s => s.status === 'Delayed'))) return false;
+    if (cardFilter === 'DELAYED' && !(getFlowTotalDelay(f) > 0 || f.stages.some(s => getStageDelayHours(s) > 0 || s.status === 'Delayed'))) return false;
     if (cardFilter === 'AWAITING_ME' && !isMyFlowAction(f)) return false;
     return true;
   });
 
   const activeFlow = flows.find((f) => f.id === selectedFlowId) || filteredFlows[0] || flows[0];
 
-  const activeStageDefs = activeFlow?.flowType === 'CHECK_STOCK'
+  const customTemplateForActiveFlow = activeFlow?.customTemplateId
+    ? storageAdapter.getAllMasterTemplates().find((t) => t.id === activeFlow.customTemplateId || t.templateKey === activeFlow.flowType)
+    : storageAdapter.getAllMasterTemplates().find((t) => t.templateKey === activeFlow?.flowType);
+
+  const activeStageDefs: FmsStageDefinition[] = customTemplateForActiveFlow
+    ? customTemplateForActiveFlow.stages.map((stg, sIdx) => ({
+        stageId: stg.stageId,
+        stageNumber: sIdx + 1,
+        name: stg.stageName,
+        what: stg.stageName,
+        whoRole: stg.whoRole || 'ASSIGNED_ROLE',
+        whoDefaultAssignee: stg.whoDefaultAssignee || 'Assignee',
+        howChannel: stg.howChannel || 'IN-APP FORM',
+        formUrl: stg.howChannel?.startsWith('http') ? stg.howChannel : undefined,
+        slaHours: stg.slaHours || 4,
+        isCheckpoint: stg.logic?.gatewayType === 'CONDITIONAL_JUMP',
+        hasYesNoDecision: stg.logic?.gatewayType === 'CONDITIONAL_JUMP',
+        fields: stg.fields,
+      }))
+    : activeFlow?.flowType === 'CHECK_STOCK'
     ? FMS_CHECK_STOCK_STAGES
     : activeFlow?.flowType === 'PO_TO_PAYMENT' 
     ? FMS_PO_PAYMENT_STAGES 
@@ -633,28 +719,126 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
   // KPI Calculations
   const statsPending = flows.filter(f => f.status === 'In Progress').length;
   const statsCompleted = flows.filter(f => f.status === 'Completed').length;
-  const statsDelayed = flows.filter(f => f.totalDelayHours > 0 || f.stages.some(s => s.status === 'Delayed')).length;
+  const statsDelayed = flows.filter(f => getFlowTotalDelay(f) > 0 || f.stages.some(s => getStageDelayHours(s) > 0 || s.status === 'Delayed')).length;
   const statsAwaitingMe = flows.filter(isMyFlowAction).length;
+
+  // Export CSV handler for currently filtered table data
+  const handleExportFilteredCsv = () => {
+    const headers = [
+      'Reference / Requisition Code',
+      'Workflow Type',
+      'Site Name',
+      'Priority',
+      'Status',
+      'Current Active Stage',
+      'Assigned To',
+      'SLA Delay (Hours)',
+      'Created Date',
+      'Updated Date'
+    ];
+
+    const rows = filteredFlows.map((flow) => {
+      const curStage = flow.stages[flow.currentStageIndex];
+      return [
+        flow.poNumber || flow.indentNo || flow.requisitionNumber || flow.flowId,
+        flow.flowType,
+        flow.siteName,
+        flow.priority,
+        flow.status,
+        curStage ? `Stage ${flow.currentStageIndex + 1}: ${curStage.stageName}` : 'Completed',
+        curStage ? curStage.assignee : 'N/A',
+        flow.totalDelayHours || 0,
+        flow.createdAt,
+        flow.updatedAt
+      ];
+    });
+
+    const timestamp = new Date().toISOString().slice(0, 10);
+    downloadCsv(`FMS_Pipeline_Filtered_Export_${timestamp}.csv`, headers, rows);
+  };
 
   return (
     <div className="space-y-6">
-      {/* KPI Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Mode Switcher Banner: Active Running FMS vs FMS Master Directory - Super Admin Only */}
+      {isSuperAdmin && (
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-lg">
+            <button
+              type="button"
+              onClick={() => setViewModeTab('RUNNING_PIPELINE')}
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+                viewModeTab === 'RUNNING_PIPELINE'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 font-semibold'
+              }`}
+            >
+              <GitBranch className="w-3.5 h-3.5" />
+              <span>Active Running Workflows ({filteredFlows.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewModeTab('MASTER_CATALOG')}
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+                viewModeTab === 'MASTER_CATALOG'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 font-semibold'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>FMS Workflow Master Directory</span>
+            </button>
+          </div>
+
+          {viewModeTab === 'RUNNING_PIPELINE' && onCreateFlow && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onCreateFlow()}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>New FMS Workflow</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isSuperAdmin && viewModeTab === 'MASTER_CATALOG' ? (
+        <FmsMasterCatalogView
+          onOpenTemplateStudio={onOpenTemplateStudio}
+          onCreateFlow={onCreateFlow}
+        />
+      ) : (
+        <>
+          {/* KPI Stats Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         {/* Total Pending */}
         <div 
           onClick={() => setCardFilter(cardFilter === 'PENDING' ? 'ALL' : 'PENDING')}
           title="Click to filter by Pending status"
-          className={`p-4 bg-white rounded-xl border cursor-pointer transition-all hover:scale-[1.01] hover:shadow-xs ${
-            cardFilter === 'PENDING' ? 'border-indigo-500 bg-indigo-50/10 ring-1 ring-indigo-500/20' : 'border-slate-200'
+          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all ${
+            cardFilter === 'PENDING' 
+              ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-400/50 scale-[1.01]' 
+              : 'bg-white border-slate-200 hover:border-indigo-300 hover:shadow-xs text-slate-900'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Pending</span>
-            <Clock className="w-5 h-5 text-indigo-500" />
+            <span className={`text-[11px] sm:text-xs font-bold uppercase tracking-wider ${cardFilter === 'PENDING' ? 'text-white' : 'text-indigo-600'}`}>
+              Pending
+            </span>
+            <Clock className={`w-4 h-4 sm:w-5 sm:h-5 ${cardFilter === 'PENDING' ? 'text-white' : 'text-indigo-500'}`} />
           </div>
-          <div className="mt-2 flex items-baseline justify-between">
-            <span className="text-2xl font-black text-slate-900">{statsPending}</span>
-            <span className="text-[10px] text-slate-400 font-bold">In-Progress Flows</span>
+          <div className="mt-2 sm:mt-3 flex items-baseline justify-between">
+            <span className={`text-2xl sm:text-4xl font-black ${cardFilter === 'PENDING' ? 'text-white' : 'text-slate-900'}`}>
+              {statsPending}
+            </span>
+            <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full ${
+              cardFilter === 'PENDING'
+                ? 'bg-white/25 text-white'
+                : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+            }`}>
+              In-Progress
+            </span>
           </div>
         </div>
 
@@ -662,17 +846,29 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
         <div 
           onClick={() => setCardFilter(cardFilter === 'COMPLETED' ? 'ALL' : 'COMPLETED')}
           title="Click to filter by Completed status"
-          className={`p-4 bg-white rounded-xl border cursor-pointer transition-all hover:scale-[1.01] hover:shadow-xs ${
-            cardFilter === 'COMPLETED' ? 'border-emerald-500 bg-emerald-50/10 ring-1 ring-emerald-500/20' : 'border-slate-200'
+          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all ${
+            cardFilter === 'COMPLETED' 
+              ? 'bg-emerald-600 text-white shadow-md ring-2 ring-emerald-400/50 scale-[1.01]' 
+              : 'bg-white border-slate-200 hover:border-emerald-300 hover:shadow-xs text-slate-900'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Total Completed</span>
-            <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+            <span className={`text-[11px] sm:text-xs font-bold uppercase tracking-wider ${cardFilter === 'COMPLETED' ? 'text-white' : 'text-emerald-600'}`}>
+              Completed
+            </span>
+            <CheckCircle2 className={`w-4 h-4 sm:w-5 sm:h-5 ${cardFilter === 'COMPLETED' ? 'text-white' : 'text-emerald-500'}`} />
           </div>
-          <div className="mt-2 flex items-baseline justify-between">
-            <span className="text-2xl font-black text-emerald-600">{statsCompleted}</span>
-            <span className="text-[10px] text-emerald-500/80 font-bold">Closed Workflows</span>
+          <div className="mt-2 sm:mt-3 flex items-baseline justify-between">
+            <span className={`text-2xl sm:text-4xl font-black ${cardFilter === 'COMPLETED' ? 'text-white' : 'text-slate-900'}`}>
+              {statsCompleted}
+            </span>
+            <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full ${
+              cardFilter === 'COMPLETED'
+                ? 'bg-white/25 text-white'
+                : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+            }`}>
+              Finished
+            </span>
           </div>
         </div>
 
@@ -680,17 +876,29 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
         <div 
           onClick={() => setCardFilter(cardFilter === 'DELAYED' ? 'ALL' : 'DELAYED')}
           title="Click to filter by Delayed status"
-          className={`p-4 bg-white rounded-xl border cursor-pointer transition-all hover:scale-[1.01] hover:shadow-xs ${
-            cardFilter === 'DELAYED' ? 'border-amber-500 bg-amber-50/10 ring-1 ring-amber-500/20' : 'border-slate-200'
+          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all ${
+            cardFilter === 'DELAYED' 
+              ? 'bg-rose-600 text-white shadow-md ring-2 ring-rose-400/50 scale-[1.01]' 
+              : 'bg-white border-slate-200 hover:border-rose-300 hover:shadow-xs text-slate-900'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-600 uppercase tracking-wider">Total Delayed</span>
-            <AlertTriangle className="w-5 h-5 text-amber-500" />
+            <span className={`text-[11px] sm:text-xs font-bold uppercase tracking-wider ${cardFilter === 'DELAYED' ? 'text-white' : 'text-rose-600'}`}>
+              Delayed
+            </span>
+            <AlertTriangle className={`w-4 h-4 sm:w-5 sm:h-5 ${cardFilter === 'DELAYED' ? 'text-white' : 'text-rose-500'}`} />
           </div>
-          <div className="mt-2 flex items-baseline justify-between">
-            <span className="text-2xl font-black text-amber-600">{statsDelayed}</span>
-            <span className="text-[10px] text-amber-500/80 font-bold">SLA Overdue</span>
+          <div className="mt-2 sm:mt-3 flex items-baseline justify-between">
+            <span className={`text-2xl sm:text-4xl font-black ${cardFilter === 'DELAYED' ? 'text-white' : 'text-slate-900'}`}>
+              {statsDelayed}
+            </span>
+            <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full ${
+              cardFilter === 'DELAYED'
+                ? 'bg-white/25 text-white'
+                : 'bg-rose-50 text-rose-700 border border-rose-100'
+            }`}>
+              Overdue
+            </span>
           </div>
         </div>
 
@@ -698,23 +906,51 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
         <div 
           onClick={() => setCardFilter(cardFilter === 'AWAITING_ME' ? 'ALL' : 'AWAITING_ME')}
           title="Click to filter by actions on your desk"
-          className={`p-4 bg-white rounded-xl border cursor-pointer transition-all hover:scale-[1.01] hover:shadow-xs ${
-            cardFilter === 'AWAITING_ME' ? 'border-indigo-500 bg-indigo-50/10 ring-1 ring-indigo-500/20' : 'border-slate-200'
+          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all ${
+            cardFilter === 'AWAITING_ME' 
+              ? 'bg-amber-500 text-white shadow-md ring-2 ring-amber-400/50 scale-[1.01]' 
+              : 'bg-white border-slate-200 hover:border-amber-300 hover:shadow-xs text-slate-900'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">My Actions</span>
-            <UserCheck className="w-5 h-5 text-indigo-500" />
+            <span className={`text-[11px] sm:text-xs font-bold uppercase tracking-wider ${cardFilter === 'AWAITING_ME' ? 'text-white' : 'text-amber-600'}`}>
+              My Actions
+            </span>
+            <UserCheck className={`w-4 h-4 sm:w-5 sm:h-5 ${cardFilter === 'AWAITING_ME' ? 'text-white' : 'text-amber-500'}`} />
           </div>
-          <div className="mt-2 flex items-baseline justify-between">
-            <span className="text-2xl font-black text-indigo-600">{statsAwaitingMe}</span>
-            <span className="text-[10px] text-indigo-500 font-bold">Awaiting Me</span>
+          <div className="mt-2 sm:mt-3 flex items-baseline justify-between">
+            <span className={`text-2xl sm:text-4xl font-black ${cardFilter === 'AWAITING_ME' ? 'text-white' : 'text-slate-900'}`}>
+              {statsAwaitingMe}
+            </span>
+            <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full ${
+              cardFilter === 'AWAITING_ME'
+                ? 'bg-white/25 text-white'
+                : 'bg-amber-50 text-amber-700 border border-amber-100'
+            }`}>
+              Awaiting Me
+            </span>
           </div>
         </div>
       </div>
 
       {/* Top action & filter bar */}
       <div className="space-y-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+        {selectedDepartmentFilter && (
+          <div className="flex items-center justify-between px-3.5 py-2 bg-indigo-50/80 border border-indigo-200/80 rounded-lg text-xs">
+            <div className="flex items-center gap-2 text-indigo-950 font-semibold">
+              <GitBranch className="w-4 h-4 text-indigo-600" />
+              <span>Department Branch: <strong className="text-indigo-700">{getDepartmentBranchLabel(selectedDepartmentFilter)} FMS</strong> ({filteredFlows.length} active workflows)</span>
+            </div>
+            {onClearDepartmentFilter && (
+              <button
+                onClick={onClearDepartmentFilter}
+                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 underline cursor-pointer"
+              >
+                View All Departments
+              </button>
+            )}
+          </div>
+        )}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
           {/* Left side: Search & unboxed filters */}
           <div className="flex flex-wrap items-center gap-3">
@@ -725,12 +961,12 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                 placeholder="Search Indent / PO / Vendor..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg w-48 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg w-48 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
 
             {/* Site Filter */}
-            <div className="flex items-center gap-1 bg-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-200/80">
+            <div className="flex items-center gap-1 bg-white px-2.5 py-1.5 rounded-lg border border-slate-200">
               <Filter className="w-3.5 h-3.5 text-slate-500" />
               <select
                 aria-label="Filter by site"
@@ -746,7 +982,7 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
             </div>
 
             {/* Relocated All Hubs Dropdown next to Site Filter */}
-            <div className="flex items-center bg-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-200/80 gap-2">
+            <div className="flex items-center bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 gap-2">
               <Layers className="w-3.5 h-3.5 text-slate-500" />
               <select
                 value={domainFilter}
@@ -770,12 +1006,12 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
           {/* Right side: View toggles & Relocated Action button */}
           <div className="flex items-center justify-between sm:justify-end gap-3">
             {/* View Mode Toggle Buttons */}
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 shadow-2xs">
+            <div className="flex items-center bg-white p-0.5 rounded-lg border border-slate-200 shadow-2xs">
               <button
                 onClick={() => setViewMode('FOCUS_FEED')}
                 className={`p-1.5 rounded transition-all ${
                   viewMode === 'FOCUS_FEED'
-                    ? 'bg-white text-indigo-700 shadow-xs'
+                    ? 'bg-slate-100 text-indigo-700 shadow-xs'
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
                 title="Standard Cards"
@@ -786,7 +1022,7 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                 onClick={() => setViewMode('MATRIX')}
                 className={`p-1.5 rounded transition-all ${
                   viewMode === 'MATRIX'
-                    ? 'bg-white text-indigo-700 shadow-xs'
+                    ? 'bg-slate-100 text-indigo-700 shadow-xs'
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
                 title="Enterprise Matrix (1000+)"
@@ -797,7 +1033,7 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                 onClick={() => setViewMode('KANBAN')}
                 className={`p-1.5 rounded transition-all ${
                   viewMode === 'KANBAN'
-                    ? 'bg-white text-slate-900 shadow-xs'
+                    ? 'bg-slate-100 text-slate-900 shadow-xs'
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
                 title="Operations Kanban"
@@ -806,10 +1042,32 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
               </button>
             </div>
 
+            {/* Export Filtered Data CSV Button */}
+            <button
+              onClick={handleExportFilteredCsv}
+              title="Export currently filtered FMS table data to CSV/Excel"
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-lg text-xs transition-colors shrink-0 border border-slate-300 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-600" />
+              <span>Export CSV ({filteredFlows.length})</span>
+            </button>
+
+            {/* Template Studio Button */}
+            {onOpenTemplateStudio && (
+              <button
+                onClick={() => onOpenTemplateStudio()}
+                title="Design custom FMS workflows, stages, and stage form fields"
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-lg text-xs transition-colors shrink-0 border border-indigo-200 cursor-pointer"
+              >
+                <Zap className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Template Studio</span>
+              </button>
+            )}
+
             {/* Relocated New FMS Workflow Button right next to view switchers */}
             <button
               onClick={onCreateFlow}
-              className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors shrink-0"
+              className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors shrink-0 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>+ New FMS Workflow</span>
@@ -826,11 +1084,14 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
         const startIndex = (validPage - 1) * matrixPageSize;
         const paginatedFlows = filteredFlows.slice(startIndex, startIndex + matrixPageSize);
 
+        const myPaginatedFlows = paginatedFlows.filter(f => isFlowAwaitingUserAction(f, currentUser));
+
         const handleSelectAllMatrix = () => {
-          if (matrixSelectedIds.length === paginatedFlows.length && paginatedFlows.length > 0) {
+          const selectable = viewScope === 'USER_ONLY' ? paginatedFlows : myPaginatedFlows;
+          if (matrixSelectedIds.length === selectable.length && selectable.length > 0) {
             setMatrixSelectedIds([]);
           } else {
-            setMatrixSelectedIds(paginatedFlows.map(f => f.id));
+            setMatrixSelectedIds(selectable.map(f => f.id));
           }
         };
 
@@ -840,7 +1101,7 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
 
         const handleBatchAdvanceMatrix = () => {
           paginatedFlows.forEach(flow => {
-            if (matrixSelectedIds.includes(flow.id)) {
+            if (matrixSelectedIds.includes(flow.id) && isFlowAwaitingUserAction(flow, currentUser)) {
               handleAdvanceCurrentStage(flow);
             }
           });
@@ -877,7 +1138,7 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
             <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
-                  <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+                  <thead className="bg-white text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
                     <tr>
                       <th className="py-2.5 px-3 w-8 text-center">
                         <input
@@ -916,17 +1177,28 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                     {paginatedFlows.length > 0 ? (
                       paginatedFlows.map((flow) => {
                         const isChecked = matrixSelectedIds.includes(flow.id);
-                        const curStage = flow.stages[flow.currentStageIndex];
+                        const curStage = flow.stages[Math.min(flow.currentStageIndex, Math.max(0, flow.stages.length - 1))];
                         const refCode = flow.flowType === 'CHECK_STOCK'
                           ? (flow.requisitionNumber ? `Check Stock #${flow.requisitionNumber}` : `Stock Check #${flow.indentNo}`)
                           : flow.flowType === 'PO_TO_PAYMENT'
                           ? (flow.poNumber ? `PO #${flow.poNumber}` : `PO #${flow.indentNo}`)
                           : `Indent #${flow.indentNo}`;
 
-                        const isCompleted = flow.status === 'Completed' || curStage?.status === 'Done';
-                        const plannedStr = curStage?.plannedDateTime || `${flow.indentDate || '05/10/2026'} 11:00 AM`;
-                        const actualStr = curStage?.actualDateTime || (isCompleted ? '05/10/2026 12:00 PM' : '—');
-                        const delayHrs = curStage?.delayHours || flow.totalDelayHours || (curStage?.status === 'Delayed' ? 18 : 0);
+                        const isCompleted = flow.status === 'Completed';
+                        const now = new Date();
+                        const todayFormatted = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+                        const plannedStr = curStage?.plannedDateTime || `${flow.indentDate || todayFormatted} 11:00 AM`;
+                        const actualStr = isCompleted
+                          ? (flow.stages[flow.stages.length - 1]?.actualDateTime || curStage?.actualDateTime || `${todayFormatted} 12:00 PM`)
+                          : (curStage?.actualDateTime || '—');
+
+                        const flowDelayHrs = getFlowTotalDelay(flow);
+                        const stageDelayHrs = getStageDelayHours(curStage, plannedStr);
+                        const delayHrs = isCompleted ? flowDelayHrs : Math.max(flowDelayHrs, stageDelayHrs);
+                        const isDelayActive = delayHrs > 0;
+                        const delayText = formatDelayVariance(delayHrs);
+
+                        const isMyCurFlow = isFlowAwaitingUserAction(flow, currentUser);
 
                         return (
                           <tr key={flow.id} className={`hover:bg-slate-50 transition-colors ${isChecked ? 'bg-indigo-50/50' : ''}`}>
@@ -949,7 +1221,7 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                             </td>
                             <td className="py-2.5 px-3">
                               <div className="font-semibold text-slate-900 truncate max-w-[180px]">
-                                Stg {flow.currentStageIndex + 1}: {curStage?.stageName || 'Completed'}
+                                Stg {Math.min(flow.currentStageIndex + 1, flow.totalStages)}: {curStage?.stageName || 'Completed'}
                               </div>
                               <span className="text-[10px] text-slate-500 font-mono">Assignee: {curStage?.assignee || 'System'}</span>
                             </td>
@@ -967,34 +1239,32 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                             <td className="py-2.5 px-3 font-mono text-slate-700 whitespace-nowrap">
                               {actualStr}
                             </td>
-                            {/* Delay Variance - show ONLY precision duration if delayed, with body highlights */}
-                            {(() => {
-                              const calculatedDelayHrs = getDelayHours(plannedStr, curStage?.actualDateTime, isCompleted);
-                              const isDelayActive = calculatedDelayHrs > 0;
-                              const delayText = formatDelayVariance(calculatedDelayHrs);
-
-                              return (
-                                <td className={`py-2.5 px-3 font-mono whitespace-nowrap text-xs font-bold ${
-                                  isDelayActive
-                                    ? isCompleted
-                                      ? 'bg-red-100 text-red-800 border border-red-200 rounded'
-                                      : 'bg-yellow-100 text-yellow-800 border border-yellow-200 rounded'
-                                    : 'text-slate-400'
+                            {/* Delay Variance - show precision duration with red/amber highlight badges */}
+                            <td className="py-2.5 px-3 font-mono whitespace-nowrap text-xs">
+                              {isDelayActive ? (
+                                <span className={`inline-block px-2 py-0.5 rounded font-bold ${
+                                  isCompleted
+                                    ? 'bg-red-100 text-red-800 border border-red-200'
+                                    : 'bg-yellow-100 text-yellow-800 border border-yellow-300'
                                 }`}>
                                   {delayText}
-                                </td>
-                              );
-                            })()}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </td>
                             <td className="py-2.5 px-4 text-right whitespace-nowrap">
                               <div className="flex items-center justify-end gap-1.5">
-                                {flow.status !== 'Completed' && (
+                                {/* Mark Done button: ONLY FOR ASSIGNED USER OF ACTIVE STAGE */}
+                                {flow.status !== 'Completed' && isMyCurFlow && (
                                   <button
-                                    onClick={() => handleAdvanceCurrentStage(flow)}
-                                    className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded text-[11px] transition-colors"
+                                    onClick={() => onOpenStageAction ? onOpenStageAction(flow, flow.currentStageIndex) : handleAdvanceCurrentStage(flow)}
+                                    className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded text-[11px] transition-colors cursor-pointer"
                                   >
                                     Mark Done
                                   </button>
                                 )}
+                                {/* View Detail Context: AVAILABLE TO ALL USERS TO INSPECT CURRENT PROGRESS */}
                                 <button
                                   onClick={() => {
                                     setSelectedFlowId(flow.id);
@@ -1021,8 +1291,8 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                 </table>
               </div>
 
-              {/* Pagination Bar */}
-              <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+              {/* Pagination Bar - sm:pr-24 guarantees Next button is never blocked by floating buttons */}
+              <div className="p-3 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600 sm:pr-24">
                 <div className="flex items-center gap-4">
                   {/* Relocated Rows per page dropdown */}
                   <div className="flex items-center gap-1.5">
@@ -1078,17 +1348,19 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
       {viewMode === 'KANBAN' && (() => {
         const pendingCol = filteredFlows.filter(f => f.status !== 'Completed' && f.currentStageIndex === 0);
         const inProgressCol = filteredFlows.filter(f => f.status !== 'Completed' && f.currentStageIndex > 0 && f.priority !== 'Urgent');
-        const bottleneckCol = filteredFlows.filter(f => f.status !== 'Completed' && (f.priority === 'Urgent' || f.totalDelayHours > 0));
+        const bottleneckCol = filteredFlows.filter(f => f.status !== 'Completed' && (f.priority === 'Urgent' || getFlowTotalDelay(f) > 0 || f.stages.some(s => getStageDelayHours(s) > 0 || s.status === 'Delayed')));
         const completedCol = filteredFlows.filter(f => f.status === 'Completed');
 
         const renderKanbanCard = (flow: FmsInstance) => {
-          const curStage = flow.stages[flow.currentStageIndex];
+          const curStage = flow.stages[Math.min(flow.currentStageIndex, Math.max(0, flow.stages.length - 1))];
           const isPayment = flow.flowType === 'PO_TO_PAYMENT';
           const refCode = flow.flowType === 'CHECK_STOCK'
             ? (flow.requisitionNumber ? `Stock Check #${flow.requisitionNumber}` : `Stock Check #${flow.indentNo}`)
             : isPayment
             ? (flow.poNumber ? `PO #${flow.poNumber}` : `Accounts PO #${flow.indentNo}`)
             : `FMS #${flow.indentNo}`;
+
+          const flowDelay = getFlowTotalDelay(flow);
 
           return (
             <div key={flow.id} className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-2xs space-y-2 hover:border-indigo-300 transition-all">
@@ -1107,14 +1379,21 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
 
               <div className="text-[11px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-100">
                 <span>Assignee: <strong className="text-slate-700">{curStage?.assignee || 'System'}</strong></span>
-                <span className="text-[10px] font-mono text-indigo-600 font-bold">Stg {flow.currentStageIndex + 1}/{flow.totalStages}</span>
+                <span className="text-[10px] font-mono text-indigo-600 font-bold">Stg {Math.min(flow.currentStageIndex + 1, flow.totalStages)}/{flow.totalStages}</span>
               </div>
 
+              {flowDelay > 0 && (
+                <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                  <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                  <span>Delay: {formatDelayVariance(flowDelay)}</span>
+                </div>
+              )}
+
               <div className="flex items-center justify-between pt-1">
-                {flow.status !== 'Completed' && (
+                {flow.status !== 'Completed' && isFlowAwaitingUserAction(flow, currentUser) && (
                   <button
-                    onClick={() => handleAdvanceCurrentStage(flow)}
-                    className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded text-[10px]"
+                    onClick={() => onOpenStageAction ? onOpenStageAction(flow, flow.currentStageIndex) : handleAdvanceCurrentStage(flow)}
+                    className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded text-[10px] cursor-pointer"
                   >
                     Advance Step →
                   </button>
@@ -2346,119 +2625,133 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
 
                     {/* Actions for current step */}
                     <div className="flex flex-wrap items-center gap-2">
-                      {activeFlow.stages[activeFlow.currentStageIndex].formResponseRef && (
-                        <a
-                          href={activeFlow.stages[activeFlow.currentStageIndex].formResponseRef}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-100 hover:bg-indigo-200 rounded-lg transition-colors"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          <span>Open Linked Google Form</span>
-                        </a>
-                      )}
+                      {(() => {
+                        const activeStage = activeFlow.stages[activeFlow.currentStageIndex];
+                        const hasInAppForm = !!(
+                          (activeStage?.fields && activeStage.fields.length > 0) ||
+                          (currentStageDef?.fields && currentStageDef.fields.length > 0) ||
+                          activeStage?.how === 'IN-APP FORM' ||
+                          activeStage?.how === 'IN APP FORM'
+                        );
 
-                      {currentStageDef?.hasYesNoDecision ? (
-                        <div className="flex items-center gap-2">
+                        if (onOpenStageAction && hasInAppForm) {
+                          return (
+                            <button
+                              onClick={() => onOpenStageAction(activeFlow, activeFlow.currentStageIndex)}
+                              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition-colors cursor-pointer"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              <span>Fill Stage Form &amp; Advance</span>
+                            </button>
+                          );
+                        }
+
+                        if (currentStageDef?.hasYesNoDecision || activeStage?.logic?.gatewayType === 'CONDITIONAL_JUMP') {
+                          return (
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleAdvanceCurrentStage(activeFlow, 'Yes')}
+                                className="flex items-center gap-1 px-3.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition-colors"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>
+                                  {activeStage?.stageId === 'STG-STK-02'
+                                    ? 'Yes (Purchase Required → Send Indent)'
+                                    : activeStage?.stageId === 'STG-STK-04'
+                                    ? 'Yes (Partial Stock Available → Dispatch Available)'
+                                    : activeStage?.stageId === 'STG-PAY-01'
+                                    ? 'Yes (Bank Account / NEFT Route)'
+                                    : activeStage?.stageId === 'STG-PAY-02'
+                                    ? 'Yes (Account Already Added)'
+                                    : activeStage?.stageId === 'STG-SSD-04' || activeStage?.stageId === 'STG-PSD-05'
+                                    ? 'Yes (E-Way Bill Required → Send Challan)'
+                                    : activeStage?.stageId === 'STG-DISP-03'
+                                    ? 'Yes (Material Acceptable → Skip Return & Dispatch)'
+                                    : activeStage?.stageId === 'STG-DISP-05'
+                                    ? 'Yes (Material Replaced → Dispatch)'
+                                    : activeStage?.stageId === 'STG-REC-03'
+                                    ? 'Yes (Discrepancy Found → Inform CSR Store)'
+                                    : activeStage?.stageId === 'STG-REC-05'
+                                    ? 'Yes (Acceptable → Get Technical Verification)'
+                                    : activeStage?.stageId === 'STG-REC-09'
+                                    ? 'Yes (Form Already Submitted)'
+                                    : activeStage?.stageId === 'STG-INV-03'
+                                    ? 'Yes (Invoice Acceptable → Get Approval)'
+                                    : activeStage?.stageId === 'STG-HR-03'
+                                    ? 'Yes (OT Logged → Prepare OT Sheet)'
+                                    : activeStage?.stageId === 'STG-BRK-02'
+                                    ? 'Yes (Service Engineer Required → Schedule Visit)'
+                                    : activeStage?.stageId === 'STG-BRK-05'
+                                    ? 'Yes (Can Repair at Site → Send Parts Indent)'
+                                    : activeStage?.stageId === 'STG-EQP-03'
+                                    ? 'Yes (Under Warranty → Send to OEM Center)'
+                                    : activeStage?.stageId === 'STG-EQP-12'
+                                    ? 'Yes (Trial Run Successful → Check Extra Charges)'
+                                    : activeStage?.stageId === 'STG-EQP-13'
+                                    ? 'Yes (Extra Charges Incurred → Get Approval)'
+                                    : activeStage?.stageId === 'STG-10'
+                                    ? 'Yes (Advance Payment Required)'
+                                    : activeStage?.logic?.yesConditionLabel || 'Approve (YES)'}
+                                </span>
+                              </button>
+                              <button
+                                onClick={() => handleAdvanceCurrentStage(activeFlow, 'No')}
+                                className="flex items-center gap-1 px-3.5 py-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg transition-colors"
+                              >
+                                <span>
+                                  {activeStage?.stageId === 'STG-STK-02'
+                                    ? 'No (Fulfilled from Store Stock → Dispatch)'
+                                    : activeStage?.stageId === 'STG-STK-04'
+                                    ? 'No (Zero Stock → 100% Purchase Needed)'
+                                    : activeStage?.stageId === 'STG-PAY-01'
+                                    ? 'No (Route via UPI QR Code)'
+                                    : activeStage?.stageId === 'STG-PAY-02'
+                                    ? 'No (Passbook Copy & Add Account)'
+                                    : activeStage?.stageId === 'STG-SSD-04' || activeStage?.stageId === 'STG-PSD-05'
+                                    ? 'No (E-Way Bill Not Required → Load Material)'
+                                    : activeStage?.stageId === 'STG-DISP-03'
+                                    ? 'No (Defective / Mismatch → Return to Vendor)'
+                                    : activeStage?.stageId === 'STG-DISP-05'
+                                    ? 'No (Not Replaced → Get Refund/Credit Note)'
+                                    : activeStage?.stageId === 'STG-REC-03'
+                                    ? 'No (No Discrepancy → Verify Material Acceptance)'
+                                    : activeStage?.stageId === 'STG-REC-05'
+                                    ? 'No (Rejected / Damaged → Return to Repair Store)'
+                                    : activeStage?.stageId === 'STG-REC-09'
+                                    ? 'No (Fill Google Form Now)'
+                                    : activeStage?.stageId === 'STG-INV-03'
+                                    ? 'No (Discrepancy / Error → Get Rectified)'
+                                    : activeStage?.stageId === 'STG-HR-03'
+                                    ? 'No (No OT → Skip to Attendance Sheet)'
+                                    : activeStage?.stageId === 'STG-BRK-02'
+                                    ? 'No (Mechanic Diagnostic Sufficient → Analysis Report)'
+                                    : activeStage?.stageId === 'STG-BRK-05'
+                                    ? 'No (Send to Offsite Workshop for Repair)'
+                                    : activeStage?.stageId === 'STG-EQP-03'
+                                    ? 'No (Out of Warranty → Proceed to Paid Repair Approval)'
+                                    : activeStage?.stageId === 'STG-EQP-12'
+                                    ? 'No (Trial Run Failed → Send for Rework)'
+                                    : activeStage?.stageId === 'STG-EQP-13'
+                                    ? 'No (No Extra Charges → Receive in Store)'
+                                    : activeStage?.stageId === 'STG-10'
+                                    ? 'No (Skip Stage 11 → Go to Stage 12)'
+                                    : activeStage?.logic?.noConditionLabel || 'Reject / No'}
+                                </span>
+                              </button>
+                            </div>
+                          );
+                        }
+
+                        return (
                           <button
-                            onClick={() => handleAdvanceCurrentStage(activeFlow, 'Yes')}
-                            className="flex items-center gap-1 px-3.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition-colors"
+                            onClick={() => onOpenStageAction ? onOpenStageAction(activeFlow, activeFlow.currentStageIndex) : handleAdvanceCurrentStage(activeFlow)}
+                            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition-colors cursor-pointer"
                           >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>
-                                {activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-STK-02'
-                                ? 'Yes (Purchase Required → Send Indent)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-STK-04'
-                                ? 'Yes (Partial Stock Available → Dispatch Available)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-PAY-01'
-                                ? 'Yes (Bank Account / NEFT Route)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-PAY-02'
-                                ? 'Yes (Account Already Added)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-SSD-04' || activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-PSD-05'
-                                ? 'Yes (E-Way Bill Required → Send Challan)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-DISP-03'
-                                ? 'Yes (Material Acceptable → Skip Return & Dispatch)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-DISP-05'
-                                ? 'Yes (Material Replaced → Dispatch)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-REC-03'
-                                ? 'Yes (Discrepancy Found → Inform CSR Store)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-REC-05'
-                                ? 'Yes (Acceptable → Get Technical Verification)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-REC-09'
-                                ? 'Yes (Form Already Submitted)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-INV-03'
-                                ? 'Yes (Invoice Acceptable → Get Approval)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-HR-03'
-                                ? 'Yes (OT Logged → Prepare OT Sheet)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-BRK-02'
-                                ? 'Yes (Service Engineer Required → Schedule Visit)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-BRK-05'
-                                ? 'Yes (Can Repair at Site → Send Parts Indent)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-EQP-03'
-                                ? 'Yes (Under Warranty → Send to OEM Center)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-EQP-12'
-                                ? 'Yes (Trial Run Successful → Check Extra Charges)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-EQP-13'
-                                ? 'Yes (Extra Charges Incurred → Get Approval)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-10'
-                                ? 'Yes (Advance Payment Required)'
-                                : 'Approve (YES)'}
-                            </span>
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>Mark Step Done &amp; Advance</span>
                           </button>
-                          <button
-                            onClick={() => handleAdvanceCurrentStage(activeFlow, 'No')}
-                            className="flex items-center gap-1 px-3.5 py-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg transition-colors"
-                          >
-                            <span>
-                              {activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-STK-02'
-                                ? 'No (Fulfilled from Store Stock → Dispatch)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-STK-04'
-                                ? 'No (Zero Stock → 100% Purchase Needed)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-PAY-01'
-                                ? 'No (Route via UPI QR Code)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-PAY-02'
-                                ? 'No (Passbook Copy & Add Account)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-SSD-04' || activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-PSD-05'
-                                ? 'No (E-Way Bill Not Required → Load Material)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-DISP-03'
-                                ? 'No (Defective / Mismatch → Return to Vendor)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-DISP-05'
-                                ? 'No (Not Replaced → Get Refund/Credit Note)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-REC-03'
-                                ? 'No (No Discrepancy → Verify Material Acceptance)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-REC-05'
-                                ? 'No (Rejected / Damaged → Return to Repair Store)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-REC-09'
-                                ? 'No (Fill Google Form Now)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-INV-03'
-                                ? 'No (Discrepancy / Error → Get Rectified)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-HR-03'
-                                ? 'No (No OT → Skip to Attendance Sheet)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-BRK-02'
-                                ? 'No (Mechanic Diagnostic Sufficient → Analysis Report)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-BRK-05'
-                                ? 'No (Send to Offsite Workshop for Repair)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-EQP-03'
-                                ? 'No (Out of Warranty → Proceed to Paid Repair Approval)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-EQP-12'
-                                ? 'No (Trial Run Failed → Send for Rework)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-EQP-13'
-                                ? 'No (No Extra Charges → Receive in Store)'
-                                : activeFlow.stages[activeFlow.currentStageIndex]?.stageId === 'STG-10'
-                                ? 'No (Skip Stage 11 → Go to Stage 12)'
-                                : 'Reject / No'}
-                            </span>
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => handleAdvanceCurrentStage(activeFlow)}
-                          className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition-colors"
-                        >
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>Mark Step Done &amp; Advance</span>
-                        </button>
-                      )}
+                        );
+                      })()}
                     </div>
                   </div>
                 ) : (
@@ -2564,7 +2857,7 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                                 </p>
                               </div>
 
-                              <div className="text-right">
+                              <div className="text-right flex flex-col items-end gap-1">
                                 <span
                                   className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${
                                     isDone
@@ -2578,7 +2871,22 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                                 >
                                   {stageExec?.status || 'Pending'}
                                 </span>
-                                <div className="text-[11px] text-slate-400 mt-1">
+                                {(() => {
+                                  const stgDelay = getStageDelayHours(stageExec);
+                                  if (stgDelay <= 0) return null;
+                                  return (
+                                    <span
+                                      className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded border ${
+                                        isDone
+                                          ? 'bg-red-50 text-red-700 border-red-200'
+                                          : 'bg-amber-50 text-amber-800 border-amber-300 animate-pulse'
+                                      }`}
+                                    >
+                                      Delay: {formatDelayVariance(stgDelay)}
+                                    </span>
+                                  );
+                                })()}
+                                <div className="text-[11px] text-slate-400">
                                   SLA: {def.slaHours} hr{def.slaHours > 1 ? 's' : ''}
                                 </div>
                               </div>
@@ -2667,6 +2975,8 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
           )}
         </div>
       </div>
+      )}
+      </>
       )}
     </div>
   );

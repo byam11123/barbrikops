@@ -46,7 +46,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs }) => {
             aria-label="Filter by module"
             value={moduleFilter}
             onChange={(e) => setModuleFilter(e.target.value)}
-            className="text-xs bg-slate-50 border border-slate-300 rounded-lg py-1.5 px-2 text-slate-700 font-medium"
+            className="text-xs bg-white border border-slate-300 rounded-lg py-1.5 px-2 text-slate-700 font-medium"
           >
             <option value="ALL">All Modules</option>
             <option value="FMS">FMS Flow</option>
@@ -63,7 +63,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs }) => {
               placeholder="Search audit trail..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg w-52 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg w-52 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
         </div>
@@ -73,7 +73,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs }) => {
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+            <thead className="bg-white text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
               <tr>
                 <th className="py-2.5 px-3">Audit ID</th>
                 <th className="py-2.5 px-3">Timestamp</th>
@@ -134,6 +134,16 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs }) => {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Table Footer */}
+        <div className="px-4 py-3 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
+          <div>
+            Showing <span className="font-semibold text-slate-800">{filteredLogs.length}</span> audit logs
+          </div>
+          <div className="text-[11px] font-medium text-slate-400">
+            Immutable Audit Trail • System Ledger
+          </div>
         </div>
       </div>
     </div>

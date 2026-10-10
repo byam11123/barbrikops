@@ -27,9 +27,13 @@ import {
   Zap,
   Briefcase,
   Award,
-  Table
+  Table,
+  Plus,
+  Download
 } from 'lucide-react';
-import { ChecklistItem, DelegationTask, FmsInstance, UserProfile, ProcessRemark } from '../../types';
+import { downloadCsv } from '../../utils/csvExporter';
+import { ChecklistItem, DelegationTask, FmsInstance, UserProfile, ProcessRemark, FmsStageDefinition, isUserSuperAdmin } from '../../types';
+import { storageAdapter } from '../../services/storageAdapter';
 import { 
   FMS_CHECK_STOCK_STAGES, 
   FMS_STANDARD_PURCHASE_STAGES, 
@@ -75,6 +79,7 @@ export interface UnifiedItem {
   isCompleted: boolean;
   isOverdue: boolean;
   isDueToday: boolean;
+  isMine?: boolean;
   priority?: string;
   channelOrFreq?: string;
   rawItem: any;
@@ -85,11 +90,12 @@ export interface UnifiedItem {
 
 
 export function parseDateTimeStr(str: string | undefined): Date | null {
-  if (!str || str === '—' || str.includes('Target Pending')) return null;
+  if (!str || typeof str !== 'string') return null;
+  const clean = str.replace(',', ' ').trim();
+  if (!clean || clean === '—' || clean === '-' || clean.toLowerCase().includes('pending')) return null;
   
-  // Custom DD/MM/YYYY parsing to avoid standard Date interpreting it as MM/DD/YYYY
+  // 1. Custom DD/MM/YYYY or DD-MM-YYYY parsing
   try {
-    const clean = str.replace(',', '').trim();
     const match = clean.match(/^(\d{1,2})[\s/:_.-]+(\d{1,2})[\s/:_.-]+(\d{4})/);
     if (match) {
       const day = parseInt(match[1], 10);
@@ -101,15 +107,12 @@ export function parseDateTimeStr(str: string | undefined): Date | null {
       let sec = 0;
       
       const timePart = clean.substring(match[0].length).trim();
-      const timeParts = timePart.split(/[\s/:_.-]+/);
-      if (timeParts.length >= 2) {
-        hour = parseInt(timeParts[0], 10);
-        min = parseInt(timeParts[1], 10);
-        if (timeParts[2]) {
-          const secVal = parseInt(timeParts[2], 10);
-          if (!isNaN(secVal)) {
-            sec = secVal;
-          }
+      if (timePart) {
+        const timeMatch = timePart.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+        if (timeMatch) {
+          hour = parseInt(timeMatch[1], 10);
+          min = parseInt(timeMatch[2], 10);
+          if (timeMatch[3]) sec = parseInt(timeMatch[3], 10);
         }
       }
       
@@ -123,6 +126,7 @@ export function parseDateTimeStr(str: string | undefined): Date | null {
     }
   } catch (e) {}
 
+  // 2. Fallback to native Date parsing (handles ISO format YYYY-MM-DD etc.)
   const parsed = new Date(str);
   if (!isNaN(parsed.getTime())) return parsed;
   return null;
@@ -142,7 +146,7 @@ export function getDelayHours(plannedStr: string | undefined, actualStr: string 
 }
 
 export function formatDelayVariance(delayHours: number): string {
-  if (delayHours <= 0) return '—';
+  if (!delayHours || delayHours <= 0) return '—';
   const totalSeconds = Math.round(delayHours * 3600);
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
@@ -153,7 +157,7 @@ export function formatDelayVariance(delayHours: number): string {
   const baseTime = `${hStr}:${mStr}:${sStr}`;
   if (h >= 24) {
     const days = (delayHours / 24).toFixed(1);
-    return `${baseTime}(${days} D)`;
+    return `${baseTime} (${days} D)`;
   }
   return baseTime;
 }
@@ -182,6 +186,10 @@ interface UnifiedWorkSummaryProps {
     targetId: string,
     stageIndex?: number
   ) => void;
+  pcDeskActive?: boolean;
+  onTogglePcDesk?: (active: boolean) => void;
+  onCreateFmsFlow?: () => void;
+  onOpenStageAction?: (flow: FmsInstance, stageIndex: number) => void;
 }
 
 export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
@@ -198,15 +206,27 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   onNavigateTab,
   onAddProcessRemark,
   onNudgeItem,
+  pcDeskActive: propPcDeskActive,
+  onTogglePcDesk,
+  onCreateFmsFlow,
+  onOpenStageAction,
 }) => {
   const [selectedCondition, setSelectedCondition] = useState<StatCondition>('DUE_TODAY');
   const [moduleFilter, setModuleFilter] = useState<'ALL' | 'FMS' | 'CHECKLIST' | 'DELEGATION'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [assigneeFilter, setAssigneeFilter] = useState<string>('ALL');
 
-  // Process Coordinator Desk Mode (Ritu Sahu View)
-  const isRituSahu = currentUser.name.toLowerCase().includes('ritu') || currentUser.role.toLowerCase().includes('process coordinator');
-  const [pcDeskActive, setPcDeskActive] = useState<boolean>(isRituSahu);
+  const isSuperAdmin = isUserSuperAdmin(currentUser);
+
+  // Process Coordinator Desk Mode (Super Admin or Process Coordinator only)
+  const isRituSahu = isSuperAdmin || currentUser.name.toLowerCase().includes('ritu') || currentUser.role.toLowerCase().includes('process coordinator');
+  const [localPcDeskActive, setLocalPcDeskActive] = useState<boolean>(isSuperAdmin && isRituSahu);
+  const pcDeskActive = isSuperAdmin ? (propPcDeskActive !== undefined ? propPcDeskActive : localPcDeskActive) : false;
+  const setPcDeskActive = (val: boolean) => {
+    if (!isSuperAdmin) return;
+    if (onTogglePcDesk) onTogglePcDesk(val);
+    else setLocalPcDeskActive(val);
+  };
 
   // View Format Toggle: Standard Cards vs Enterprise Matrix (1000+ Scale Grid)
   const [viewFormat, setViewFormat] = useState<'CARD' | 'MATRIX'>('MATRIX');
@@ -227,17 +247,44 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   // Modal state for Process Coordinator Task Context Inspection (Ritu Sahu View Action)
   const [viewDetailItem, setViewDetailItem] = useState<UnifiedItem | null>(null);
 
-  // Fixed reference date matching system time: 05/10/2026
-  const today = new Date(2026, 9, 5); // month 9 is October (0-indexed)
+  // Dynamic current date (Today)
+  const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayStr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
 
   const parseDate = (dStr?: string): Date | undefined => {
     if (!dStr) return undefined;
     try {
-      const cleaned = dStr.split(' ')[0];
-      const parts = cleaned.split('/');
-      if (parts.length === 3) {
-        return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+      const cleaned = dStr.trim().split(' ')[0].split('T')[0];
+      if (cleaned.includes('/')) {
+        const parts = cleaned.split('/');
+        if (parts.length === 3) {
+          const p0 = parseInt(parts[0], 10);
+          const p1 = parseInt(parts[1], 10);
+          const p2 = parseInt(parts[2], 10);
+          if (parts[2].length === 4 || p2 > 1000) {
+            return new Date(p2, p1 - 1, p0);
+          }
+          if (parts[0].length === 4 || p0 > 1000) {
+            return new Date(p0, p1 - 1, p2);
+          }
+          return new Date(p2, p1 - 1, p0);
+        }
+      } else if (cleaned.includes('-')) {
+        const parts = cleaned.split('-');
+        if (parts.length === 3) {
+          const p0 = parseInt(parts[0], 10);
+          const p1 = parseInt(parts[1], 10);
+          const p2 = parseInt(parts[2], 10);
+          if (parts[0].length === 4 || p0 > 1000) {
+            return new Date(p0, p1 - 1, p2);
+          }
+          return new Date(p2, p1 - 1, p0);
+        }
+      }
+      const direct = new Date(dStr);
+      if (!isNaN(direct.getTime())) {
+        return direct;
       }
       return undefined;
     } catch {
@@ -246,8 +293,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   };
 
   // Helpers for user matching
-  const isMineChecklist = (c: ChecklistItem) => {
-    if (pcDeskActive) return true; // Process Coordinator sees ALL tasks
+  const isDirectlyAssignedChecklist = (c: ChecklistItem) => {
     const curName = currentUser.name.toLowerCase();
     const curEmail = currentUser.email.toLowerCase();
     return c.email.toLowerCase() === curEmail ||
@@ -255,17 +301,30 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
            (currentUser.phone ? c.name.includes(currentUser.phone) : false);
   };
 
-  const isMineDelegation = (d: DelegationTask) => {
-    if (pcDeskActive) return true; // Process Coordinator sees ALL tasks
+  const isDirectlyAssignedDelegation = (d: DelegationTask) => {
     const curName = currentUser.name.toLowerCase();
     return d.name.toLowerCase().includes(curName) ||
            d.rolePhone.toLowerCase().includes(curName) ||
            (currentUser.phone ? d.rolePhone.includes(currentUser.phone) : false);
   };
 
+  const isDirectlyAssignedFms = (stageDef: any, stageExec?: any) => {
+    return isUserResponsibleForStage(stageDef, stageExec, currentUser);
+  };
+
+  const isMineChecklist = (c: ChecklistItem) => {
+    if (pcDeskActive) return true; // Process Coordinator sees ALL tasks
+    return isDirectlyAssignedChecklist(c);
+  };
+
+  const isMineDelegation = (d: DelegationTask) => {
+    if (pcDeskActive) return true; // Process Coordinator sees ALL tasks
+    return isDirectlyAssignedDelegation(d);
+  };
+
   const isMineFmsStage = (stageDef: any, stageExec?: any) => {
     if (pcDeskActive) return true; // Process Coordinator sees ALL active stages
-    return isUserResponsibleForStage(stageDef, stageExec, currentUser);
+    return isDirectlyAssignedFms(stageDef, stageExec);
   };
 
   // Build Unified Items List
@@ -293,13 +352,14 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       subtitle: `${chk.department} • Assignee: ${chk.name} (${chk.email}) • Freq: ${chk.frequency === 'W' ? 'Weekly' : chk.frequency === 'M' ? 'Monthly' : 'Daily'}`,
       targetDateStr: chk.plannedDate,
       plannedDateTimeStr: chk.plannedDate ? `${chk.plannedDate} 10:00 AM` : '—',
-      actualDateTimeStr: isCompleted ? (chk.actualDate || '05/10/2026 04:30 PM') : '—',
-      delayHours: getDelayHours(chk.plannedDate ? `${chk.plannedDate} 10:00 AM` : undefined, isCompleted ? (chk.actualDate || '05/10/2026 04:30 PM') : undefined, isCompleted),
+      actualDateTimeStr: isCompleted ? (chk.actualDate || `${todayStr} 04:30 PM`) : '—',
+      delayHours: getDelayHours(chk.plannedDate ? `${chk.plannedDate} 10:00 AM` : undefined, isCompleted ? (chk.actualDate || `${todayStr} 04:30 PM`) : undefined, isCompleted),
       targetDateObj: dateObj,
       status: chk.status,
       isCompleted,
       isOverdue,
       isDueToday,
+      isMine: isDirectlyAssignedChecklist(chk),
       channelOrFreq: chk.frequency,
       rawItem: chk,
       processRemarks: chk.processRemarks || [],
@@ -330,13 +390,14 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       subtitle: `Delegated Task • Assignee: ${del.name} (${del.rolePhone}) • Revisions: ${del.totalRevisions}`,
       targetDateStr: del.latestRevision,
       plannedDateTimeStr: del.latestRevision ? `${del.latestRevision} 05:00 PM` : '—',
-      actualDateTimeStr: isCompleted ? (del.completedAt || '05/10/2026 05:00 PM') : '—',
-      delayHours: getDelayHours(del.latestRevision ? `${del.latestRevision} 05:00 PM` : undefined, isCompleted ? (del.completedAt || '05/10/2026 05:00 PM') : undefined, isCompleted),
+      actualDateTimeStr: isCompleted ? (del.completedAt || `${todayStr} 05:00 PM`) : '—',
+      delayHours: getDelayHours(del.latestRevision ? `${del.latestRevision} 05:00 PM` : undefined, isCompleted ? (del.completedAt || `${todayStr} 05:00 PM`) : undefined, isCompleted),
       targetDateObj: dateObj,
       status: del.status,
       isCompleted,
       isOverdue,
       isDueToday,
+      isMine: isDirectlyAssignedDelegation(del),
       priority: del.priority,
       rawItem: del,
       processRemarks: del.processRemarks || [],
@@ -347,7 +408,26 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
 
   // C. FMS Stages
   flows.forEach((flow) => {
-    const stageDefs = flow.flowType === 'CHECK_STOCK'
+    const customTemplate = flow.customTemplateId
+      ? storageAdapter.getAllMasterTemplates().find((t) => t.id === flow.customTemplateId || t.templateKey === flow.flowType)
+      : storageAdapter.getAllMasterTemplates().find((t) => t.templateKey === flow.flowType);
+
+    const stageDefs: FmsStageDefinition[] = customTemplate
+      ? customTemplate.stages.map((stg, sIdx) => ({
+          stageId: stg.stageId,
+          stageNumber: sIdx + 1,
+          name: stg.stageName,
+          what: stg.stageName,
+          whoRole: stg.whoRole || 'ASSIGNED_ROLE',
+          whoDefaultAssignee: stg.whoDefaultAssignee || 'Assignee',
+          howChannel: stg.howChannel || 'IN-APP FORM',
+          formUrl: stg.howChannel?.startsWith('http') ? stg.howChannel : undefined,
+          slaHours: stg.slaHours || 4,
+          isCheckpoint: stg.logic?.gatewayType === 'CONDITIONAL_JUMP',
+          hasYesNoDecision: stg.logic?.gatewayType === 'CONDITIONAL_JUMP',
+          fields: stg.fields,
+        }))
+      : flow.flowType === 'CHECK_STOCK'
       ? FMS_CHECK_STOCK_STAGES
       : flow.flowType === 'PO_TO_PAYMENT'
       ? FMS_PO_PAYMENT_STAGES
@@ -372,17 +452,35 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       : FMS_STANDARD_PURCHASE_STAGES;
 
     flow.stages.forEach((stage, idx) => {
-      const def = stageDefs[idx];
+      const def = stageDefs[idx] || {
+        stageId: stage.stageId,
+        stageNumber: idx + 1,
+        name: stage.stageName,
+        what: stage.stageName,
+        whoRole: stage.assignee,
+        whoDefaultAssignee: stage.assignee,
+        howChannel: stage.how,
+        slaHours: 4,
+        isCheckpoint: stage.logic?.gatewayType === 'CONDITIONAL_JUMP',
+        hasYesNoDecision: stage.logic?.gatewayType === 'CONDITIONAL_JUMP',
+        fields: stage.fields,
+      };
       if (!def) return;
 
-      // In Process Coordinator Desk mode, show currently active in-progress or pending stages across all flows
+      // In Process Coordinator Desk mode, include all stages across flows; in User mode, include user-assigned stages
       const isRelevantForPc = pcDeskActive
-        ? (flow.status === 'In Progress' && (idx === flow.currentStageIndex || stage.status === 'In Progress' || stage.status === 'Delayed'))
+        ? (stage.status !== 'Skipped')
         : isMineFmsStage(def, stage);
 
       if (isRelevantForPc) {
         const isCompleted = stage.status === 'Done' || stage.status === 'Skipped';
-        const dateObj = parseDate(stage.plannedDateTime || flow.indentDate);
+        const plannedDateTimeStr = stage.plannedDateTime
+          || (flow.indentDate ? `${flow.indentDate} 11:00 AM` : undefined)
+          || (flow.poDate ? `${flow.poDate} 11:00 AM` : undefined)
+          || (flow.dprDate ? `${flow.dprDate} 11:00 AM` : undefined)
+          || `${todayStr} 11:00 AM`;
+
+        const dateObj = parseDate(plannedDateTimeStr);
         let isDueToday = false;
         let isOverdue = false;
 
@@ -398,7 +496,11 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           ? (flow.poNumber ? `PO #${flow.poNumber}` : `Accounts PO #${flow.indentNo}`)
           : `FMS #${flow.indentNo}`;
 
-        const stageDelay = getDelayHours(stage.plannedDateTime || `${flow.indentDate || '05/10/2026'} 11:00 AM`, stage.actualDateTime, isCompleted);
+        const stageDelay = (typeof stage.timeDelayHours === 'number' && stage.timeDelayHours > 0)
+          ? stage.timeDelayHours
+          : (typeof stage.delayHours === 'number' && stage.delayHours > 0)
+          ? stage.delayHours
+          : getDelayHours(plannedDateTimeStr, stage.actualDateTime, isCompleted);
 
         unifiedItems.push({
           id: `unified-fms-${flow.id}-stg-${idx}`,
@@ -407,15 +509,16 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           referenceCode: `${refCode} (Stg ${idx + 1})`,
           title: `${stage.stageName} — ${flow.siteName} Site`,
           subtitle: `FMS Flow: ${flow.flowId} • Role: ${def.whoRole} • Assignee: ${stage.assignee || def.whoDefaultAssignee}`,
-          targetDateStr: stage.plannedDateTime || flow.indentDate || 'Target Pending',
-          plannedDateTimeStr: stage.plannedDateTime || `${flow.indentDate || '05/10/2026'} 11:00 AM`,
-          actualDateTimeStr: stage.actualDateTime || (isCompleted ? '05/10/2026 12:00 PM' : '—'),
+          targetDateStr: stage.plannedDateTime || flow.indentDate || flow.poDate || flow.dprDate || todayStr,
+          plannedDateTimeStr,
+          actualDateTimeStr: stage.actualDateTime || (isCompleted ? `${todayStr} 12:00 PM` : '—'),
           delayHours: stageDelay,
           targetDateObj: dateObj,
           status: stage.status,
           isCompleted,
           isOverdue,
           isDueToday,
+          isMine: isDirectlyAssignedFms(def, stage),
           priority: flow.priority,
           channelOrFreq: def.howChannel,
           rawItem: { flow, stage, stageIndex: idx, def },
@@ -469,11 +572,26 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   const startIndex = (validPage - 1) * pageSize;
   const paginatedItems = displayedItems.slice(startIndex, startIndex + pageSize);
 
+  const isItemActionable = (item: UnifiedItem): boolean => {
+    if (!item.isMine || item.isCompleted) return false;
+    if (item.sourceModule === 'CHECKLIST') {
+      return item.isDueToday || item.isOverdue;
+    }
+    if (item.sourceModule === 'DELEGATION') return true;
+    if (item.sourceModule === 'FMS') {
+      const { flow, stageIndex } = item.rawItem;
+      // FMS stage can ONLY be actioned if flow is in progress AND this is the current active stage
+      return flow.status === 'In Progress' && stageIndex === flow.currentStageIndex;
+    }
+    return false;
+  };
+
   const handleSelectAllBatch = () => {
-    if (selectedBatchIds.length === paginatedItems.length && paginatedItems.length > 0) {
+    const selectable = paginatedItems.filter(isItemActionable);
+    if (selectedBatchIds.length === selectable.length && selectable.length > 0) {
       setSelectedBatchIds([]);
     } else {
-      setSelectedBatchIds(paginatedItems.map((i) => i.id));
+      setSelectedBatchIds(selectable.map((i) => i.id));
     }
   };
 
@@ -484,12 +602,25 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   };
 
   const handleExecuteBatchApprove = () => {
+    const now = new Date();
+    const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+    const formattedDateTime = now.toLocaleString('en-GB');
+
     paginatedItems.forEach((item) => {
-      if (selectedBatchIds.includes(item.id)) {
+      if (selectedBatchIds.includes(item.id) && isItemActionable(item)) {
         if (item.sourceModule === 'CHECKLIST') {
-          onCompleteChecklist(item.rawItem);
+          onCompleteChecklist({
+            ...item.rawItem,
+            status: 'Done',
+            actualDate: formattedDate,
+            updatedAt: formattedDateTime,
+          });
         } else if (item.sourceModule === 'DELEGATION') {
-          onCompleteDelegation(item.rawItem);
+          onCompleteDelegation({
+            ...item.rawItem,
+            status: 'Completed',
+            completedAt: formattedDateTime,
+          });
         } else if (item.sourceModule === 'FMS') {
           if (onCompleteFmsStage) {
             onCompleteFmsStage(item.rawItem.flow, item.rawItem.stageIndex);
@@ -502,191 +633,234 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
     setSelectedBatchIds([]);
   };
 
-  const userRoleLower = currentUser.role.toLowerCase();
-  const userNameLower = currentUser.name.toLowerCase();
+  const handleExportFilteredCsv = () => {
+    const headers = [
+      'Reference Code',
+      'Module',
+      'Title / Description',
+      'Subtitle / Context',
+      'Target / Planned Date',
+      'Actual Date',
+      'Delay Hours',
+      'Status',
+      'Assignee'
+    ];
 
-  const isMD = userRoleLower.includes('director') || userRoleLower.includes('finance approver') || userNameLower.includes('pranjal');
-  const isHOD = !isMD && (userRoleLower.includes('asst. manager') || userRoleLower.includes('manager') || userRoleLower.includes('head') || userRoleLower.includes('officer'));
-  const isEA = userRoleLower.includes('ea') || userRoleLower.includes('executive assistant') || userNameLower.includes('monalisa');
-  const isAdmin = userRoleLower.includes('admin') || userRoleLower.includes('system');
-  const isEmployee = !isMD && !isHOD && !isEA && !isAdmin && !isRituSahu;
+    const rows = displayedItems.map((i) => [
+      i.referenceCode,
+      i.sourceModule,
+      i.title,
+      i.subtitle,
+      i.plannedDateTimeStr || i.targetDateStr,
+      i.actualDateTimeStr || '—',
+      i.delayHours || 0,
+      i.status,
+      i.assigneeName || '—'
+    ]);
+
+    const timestamp = new Date().toISOString().slice(0, 10);
+    downloadCsv(`MyWork_Summary_Filtered_Export_${timestamp}.csv`, headers, rows);
+  };
+
+  const renderItemQuickActions = (item: UnifiedItem, isMobile = false) => {
+    // 1. CHECKLIST
+    if (item.sourceModule === 'CHECKLIST') {
+      if (!item.isMine) return null;
+      if (item.isCompleted) {
+        return (
+          <button
+            onClick={() => {
+              const now = new Date();
+              onCompleteChecklist({
+                ...item.rawItem,
+                status: 'Pending',
+                actualDate: undefined,
+                updatedAt: now.toLocaleString('en-GB')
+              });
+            }}
+            className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded transition-colors cursor-pointer`}
+          >
+            Reopen
+          </button>
+        );
+      }
+      if (item.isDueToday || item.isOverdue) {
+        return (
+          <button
+            onClick={() => {
+              const now = new Date();
+              const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+              onCompleteChecklist({
+                ...item.rawItem,
+                status: 'Done',
+                actualDate: formattedDate,
+                updatedAt: now.toLocaleString('en-GB')
+              });
+            }}
+            className={`${isMobile ? 'px-3.5 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded transition-colors cursor-pointer flex items-center gap-1 border border-emerald-200`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Mark Done</span>
+          </button>
+        );
+      }
+      return (
+        <span className="text-[10px] text-slate-400 font-medium px-2 py-1 bg-slate-50 border border-slate-200 rounded">
+          Scheduled {item.plannedDateTimeStr?.split(' ')[0] || item.targetDateStr}
+        </span>
+      );
+    }
+
+    // 2. DELEGATION
+    if (item.sourceModule === 'DELEGATION') {
+      if (!item.isMine) return null;
+      return (
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => {
+              const now = new Date();
+              const formattedDateTime = now.toLocaleString('en-GB');
+              const isDone = item.isCompleted;
+              onCompleteDelegation({
+                ...item.rawItem,
+                status: isDone ? 'Pending' : 'Completed',
+                completedAt: isDone ? undefined : formattedDateTime
+              });
+            }}
+            className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded transition-colors cursor-pointer border border-emerald-200`}
+          >
+            {item.isCompleted ? 'Reopen' : 'Complete'}
+          </button>
+          <button
+            onClick={() => onReviseDelegation(item.rawItem)}
+            className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium rounded transition-colors cursor-pointer border border-indigo-200`}
+          >
+            Revise
+          </button>
+        </div>
+      );
+    }
+
+    // 3. FMS
+    if (item.sourceModule === 'FMS') {
+      if (!isItemActionable(item)) {
+        return !item.isCompleted && item.rawItem.flow.status === 'In Progress' ? (
+          <span className="text-[10px] text-slate-400 font-mono italic pr-1">
+            Awaiting Stg {item.rawItem.flow.currentStageIndex + 1}
+          </span>
+        ) : null;
+      }
+
+      const stageExec = item.rawItem.stage;
+      const stageDef = item.rawItem.def;
+      const hasFormFields = !!(
+        (stageExec?.fields && stageExec.fields.length > 0) ||
+        (stageDef?.fields && stageDef.fields.length > 0) ||
+        stageExec?.how === 'IN-APP FORM' ||
+        stageExec?.how === 'IN APP FORM'
+      );
+
+      // When stage has configured form fields, Fill Form is the single primary action
+      if (onOpenStageAction && hasFormFields) {
+        return (
+          <button
+            type="button"
+            onClick={() => onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex)}
+            className={`${isMobile ? 'px-3.5 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded flex items-center gap-1 transition-colors cursor-pointer border border-indigo-200 shadow-2xs`}
+          >
+            <FileText className="w-3.5 h-3.5" /> <span>Fill Form</span>
+          </button>
+        );
+      }
+
+      // For non-form stages with decision logic: Yes / No
+      if (stageDef?.hasYesNoDecision || stageExec?.logic?.gatewayType === 'CONDITIONAL_JUMP') {
+        return (
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenStageAction) {
+                  onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex);
+                } else {
+                  onAdvanceFmsStage(item.rawItem.flow, 'Yes');
+                }
+              }}
+              className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded transition-colors cursor-pointer border border-emerald-200`}
+              title="Yes / Approve"
+            >
+              Yes
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenStageAction) {
+                  onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex);
+                } else {
+                  onAdvanceFmsStage(item.rawItem.flow, 'No');
+                }
+              }}
+              className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded transition-colors cursor-pointer`}
+              title={stageExec?.stageId === 'STG-10' ? 'No: Skip Stage 11 and jump directly to Stage 12' : 'No / Reject'}
+            >
+              {stageExec?.stageId === 'STG-10' ? 'No (Skip Stg 11)' : 'No'}
+            </button>
+          </div>
+        );
+      }
+
+      // For non-form sequential steps: Mark Done
+      return (
+        <button
+          onClick={() => {
+            if (onOpenStageAction) {
+              onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex);
+            } else if (onCompleteFmsStage) {
+              onCompleteFmsStage(item.rawItem.flow, item.rawItem.stageIndex);
+            } else {
+              onAdvanceFmsStage(item.rawItem.flow);
+            }
+          }}
+          className={`${isMobile ? 'px-3.5 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded flex items-center gap-1 transition-colors cursor-pointer border border-amber-200`}
+        >
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          <span>Mark Done</span>
+        </button>
+      );
+    }
+
+    return null;
+  };
 
   return (
     <div className="space-y-6">
-      {/* Top Banner / Persona-Adaptive Banner */}
-      {pcDeskActive ? (
-        <div className="pb-4 border-b border-slate-200">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
-                  Process Coordinator Control Room
-                </span>
-                <span className="text-xs text-slate-500 font-mono font-semibold">In-charge: Ritu Sahu / {currentUser.name}</span>
-              </div>
-              <h2 className="text-lg font-bold text-slate-900">
-                {getDynamicGreeting(currentUser.name)}
-              </h2>
-              <p className="text-xs text-slate-500 font-medium">Organization Process Coordination &amp; Delay Tracking Desk</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {!isRituSahu && (
-                <button
-                  onClick={() => setPcDeskActive(false)}
-                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold border border-slate-200"
-                >
-                  Exit PC Mode
-                </button>
-              )}
-              <div className="text-xs text-slate-500 font-mono text-right bg-slate-50 border border-slate-200 p-2 rounded">
-                <div>Tracked Open Workload: <strong className="text-purple-700">{unifiedItems.filter(i => !i.isCompleted).length} Items</strong></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : isMD ? (
-        <div className="pb-4 border-b border-slate-200">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
-                  <Award className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Executive Control Cockpit — Managing Director POV</span>
-                </span>
-                <span className="text-xs text-slate-500 font-mono font-semibold">Profile: {currentUser.name} ({currentUser.role})</span>
-              </div>
-              <h2 className="text-lg font-bold text-slate-900">
-                {getDynamicGreeting(currentUser.name)}
-              </h2>
-              <p className="text-xs text-slate-500 font-medium">High-Value Approvals &amp; Executive Bottleneck Radar</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPcDeskActive(true)}
-                className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded text-xs font-bold border border-purple-200 flex items-center gap-1"
-              >
-                <ShieldAlert className="w-3.5 h-3.5" /> PC Desk
-              </button>
-              <div className="text-xs text-slate-500 font-mono text-right bg-slate-50 border border-slate-200 p-2 rounded">
-                <div>Decision Queue: <strong className="text-amber-700">{pendingItems.length} Pending</strong></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : isHOD ? (
-        <div className="pb-4 border-b border-slate-200">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 flex items-center gap-1">
-                  <Briefcase className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Departmental Operations Radar — {currentUser.departmentName || currentUser.role}</span>
-                </span>
-                <span className="text-xs text-slate-500 font-mono font-semibold">Profile: {currentUser.name}</span>
-              </div>
-              <h2 className="text-lg font-bold text-slate-900">
-                {getDynamicGreeting(currentUser.name)}
-              </h2>
-              <p className="text-xs text-slate-500 font-medium">Departmental Workload &amp; Team Stage Approvals</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPcDeskActive(true)}
-                className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded text-xs font-bold border border-purple-200 flex items-center gap-1"
-              >
-                <ShieldAlert className="w-3.5 h-3.5" /> PC Desk
-              </button>
-              <div className="text-xs text-slate-500 font-mono text-right bg-slate-50 border border-slate-200 p-2 rounded">
-                <div>Team Open Items: <strong className="text-blue-700">{pendingItems.length} Open</strong></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : isEA ? (
-        <div className="pb-4 border-b border-slate-200">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200 flex items-center gap-1">
-                  <Zap className="w-3.5 h-3.5 text-teal-600" />
-                  <span>EA Follow-up &amp; VIP Escalations Monalisa POV</span>
-                </span>
-                <span className="text-xs text-slate-500 font-mono font-semibold">EA to Director</span>
-              </div>
-              <h2 className="text-lg font-bold text-slate-900">
-                {getDynamicGreeting(currentUser.name)}
-              </h2>
-              <p className="text-xs text-slate-500 font-medium">VIP Follow-Up &amp; Director Escalations Command Desk</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPcDeskActive(true)}
-                className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded text-xs font-bold border border-purple-200 flex items-center gap-1"
-              >
-                <ShieldAlert className="w-3.5 h-3.5" /> PC Desk
-              </button>
-              <div className="text-xs text-slate-500 font-mono text-right bg-slate-50 border border-slate-200 p-2 rounded">
-                <div>Tracked Escalations: <strong className="text-teal-700">{pendingItems.length} items</strong></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="pb-4 border-b border-slate-200">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-200 flex items-center gap-1">
-                  <User className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Daily Operations Work Station</span>
-                </span>
-                <span className="text-xs text-slate-500 font-mono font-semibold">Profile: {currentUser.name} ({currentUser.role})</span>
-              </div>
-              <h2 className="text-lg font-bold text-slate-900">
-                {getDynamicGreeting(currentUser.name)}
-              </h2>
-              <p className="text-xs text-slate-500 font-medium">Daily Operations Summary Dashboard</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPcDeskActive(true)}
-                className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded text-xs font-bold border border-purple-200 flex items-center gap-1"
-              >
-                <ShieldAlert className="w-3.5 h-3.5" /> PC Desk
-              </button>
-              <div className="text-xs text-slate-500 font-mono text-right bg-slate-50 border border-slate-200 p-2 rounded">
-                <div>Active Workload: <strong className="text-indigo-700">{pendingItems.length} Open Items</strong></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 4 Core Stat Cards (Clicking any card updates the condition) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         {/* Due Today Card */}
         <div
           onClick={() => setSelectedCondition('DUE_TODAY')}
-          className={`p-5 rounded-xl border cursor-pointer transition-all ${
+          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all ${
             selectedCondition === 'DUE_TODAY'
               ? 'bg-amber-500 text-white shadow-md ring-2 ring-amber-400/50 scale-[1.01]'
               : 'bg-white border-slate-200 hover:border-amber-300 hover:shadow-xs text-slate-900'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className={`text-xs font-bold uppercase tracking-wider ${selectedCondition === 'DUE_TODAY' ? 'text-amber-100' : 'text-amber-600'}`}>
+            <span className={`text-[11px] sm:text-xs font-bold uppercase tracking-wider ${selectedCondition === 'DUE_TODAY' ? 'text-white' : 'text-amber-600'}`}>
               Due Today
             </span>
-            <Calendar className={`w-5 h-5 ${selectedCondition === 'DUE_TODAY' ? 'text-white' : 'text-amber-500'}`} />
+            <Calendar className={`w-4 h-4 sm:w-5 sm:h-5 ${selectedCondition === 'DUE_TODAY' ? 'text-white' : 'text-amber-500'}`} />
           </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-3xl font-black">{dueTodayItems.length}</span>
-            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+          <div className="mt-2 sm:mt-3 flex items-baseline justify-between">
+            <span className={`text-2xl sm:text-4xl font-black ${selectedCondition === 'DUE_TODAY' ? 'text-white' : 'text-slate-900'}`}>
+              {dueTodayItems.length}
+            </span>
+            <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full ${
               selectedCondition === 'DUE_TODAY'
-                ? 'bg-white/20 text-white'
-                : 'bg-amber-100 text-amber-800'
+                ? 'bg-white/25 text-white'
+                : 'bg-amber-50 text-amber-700 border border-amber-100'
             }`}>
-              Today (05/10)
+              Today ({todayStr.slice(0, 5)})
             </span>
           </div>
         </div>
@@ -694,26 +868,28 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         {/* Overdue Card */}
         <div
           onClick={() => setSelectedCondition('OVERDUE')}
-          className={`p-5 rounded-xl border cursor-pointer transition-all ${
+          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all ${
             selectedCondition === 'OVERDUE'
               ? 'bg-rose-600 text-white shadow-md ring-2 ring-rose-400/50 scale-[1.01]'
               : 'bg-white border-slate-200 hover:border-rose-300 hover:shadow-xs text-slate-900'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className={`text-xs font-bold uppercase tracking-wider ${selectedCondition === 'OVERDUE' ? 'text-rose-100' : 'text-rose-600'}`}>
+            <span className={`text-[11px] sm:text-xs font-bold uppercase tracking-wider ${selectedCondition === 'OVERDUE' ? 'text-white' : 'text-rose-600'}`}>
               Overdue
             </span>
-            <AlertTriangle className={`w-5 h-5 ${selectedCondition === 'OVERDUE' ? 'text-white' : 'text-rose-500'}`} />
+            <AlertTriangle className={`w-4 h-4 sm:w-5 sm:h-5 ${selectedCondition === 'OVERDUE' ? 'text-white' : 'text-rose-500'}`} />
           </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-3xl font-black">{overdueItems.length}</span>
-            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+          <div className="mt-2 sm:mt-3 flex items-baseline justify-between">
+            <span className={`text-2xl sm:text-4xl font-black ${selectedCondition === 'OVERDUE' ? 'text-white' : 'text-slate-900'}`}>
+              {overdueItems.length}
+            </span>
+            <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full ${
               selectedCondition === 'OVERDUE'
-                ? 'bg-white/20 text-white'
-                : 'bg-rose-100 text-rose-800'
+                ? 'bg-white/25 text-white'
+                : 'bg-rose-50 text-rose-700 border border-rose-100'
             }`}>
-              Requires Action
+              Action Req.
             </span>
           </div>
         </div>
@@ -721,26 +897,28 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         {/* Pending Card */}
         <div
           onClick={() => setSelectedCondition('PENDING')}
-          className={`p-5 rounded-xl border cursor-pointer transition-all ${
+          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all ${
             selectedCondition === 'PENDING'
               ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-400/50 scale-[1.01]'
               : 'bg-white border-slate-200 hover:border-indigo-300 hover:shadow-xs text-slate-900'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className={`text-xs font-bold uppercase tracking-wider ${selectedCondition === 'PENDING' ? 'text-indigo-100' : 'text-indigo-600'}`}>
-              All Pending
+            <span className={`text-[11px] sm:text-xs font-bold uppercase tracking-wider ${selectedCondition === 'PENDING' ? 'text-white' : 'text-indigo-600'}`}>
+              Pending
             </span>
-            <Clock className={`w-5 h-5 ${selectedCondition === 'PENDING' ? 'text-white' : 'text-indigo-500'}`} />
+            <Clock className={`w-4 h-4 sm:w-5 sm:h-5 ${selectedCondition === 'PENDING' ? 'text-white' : 'text-indigo-500'}`} />
           </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-3xl font-black">{pendingItems.length}</span>
-            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+          <div className="mt-2 sm:mt-3 flex items-baseline justify-between">
+            <span className={`text-2xl sm:text-4xl font-black ${selectedCondition === 'PENDING' ? 'text-white' : 'text-slate-900'}`}>
+              {pendingItems.length}
+            </span>
+            <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full ${
               selectedCondition === 'PENDING'
-                ? 'bg-white/20 text-white'
-                : 'bg-indigo-100 text-indigo-800'
+                ? 'bg-white/25 text-white'
+                : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
             }`}>
-              Total Active
+              Active
             </span>
           </div>
         </div>
@@ -748,24 +926,26 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         {/* Completed Card */}
         <div
           onClick={() => setSelectedCondition('COMPLETED')}
-          className={`p-5 rounded-xl border cursor-pointer transition-all ${
+          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all ${
             selectedCondition === 'COMPLETED'
               ? 'bg-emerald-600 text-white shadow-md ring-2 ring-emerald-400/50 scale-[1.01]'
               : 'bg-white border-slate-200 hover:border-emerald-300 hover:shadow-xs text-slate-900'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className={`text-xs font-bold uppercase tracking-wider ${selectedCondition === 'COMPLETED' ? 'text-emerald-100' : 'text-emerald-600'}`}>
+            <span className={`text-[11px] sm:text-xs font-bold uppercase tracking-wider ${selectedCondition === 'COMPLETED' ? 'text-white' : 'text-emerald-600'}`}>
               Completed
             </span>
-            <CheckCircle2 className={`w-5 h-5 ${selectedCondition === 'COMPLETED' ? 'text-white' : 'text-emerald-500'}`} />
+            <CheckCircle2 className={`w-4 h-4 sm:w-5 sm:h-5 ${selectedCondition === 'COMPLETED' ? 'text-white' : 'text-emerald-500'}`} />
           </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-3xl font-black">{completedItems.length}</span>
-            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+          <div className="mt-2 sm:mt-3 flex items-baseline justify-between">
+            <span className={`text-2xl sm:text-4xl font-black ${selectedCondition === 'COMPLETED' ? 'text-white' : 'text-slate-900'}`}>
+              {completedItems.length}
+            </span>
+            <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full ${
               selectedCondition === 'COMPLETED'
-                ? 'bg-white/20 text-white'
-                : 'bg-emerald-100 text-emerald-800'
+                ? 'bg-white/25 text-white'
+                : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
             }`}>
               Finished
             </span>
@@ -773,19 +953,28 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         </div>
       </div>
 
-      {/* Control & Filter Sub-Bar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-            <Filter className="w-3.5 h-3.5 text-indigo-600" />
-            Showing:
-          </span>
+      {/* Control & Filter Bar (Compact space-efficient bar) */}
+      <div className="bg-white px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border border-slate-200 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-1.5 sm:gap-2">
+        {/* Search on Left */}
+        <div className="relative flex-1 min-w-0 md:max-w-xs">
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Search tasks, reference codes..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-8 pr-2.5 py-1 text-xs bg-white border border-slate-300 rounded-lg w-full h-8 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+        </div>
+
+        {/* Filters & Actions on Right */}
+        <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap shrink-0">
           {/* Workload Status Selector Dropdown */}
           <select
             aria-label="Filter by workload status"
             value={selectedCondition}
             onChange={(e) => setSelectedCondition(e.target.value as StatCondition)}
-            className="text-xs bg-slate-50 border border-slate-300 rounded-lg py-1 px-2.5 font-bold text-slate-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            className="text-xs bg-white border border-slate-300 rounded-lg h-8 py-1 px-2 font-bold text-slate-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 shrink-0"
           >
             <option value="ALL">All — {unifiedItems.length}</option>
             <option value="DUE_TODAY">Due Today — {dueTodayItems.length}</option>
@@ -795,60 +984,66 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           </select>
 
           {/* Module Dropdown */}
-          <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200">
-            <span className="text-[11px] font-bold text-slate-700">Type:</span>
-            <select
-              aria-label="Filter by module type"
-              value={moduleFilter}
-              onChange={(e) => setModuleFilter(e.target.value as 'ALL' | 'FMS' | 'CHECKLIST' | 'DELEGATION')}
-              className="text-xs bg-slate-50 border border-slate-300 rounded-lg py-1 px-2.5 font-bold text-slate-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            >
-              <option value="ALL">All Types</option>
-              <option value="FMS">FMS Pipeline</option>
-              <option value="CHECKLIST">Compliance Checklist</option>
-              <option value="DELEGATION">Delegated Tasks</option>
-            </select>
-          </div>
+          <select
+            aria-label="Filter by module type"
+            value={moduleFilter}
+            onChange={(e) => setModuleFilter(e.target.value as 'ALL' | 'FMS' | 'CHECKLIST' | 'DELEGATION')}
+            className="text-xs bg-white border border-slate-300 rounded-lg h-8 py-1 px-2 font-bold text-slate-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 shrink-0"
+          >
+            <option value="ALL">All Modules</option>
+            <option value="FMS">FMS Pipeline</option>
+            <option value="CHECKLIST">Compliance Checklist</option>
+            <option value="DELEGATION">Delegated Tasks</option>
+          </select>
 
           {/* View Mode Toggle (Standard Card vs Enterprise Matrix 1000+ Scale) */}
-          <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200">
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
-              <button
-                onClick={() => setViewFormat('CARD')}
-                className={`p-1.5 rounded transition-all flex items-center gap-1 ${
-                  viewFormat === 'CARD'
-                    ? 'bg-white text-indigo-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-                title="Standard Card Feed View"
-              >
-                <Zap className="w-3.5 h-3.5 text-indigo-600" />
-              </button>
-              <button
-                onClick={() => setViewFormat('MATRIX')}
-                className={`p-1.5 rounded transition-all flex items-center gap-1 ${
-                  viewFormat === 'MATRIX'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-                title="Enterprise Matrix Grid View"
-              >
-                <Table className="w-3.5 h-3.5 text-slate-600" />
-              </button>
-            </div>
+          <div className="flex items-center bg-slate-50 p-0.5 rounded-lg border border-slate-200 h-8 shrink-0">
+            <button
+              onClick={() => setViewFormat('CARD')}
+              className={`p-1 rounded transition-all flex items-center ${
+                viewFormat === 'CARD'
+                  ? 'bg-white text-indigo-700 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Standard Card Feed View"
+            >
+              <Zap className="w-3.5 h-3.5 text-indigo-600" />
+            </button>
+            <button
+              onClick={() => setViewFormat('MATRIX')}
+              className={`p-1 rounded transition-all flex items-center ${
+                viewFormat === 'MATRIX'
+                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Enterprise Matrix Grid View"
+            >
+              <Table className="w-3.5 h-3.5 text-slate-600" />
+            </button>
           </div>
-        </div>
 
-        {/* Search */}
-        <div className="relative">
-          <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search tasks, codes..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg w-48 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
+          {/* Export Filtered Data CSV Button */}
+          <button
+            type="button"
+            onClick={handleExportFilteredCsv}
+            title="Export currently filtered table data to CSV/Excel"
+            className="flex items-center justify-center gap-1 px-2.5 h-8 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-lg text-xs transition-colors shrink-0 border border-slate-300 cursor-pointer whitespace-nowrap"
+          >
+            <Download className="w-3.5 h-3.5 text-slate-600" />
+            <span>Export CSV ({displayedItems.length})</span>
+          </button>
+
+          {/* New FMS Workflow Action Button - Super Admin Only */}
+          {isSuperAdmin && onCreateFmsFlow && (
+            <button
+              type="button"
+              onClick={onCreateFmsFlow}
+              className="flex items-center gap-1 px-2.5 h-8 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg text-xs font-bold shadow-2xs transition-all cursor-pointer shrink-0 whitespace-nowrap"
+            >
+              <GitBranch className="w-3.5 h-3.5 text-white" />
+              <span>+ New FMS Workflow</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -877,7 +1072,212 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         </div>
       )}
 
-      {/* Consolidated Items Table / Grid */}
+      {/* 1. Dedicated Mobile Native Feed (md:hidden) — perfect phone layout, touch targets, and full stage actions */}
+      <div className="md:hidden space-y-3">
+        {paginatedItems.length > 0 ? (
+          paginatedItems.map((item) => {
+            const isChecked = selectedBatchIds.includes(item.id);
+            const delayHrs = item.delayHours || 0;
+            const isDelayActive = delayHrs > 0;
+            const delayText = formatDelayVariance(delayHrs);
+
+            return (
+              <div 
+                key={`mob-${item.id}`}
+                className={`p-3.5 bg-white rounded-xl border transition-all space-y-2.5 shadow-2xs ${
+                  isChecked ? 'border-indigo-500 ring-1 ring-indigo-500/20 bg-indigo-50/10' : 'border-slate-200'
+                }`}
+              >
+                {/* Header row */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <input
+                      type="checkbox"
+                      disabled={!isItemActionable(item)}
+                      checked={isChecked}
+                      onChange={() => handleToggleBatchId(item.id)}
+                      className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-25"
+                    />
+                    <span
+                      className={`px-2 py-0.5 rounded font-bold text-[9px] flex items-center gap-1 uppercase shrink-0 ${
+                        item.sourceModule === 'FMS'
+                          ? 'bg-amber-100 text-amber-800'
+                          : item.sourceModule === 'CHECKLIST'
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-purple-100 text-purple-800'
+                      }`}
+                    >
+                      {item.sourceModule === 'FMS' && <GitBranch className="w-2.5 h-2.5" />}
+                      {item.sourceModule === 'CHECKLIST' && <CheckSquare className="w-2.5 h-2.5" />}
+                      {item.sourceModule === 'DELEGATION' && <ListTodo className="w-2.5 h-2.5" />}
+                      <span>{item.sourceModule}</span>
+                    </span>
+                    <span className="font-mono font-bold text-slate-900 text-xs truncate">
+                      {item.referenceCode}
+                    </span>
+                  </div>
+
+                  {/* Status Badge */}
+                  <div className="shrink-0">
+                    {item.isCompleted ? (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800">
+                        Completed
+                      </span>
+                    ) : item.isOverdue ? (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                        Overdue
+                      </span>
+                    ) : item.isDueToday ? (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                        Due Today
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-700">
+                        Pending
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Title and Subtitle */}
+                <div>
+                  <h4 className={`font-bold text-slate-900 text-xs sm:text-sm leading-snug ${item.isCompleted ? 'line-through text-slate-400' : ''}`}>
+                    {item.title}
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-tight">{item.subtitle}</p>
+                </div>
+
+                {/* Process Remarks Badge */}
+                {item.processRemarks && item.processRemarks.length > 0 && (
+                  <div className="p-2 rounded bg-purple-50 border border-purple-100 text-[11px] text-purple-900 space-y-0.5">
+                    <div className="font-bold flex items-center gap-1 text-[10px]">
+                      <MessageSquare className="w-3 h-3 text-purple-600" />
+                      <span>Process Note ({item.processRemarks[0].authorName}):</span>
+                    </div>
+                    <p className="font-medium text-purple-800 text-[11px]">
+                      {item.processRemarks[0].remarkText}
+                    </p>
+                  </div>
+                )}
+
+                {/* Timestamps & Delay */}
+                <div className="p-2 bg-slate-50 rounded-lg text-[10px] space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 font-semibold uppercase">Planned:</span>
+                    <span className="font-mono font-bold text-slate-700">{item.plannedDateTimeStr || item.targetDateStr}</span>
+                  </div>
+                  {item.actualDateTimeStr && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 font-semibold uppercase">Actual:</span>
+                      <span className="font-mono font-bold text-slate-700">{item.actualDateTimeStr}</span>
+                    </div>
+                  )}
+                  {isDelayActive && (
+                    <div className={`pt-1 border-t border-slate-200/60 font-mono font-bold flex items-center justify-between ${
+                      item.isCompleted ? 'text-red-700' : 'text-amber-700'
+                    }`}>
+                      <span className="flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3 text-amber-500" />
+                        <span>Delay:</span>
+                      </span>
+                      <span>{delayText}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions row */}
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1.5 flex-wrap">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {renderItemQuickActions(item, true)}
+                    {isSuperAdmin && (
+                      <button
+                        onClick={() => {
+                          const targetId = item.sourceModule === 'FMS' ? item.rawItem.flow.id : item.sourceId;
+                          const stgIdx = item.sourceModule === 'FMS' ? item.rawItem.stageIndex : undefined;
+                          setRemarkModalTarget({
+                            item,
+                            module: item.sourceModule,
+                            targetId,
+                            stageIndex: stgIdx,
+                          });
+                          setRemarkText('');
+                        }}
+                        className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold rounded-lg text-[11px] flex items-center gap-1 transition-all"
+                        title="Add Process Coordinator Remark"
+                      >
+                        <MessageSquare className="w-3 h-3" /> <span>Note</span>
+                      </button>
+                    )}
+                    {isSuperAdmin && onNudgeItem && (
+                      <button
+                        onClick={() => {
+                          const targetId = item.sourceModule === 'FMS' ? item.rawItem.flow.id : item.sourceId;
+                          const stgIdx = item.sourceModule === 'FMS' ? item.rawItem.stageIndex : undefined;
+                          onNudgeItem(item.sourceModule, targetId, stgIdx);
+                        }}
+                        className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg transition-colors"
+                        title="Send nudge follow-up"
+                      >
+                        <Bell className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      if (item.sourceModule === 'FMS') {
+                        onSelectFmsDetail(item.rawItem.flow);
+                      } else {
+                        setViewDetailItem(item);
+                      }
+                    }}
+                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-lg text-[11px] flex items-center gap-1 transition-all ml-auto"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-slate-500" />
+                    <span>View</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="py-12 text-center text-slate-500 bg-white rounded-xl border border-slate-200">
+            <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+            <p className="font-semibold text-slate-800 text-sm">No items found</p>
+            <p className="text-xs text-slate-400 mt-1">All clear in this category!</p>
+          </div>
+        )}
+
+        {/* Mobile Pagination */}
+        {totalItems > pageSize && (
+          <div className="p-3 bg-white rounded-xl border border-slate-200 flex items-center justify-between text-xs text-slate-600">
+            <span>
+              <span className="font-bold text-slate-900">{startIndex + 1}</span>-
+              <span className="font-bold text-slate-900">{Math.min(startIndex + pageSize, totalItems)}</span> of{' '}
+              <span className="font-bold text-slate-900">{totalItems}</span>
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                className="px-2.5 py-1 bg-slate-100 rounded-lg font-bold disabled:opacity-30"
+              >
+                ← Prev
+              </button>
+              <button
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                className="px-2.5 py-1 bg-slate-100 rounded-lg font-bold disabled:opacity-30"
+              >
+                Next →
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 2. Desktop View (hidden md:block) — completely untouched for desktop users */}
+      <div className="hidden md:block">
       {viewFormat === 'CARD' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {paginatedItems.length > 0 ? (
@@ -1001,51 +1401,31 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                   {/* Bottom row actions */}
                   <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-1.5 shrink-0">
                     <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => {
-                          if (item.sourceModule === 'CHECKLIST') {
-                            onCompleteChecklist(item.rawItem);
-                          } else if (item.sourceModule === 'DELEGATION') {
-                            onCompleteDelegation(item.rawItem);
-                          } else if (item.sourceModule === 'FMS') {
-                            if (onCompleteFmsStage) {
-                              onCompleteFmsStage(item.rawItem.flow, item.rawItem.stageIndex);
-                            } else {
-                              onAdvanceFmsStage(item.rawItem.flow);
-                            }
-                          }
-                        }}
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors border ${
-                          item.isCompleted
-                            ? 'bg-emerald-600 text-white border-emerald-600'
-                            : 'border-slate-300 text-slate-400 hover:border-indigo-500 hover:text-indigo-600'
-                        }`}
-                        title={item.isCompleted ? 'Mark Pending' : 'Mark Completed'}
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                      </button>
+                      {renderItemQuickActions(item, false)}
 
-                      <button
-                        onClick={() => {
-                          const targetId = item.sourceModule === 'FMS' ? item.rawItem.flow.id : item.sourceId;
-                          const stgIdx = item.sourceModule === 'FMS' ? item.rawItem.stageIndex : undefined;
-                          setRemarkModalTarget({
-                            item,
-                            module: item.sourceModule,
-                            targetId,
-                            stageIndex: stgIdx,
-                          });
-                          setRemarkText('');
-                        }}
-                        className="px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold rounded text-[10px] flex items-center gap-1 transition-all"
-                        title="Add Process Coordinator Remark"
-                      >
-                        <MessageSquare className="w-3 h-3" /> Remark
-                      </button>
+                      {isSuperAdmin && (
+                        <button
+                          onClick={() => {
+                            const targetId = item.sourceModule === 'FMS' ? item.rawItem.flow.id : item.sourceId;
+                            const stgIdx = item.sourceModule === 'FMS' ? item.rawItem.stageIndex : undefined;
+                            setRemarkModalTarget({
+                              item,
+                              module: item.sourceModule,
+                              targetId,
+                              stageIndex: stgIdx,
+                            });
+                            setRemarkText('');
+                          }}
+                          className="px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold rounded text-[10px] flex items-center gap-1 transition-all"
+                          title="Add Process Coordinator Remark"
+                        >
+                          <MessageSquare className="w-3 h-3" /> Remark
+                        </button>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-1">
-                      {onNudgeItem && (
+                      {isSuperAdmin && onNudgeItem && (
                         <button
                           onClick={() => {
                             const targetId = item.sourceModule === 'FMS' ? item.rawItem.flow.id : item.sourceId;
@@ -1088,7 +1468,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+            <thead className="bg-white text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
               <tr>
                 <th className="py-2.5 px-3 w-8 text-center">
                   <input
@@ -1099,7 +1479,6 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                     title="Select all on this page for batch action"
                   />
                 </th>
-                <th className="py-2.5 px-3 w-10 text-center">Done</th>
                 <th className="py-2.5 px-3">Module</th>
                 <th className="py-2.5 px-3">Reference</th>
                 <th className="py-2.5 px-4">Task / Stage Description</th>
@@ -1135,37 +1514,11 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                       <td className="py-2.5 px-3 text-center">
                         <input
                           type="checkbox"
+                          disabled={!isItemActionable(item)}
                           checked={isChecked}
                           onChange={() => handleToggleBatchId(item.id)}
-                          className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
                         />
-                      </td>
-
-                      {/* Interactive toggle */}
-                      <td className="py-2.5 px-3 text-center">
-                        <button
-                          onClick={() => {
-                            if (item.sourceModule === 'CHECKLIST') {
-                              onCompleteChecklist(item.rawItem);
-                            } else if (item.sourceModule === 'DELEGATION') {
-                              onCompleteDelegation(item.rawItem);
-                            } else if (item.sourceModule === 'FMS') {
-                              if (onCompleteFmsStage) {
-                                onCompleteFmsStage(item.rawItem.flow, item.rawItem.stageIndex);
-                              } else {
-                                onAdvanceFmsStage(item.rawItem.flow);
-                              }
-                            }
-                          }}
-                          className={`w-5 h-5 rounded flex items-center justify-center transition-colors mx-auto ${
-                            item.isCompleted
-                              ? 'bg-emerald-600 text-white'
-                              : 'border border-slate-300 text-transparent hover:border-indigo-500'
-                          }`}
-                          title="Click to mark completed"
-                        >
-                          <CheckCircle2 className="w-4 h-4" />
-                        </button>
                       </td>
 
                       {/* Module Badge */}
@@ -1277,35 +1630,77 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                       {/* Quick Action Button */}
                       <td className="py-3 px-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
-                          {item.sourceModule === 'CHECKLIST' && (
-                            <button
-                              onClick={() => onCompleteChecklist(item.rawItem)}
-                              className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded text-[11px] transition-colors"
-                            >
-                              {item.isCompleted ? 'Reopen' : 'Mark Done'}
-                            </button>
+                          {/* CHECKLIST: Mark Done / Reopen only for assigned user, and Mark Done visible ONLY for Due Today or Overdue */}
+                          {item.sourceModule === 'CHECKLIST' && item.isMine && (
+                            item.isCompleted ? (
+                              <button
+                                onClick={() => {
+                                  const now = new Date();
+                                  onCompleteChecklist({
+                                    ...item.rawItem,
+                                    status: 'Pending',
+                                    actualDate: undefined,
+                                    updatedAt: now.toLocaleString('en-GB')
+                                  });
+                                }}
+                                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded text-[11px] transition-colors cursor-pointer"
+                              >
+                                Reopen
+                              </button>
+                            ) : (item.isDueToday || item.isOverdue) ? (
+                              <button
+                                onClick={() => {
+                                  const now = new Date();
+                                  const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+                                  onCompleteChecklist({
+                                    ...item.rawItem,
+                                    status: 'Done',
+                                    actualDate: formattedDate,
+                                    updatedAt: now.toLocaleString('en-GB')
+                                  });
+                                }}
+                                className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded text-[11px] transition-colors cursor-pointer"
+                              >
+                                Mark Done
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 font-medium px-2 py-1 bg-slate-50 border border-slate-200 rounded">
+                                Scheduled {item.plannedDateTimeStr?.split(' ')[0] || item.targetDateStr}
+                              </span>
+                            )
                           )}
 
-                          {item.sourceModule === 'DELEGATION' && (
-                            <>
+                          {/* DELEGATION: Complete / Reopen / Revise only for assigned user */}
+                          {item.sourceModule === 'DELEGATION' && item.isMine && (
+                            <div className="flex items-center gap-1">
                               <button
-                                onClick={() => onCompleteDelegation(item.rawItem)}
-                                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded text-[11px] transition-colors"
+                                onClick={() => {
+                                  const now = new Date();
+                                  const formattedDateTime = now.toLocaleString('en-GB');
+                                  const isDone = item.isCompleted;
+                                  onCompleteDelegation({
+                                    ...item.rawItem,
+                                    status: isDone ? 'Pending' : 'Completed',
+                                    completedAt: isDone ? undefined : formattedDateTime
+                                  });
+                                }}
+                                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded text-[11px] transition-colors cursor-pointer"
                               >
                                 {item.isCompleted ? 'Reopen' : 'Complete'}
                               </button>
                               <button
                                 onClick={() => onReviseDelegation(item.rawItem)}
-                                className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium rounded text-[11px] transition-colors"
+                                className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium rounded text-[11px] transition-colors cursor-pointer"
                               >
                                 Revise
                               </button>
-                            </>
+                            </div>
                           )}
 
+                          {/* FMS: Advance / Yes / No only for assigned user of active stage */}
                           {item.sourceModule === 'FMS' && (
-                            <>
-                              {item.rawItem.def?.formUrl && (
+                            <div className="flex items-center gap-1">
+                              {item.rawItem.def?.formUrl && isItemActionable(item) && (
                                 <a
                                   href={item.rawItem.def.formUrl}
                                   target="_blank"
@@ -1315,76 +1710,109 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                                   <ExternalLink className="w-3 h-3" /> Form
                                 </a>
                               )}
-                              {item.rawItem.def?.hasYesNoDecision ? (
-                                <div className="flex items-center gap-1">
+                              {(() => {
+                                if (!isItemActionable(item)) {
+                                  return !item.isCompleted && item.rawItem.flow.status === 'In Progress' ? (
+                                    <span className="text-[10px] text-slate-400 font-mono italic pr-1">
+                                      Awaiting Stg {item.rawItem.flow.currentStageIndex + 1}
+                                    </span>
+                                  ) : null;
+                                }
+
+                                const stageExec = item.rawItem.stage;
+                                const stageDef = item.rawItem.def;
+                                const hasFormFields = !!(
+                                  (stageExec?.fields && stageExec.fields.length > 0) ||
+                                  (stageDef?.fields && stageDef.fields.length > 0) ||
+                                  stageExec?.how === 'IN-APP FORM' ||
+                                  stageExec?.how === 'IN APP FORM'
+                                );
+
+                                // When stage has configured form fields, Fill Form is the single primary action
+                                if (onOpenStageAction && hasFormFields) {
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex)}
+                                      className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded text-[11px] flex items-center gap-1 transition-colors cursor-pointer border border-indigo-200 shadow-2xs"
+                                    >
+                                      <FileText className="w-3.5 h-3.5" /> Fill Form
+                                    </button>
+                                  );
+                                }
+
+                                // For non-form stages with decision logic: Yes / No
+                                if (stageDef?.hasYesNoDecision || stageExec?.logic?.gatewayType === 'CONDITIONAL_JUMP') {
+                                  return (
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        onClick={() => {
+                                          if (onCompleteFmsStage) {
+                                            onCompleteFmsStage(item.rawItem.flow, item.rawItem.stageIndex, 'Yes');
+                                          } else {
+                                            onAdvanceFmsStage(item.rawItem.flow, 'Yes');
+                                          }
+                                        }}
+                                        className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded text-[11px] transition-colors cursor-pointer"
+                                        title="Advance / Yes"
+                                      >
+                                        Yes
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          if (onCompleteFmsStage) {
+                                            onCompleteFmsStage(item.rawItem.flow, item.rawItem.stageIndex, 'No');
+                                          } else {
+                                            onAdvanceFmsStage(item.rawItem.flow, 'No');
+                                          }
+                                        }}
+                                        className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded text-[11px] transition-colors cursor-pointer"
+                                        title={stageExec?.stageId === 'STG-10' ? 'No: Skip Stage 11 and jump directly to Stage 12' : 'No / Reject'}
+                                      >
+                                        {stageExec?.stageId === 'STG-10' ? 'No (Skip Stg 11)' : 'No'}
+                                      </button>
+                                    </div>
+                                  );
+                                }
+
+                                // For non-form sequential steps: Mark Done
+                                return (
                                   <button
                                     onClick={() => {
-                                      if (onCompleteFmsStage) {
-                                        onCompleteFmsStage(item.rawItem.flow, item.rawItem.stageIndex, 'Yes');
+                                      if (onOpenStageAction) {
+                                        onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex);
+                                      } else if (onCompleteFmsStage) {
+                                        onCompleteFmsStage(item.rawItem.flow, item.rawItem.stageIndex);
                                       } else {
-                                        onAdvanceFmsStage(item.rawItem.flow, 'Yes');
+                                        onAdvanceFmsStage(item.rawItem.flow);
                                       }
                                     }}
-                                    className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded text-[11px] transition-colors"
-                                    title="Advance / Yes"
+                                    className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded text-[11px] transition-colors cursor-pointer"
                                   >
-                                    Yes
+                                    Mark Done
                                   </button>
-                                  <button
-                                    onClick={() => {
-                                      if (onCompleteFmsStage) {
-                                        onCompleteFmsStage(item.rawItem.flow, item.rawItem.stageIndex, 'No');
-                                      } else {
-                                        onAdvanceFmsStage(item.rawItem.flow, 'No');
-                                      }
-                                    }}
-                                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded text-[11px] transition-colors"
-                                    title={item.rawItem.stage.stageId === 'STG-10' ? 'No: Skip Stage 11 and jump directly to Stage 12' : 'No / Reject'}
-                                  >
-                                    {item.rawItem.stage.stageId === 'STG-10' ? 'No (Skip Stg 11)' : 'No'}
-                                  </button>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={() => {
-                                    if (onCompleteFmsStage) {
-                                      onCompleteFmsStage(item.rawItem.flow, item.rawItem.stageIndex);
-                                    } else {
-                                      onAdvanceFmsStage(item.rawItem.flow);
-                                    }
-                                  }}
-                                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded text-[11px] transition-colors"
-                                >
-                                  {item.isCompleted ? 'Done' : 'Mark Done'}
-                                </button>
-                              )}
-                              <button
-                                onClick={() => onSelectFmsDetail(item.rawItem.flow)}
-                                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 transition-colors"
-                                title="View FMS detail"
-                              >
-                                <Eye className="w-4 h-4 text-slate-600" />
-                              </button>
-                            </>
+                                );
+                              })()}
+                            </div>
                           )}
 
-                          {/* Process Coordinator & Universal Action Buttons */}
-                          <div className="flex items-center gap-1 pl-1 border-l border-slate-200">
-                            {/* Universal View Button for Full Context */}
-                            <button
-                              onClick={() => {
-                                if (item.sourceModule === 'FMS') {
-                                  onSelectFmsDetail(item.rawItem.flow);
-                                } else {
-                                  setViewDetailItem(item);
-                                }
-                              }}
-                              className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 transition-colors"
-                              title="View complete task details, context, and revision history"
-                            >
-                              <Eye className="w-4 h-4 text-slate-600" />
-                            </button>
+                          {/* Single Context View Button (Available to ALL users to inspect progress and stages) */}
+                          <button
+                            onClick={() => {
+                              if (item.sourceModule === 'FMS') {
+                                onSelectFmsDetail(item.rawItem.flow);
+                              } else {
+                                setViewDetailItem(item);
+                              }
+                            }}
+                            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer"
+                            title="View task detail & status"
+                          >
+                            <Eye className="w-4 h-4 text-slate-600" />
+                          </button>
 
+                          {/* Process Note Remark Button - Super Admin Only */}
+                          {isSuperAdmin && (
                             <button
                               onClick={() => {
                                 const targetId = item.sourceModule === 'FMS'
@@ -1399,28 +1827,29 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                                 });
                                 setRemarkText('');
                               }}
-                              className="px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 font-semibold rounded text-[11px] flex items-center gap-1 transition-colors"
-                              title="Add Process Coordinator Remark explaining why this is pending/delayed"
+                              className="p-1.5 hover:bg-purple-50 text-slate-400 hover:text-purple-700 rounded-lg transition-colors"
+                              title="Add Process Coordinator Remark"
                             >
-                              <MessageSquare className="w-3 h-3" /> Remark
+                              <MessageSquare className="w-3.5 h-3.5" />
                             </button>
+                          )}
 
-                            {onNudgeItem && (
-                              <button
-                                onClick={() => {
-                                  const targetId = item.sourceModule === 'FMS'
-                                    ? item.rawItem.flow.id
-                                    : item.sourceId;
-                                  const stgIdx = item.sourceModule === 'FMS' ? item.rawItem.stageIndex : undefined;
-                                  onNudgeItem(item.sourceModule, targetId, stgIdx);
-                                }}
-                                className="p-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded transition-colors"
-                                title="Send follow-up nudge to assignee"
-                              >
-                                <Bell className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
+                          {/* Optional Nudge Button for open items - Super Admin Only */}
+                          {isSuperAdmin && onNudgeItem && !item.isCompleted && (
+                            <button
+                              onClick={() => {
+                                const targetId = item.sourceModule === 'FMS'
+                                  ? item.rawItem.flow.id
+                                  : item.sourceId;
+                                const stgIdx = item.sourceModule === 'FMS' ? item.rawItem.stageIndex : undefined;
+                                onNudgeItem(item.sourceModule, targetId, stgIdx);
+                              }}
+                              className="p-1.5 hover:bg-amber-50 text-slate-400 hover:text-amber-600 rounded-lg transition-colors"
+                              title="Send follow-up nudge to assignee"
+                            >
+                              <Bell className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1443,8 +1872,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           </table>
         </div>
 
-        {/* Pagination Bar for 1000+ Requisitions */}
-        <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+        {/* Pagination Bar for 1000+ Requisitions - pr-24 prevents FAB overlap */}
+        <div className="p-3 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600 sm:pr-24">
           <div className="flex items-center gap-4">
             {/* Relocated Rows dropdown */}
             <div className="flex items-center gap-1.5">
@@ -1498,6 +1927,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         </div>
       </div>
       )}
+      </div>
 
       {/* Add Process Coordinator Remark Modal */}
       {remarkModalTarget && (
@@ -1712,6 +2142,9 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           </div>
         </div>
       )}
+
+      {/* Bottom spacing to ensure all content and buttons remain accessible above any floating elements */}
+      <div className="h-10 md:h-14" />
     </div>
   );
 };

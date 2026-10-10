@@ -13,9 +13,18 @@ import {
   Sparkles,
   ArrowRight,
   User,
-  Info
+  Info,
+  Eye,
+  MessageSquare,
+  X,
+  Send,
+  ExternalLink,
+  AlertTriangle,
+  ListTodo,
+  Download
 } from 'lucide-react';
-import { ChecklistItem, Frequency, UserProfile } from '../../types';
+import { downloadCsv } from '../../utils/csvExporter';
+import { ChecklistItem, Frequency, UserProfile, ProcessRemark, isUserSuperAdmin, hasModulePermission } from '../../types';
 import { ViewScope } from '../layout/Header';
 
 interface ChecklistManagerProps {
@@ -24,8 +33,15 @@ interface ChecklistManagerProps {
   viewScope: ViewScope;
   onToggleScope: (scope: ViewScope) => void;
   onUpdateItem: (item: ChecklistItem) => void;
-  onNewItem: () => void;
-  onBatchGenerateNextCycle: () => void;
+  onNewItem?: () => void;
+  onBatchGenerateNextCycle?: () => void;
+  onAddProcessRemark?: (
+    module: 'FMS' | 'CHECKLIST' | 'DELEGATION',
+    targetId: string,
+    category: ProcessRemark['category'],
+    remarkText: string,
+    stageIndex?: number
+  ) => void;
 }
 
 export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
@@ -36,11 +52,21 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
   onUpdateItem,
   onNewItem,
   onBatchGenerateNextCycle,
+  onAddProcessRemark,
 }) => {
   const [activeFrequency, setActiveFrequency] = useState<string>('ALL');
   const [departmentFilter, setDepartmentFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const isSuperAdmin = isUserSuperAdmin(currentUser);
+
+  // Modal states
+  const [viewDetailItem, setViewDetailItem] = useState<ChecklistItem | null>(null);
+  const [remarkTarget, setRemarkTarget] = useState<ChecklistItem | null>(null);
+  const [remarkCategory, setRemarkCategory] = useState<ProcessRemark['category']>('AWAITING_APPROVAL');
+  const [remarkText, setRemarkText] = useState<string>('');
 
   const departments = Array.from(new Set(items.map((i) => i.department)));
 
@@ -60,10 +86,11 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
   };
 
   const myItemsTotal = items.filter(isMyItem);
+  const effectiveScope = isSuperAdmin ? viewScope : 'USER_ONLY';
 
   const filteredItems = items.filter((item) => {
-    // 1. User Scope Filtering
-    if (viewScope === 'USER_ONLY' && !isMyItem(item)) {
+    // 1. User Scope Filtering - non-superadmin only sees own tasks
+    if (effectiveScope === 'USER_ONLY' && !isMyItem(item)) {
       return false;
     }
 
@@ -87,8 +114,62 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
     return true;
   });
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const parseDate = (dStr?: string): Date | undefined => {
+    if (!dStr) return undefined;
+    try {
+      const cleaned = dStr.trim().split(' ')[0].split('T')[0];
+      if (cleaned.includes('/')) {
+        const parts = cleaned.split('/');
+        if (parts.length === 3) {
+          const p0 = parseInt(parts[0], 10);
+          const p1 = parseInt(parts[1], 10);
+          const p2 = parseInt(parts[2], 10);
+          if (parts[2].length === 4 || p2 > 1000) {
+            return new Date(p2, p1 - 1, p0);
+          }
+          if (parts[0].length === 4 || p0 > 1000) {
+            return new Date(p0, p1 - 1, p2);
+          }
+          return new Date(p2, p1 - 1, p0);
+        }
+      } else if (cleaned.includes('-')) {
+        const parts = cleaned.split('-');
+        if (parts.length === 3) {
+          const p0 = parseInt(parts[0], 10);
+          const p1 = parseInt(parts[1], 10);
+          const p2 = parseInt(parts[2], 10);
+          if (parts[0].length === 4 || p0 > 1000) {
+            return new Date(p0, p1 - 1, p2);
+          }
+          return new Date(p2, p1 - 1, p0);
+        }
+      }
+      const direct = new Date(dStr);
+      if (!isNaN(direct.getTime())) {
+        return direct;
+      }
+      return undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const isItemDueOrOverdue = (item: ChecklistItem): boolean => {
+    if (!item.plannedDate) return true;
+    const d = parseDate(item.plannedDate);
+    if (!d) return true;
+    d.setHours(0, 0, 0, 0);
+    return d.getTime() <= today.getTime();
+  };
+
   const handleToggleStatus = (item: ChecklistItem) => {
+    if (!isMyItem(item)) return;
     const isDone = item.status === 'Done';
+    // If not done, only allow marking done if due today or overdue
+    if (!isDone && !isItemDueOrOverdue(item)) return;
     const now = new Date();
     const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
 
@@ -101,73 +182,106 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
     onUpdateItem(updated);
   };
 
+  const myFilteredItems = filteredItems.filter(isMyItem);
+
+  const handleSelectAll = () => {
+    const selectable = (viewScope === 'USER_ONLY' ? filteredItems : myFilteredItems).filter((i) => i.status !== 'Done' && isItemDueOrOverdue(i));
+    if (selectedIds.length === selectable.length && selectable.length > 0) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(selectable.map((i) => i.id));
+    }
+  };
+
+  const handleToggleSelectId = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleBatchMarkDone = () => {
+    const now = new Date();
+    const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+    filteredItems.forEach((item) => {
+      if (selectedIds.includes(item.id) && isMyItem(item) && item.status !== 'Done' && isItemDueOrOverdue(item)) {
+        onUpdateItem({
+          ...item,
+          status: 'Done',
+          actualDate: formattedDate,
+          updatedAt: now.toLocaleString('en-GB'),
+        });
+      }
+    });
+    setSelectedIds([]);
+  };
+
+  const handleExportFilteredCsv = () => {
+    const headers = [
+      'Task ID',
+      'Assignee Name',
+      'Email',
+      'Department',
+      'Frequency',
+      'Checklist Task Description',
+      'Planned Due Date',
+      'Actual Completion Date',
+      'Status',
+      'Updated At'
+    ];
+
+    const rows = filteredItems.map((item) => [
+      item.taskId,
+      item.name,
+      item.email,
+      item.department,
+      item.frequency,
+      item.task,
+      item.plannedDate,
+      item.actualDate || '—',
+      item.status,
+      item.updatedAt || '—'
+    ]);
+
+    const timestamp = new Date().toISOString().slice(0, 10);
+    downloadCsv(`Checklist_Filtered_Export_${timestamp}.csv`, headers, rows);
+  };
+
   const currentDisplayCount = filteredItems.length;
-  const doneCount = (viewScope === 'USER_ONLY' ? myItemsTotal : items).filter((i) => i.status === 'Done').length;
-  const totalBaseCount = viewScope === 'USER_ONLY' ? myItemsTotal.length : items.length;
+  const doneCount = (effectiveScope === 'USER_ONLY' ? myItemsTotal : items).filter((i) => i.status === 'Done').length;
+  const totalBaseCount = effectiveScope === 'USER_ONLY' ? myItemsTotal.length : items.length;
   const complianceRate = totalBaseCount > 0 ? Math.round((doneCount / totalBaseCount) * 100) : 100;
 
   return (
     <div className="space-y-5">
-      {/* Top Compliance Bar */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-base font-bold text-slate-900">
-              {viewScope === 'USER_ONLY' 
-                ? `My Operations Checklist Compliance (${currentUser.name})` 
-                : 'All Department Operations Checklists'}
-            </h2>
-            <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-              Sheet 3 Master
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            {viewScope === 'USER_ONLY'
-              ? `Filtered to items assigned to ${currentUser.name} (${currentUser.departmentName}).`
-              : 'Showing all compliance checklists across Store, IT, and Structure departments.'}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-6 w-full md:w-auto justify-between md:justify-end">
-          <div className="text-right">
-            <div className="text-xs text-slate-500 font-medium">
-              {viewScope === 'USER_ONLY' ? 'My Compliance Rate' : 'Org Compliance Rate'}
-            </div>
-            <div className="text-2xl font-black text-indigo-600">{complianceRate}%</div>
-          </div>
-          <div className="w-32 bg-slate-100 rounded-full h-2.5 overflow-hidden">
-            <div
-              className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500"
-              style={{ width: `${complianceRate}%` }}
-            />
-          </div>
-          <button
-            onClick={onBatchGenerateNextCycle}
-            title="Auto-generates next recurring maintenance cycle"
-            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-lg text-xs font-semibold transition-colors"
-          >
-            <Sparkles className="w-4 h-4 text-emerald-600" />
-            <span>Auto Roll Out Next Cycle</span>
-          </button>
-        </div>
-      </div>
-
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {/* Total Checklists Card */}
         <div 
           onClick={() => setStatusFilter('ALL')}
           title="Click to show all checklist items"
-          className={`p-4 rounded-xl border cursor-pointer transition-all hover:scale-[1.01] hover:shadow-xs ${
-            statusFilter === 'ALL' ? 'border-indigo-400 bg-indigo-50/10 ring-1 ring-indigo-400/20' : 'border-slate-200 bg-white'
+          className={`p-5 rounded-2xl border cursor-pointer transition-all ${
+            statusFilter === 'ALL'
+              ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-400/50 scale-[1.01]'
+              : 'bg-white border-slate-200 hover:border-indigo-300 hover:shadow-xs text-slate-900'
           }`}
         >
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-            Total Checklist Items
-          </span>
-          <div className="flex items-baseline justify-between mt-1">
-            <span className="text-2xl font-black text-slate-900">{totalBaseCount}</span>
-            <span className="text-[10px] text-slate-400 font-bold">Total Scope</span>
+          <div className="flex items-center justify-between">
+            <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === 'ALL' ? 'text-white' : 'text-indigo-600'}`}>
+              Total Checklist Items
+            </span>
+            <ListTodo className={`w-5 h-5 ${statusFilter === 'ALL' ? 'text-white' : 'text-indigo-500'}`} />
+          </div>
+          <div className="mt-3 flex items-baseline justify-between">
+            <span className={`text-3xl sm:text-4xl font-black ${statusFilter === 'ALL' ? 'text-white' : 'text-slate-900'}`}>
+              {totalBaseCount}
+            </span>
+            <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${
+              statusFilter === 'ALL'
+                ? 'bg-white/25 text-white'
+                : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+            }`}>
+              Total Scope
+            </span>
           </div>
         </div>
 
@@ -175,14 +289,27 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
         <div 
           onClick={() => setStatusFilter(statusFilter === 'Pending' ? 'ALL' : 'Pending')}
           title="Click to filter Pending checklists"
-          className={`p-4 rounded-xl border cursor-pointer transition-all hover:scale-[1.01] hover:shadow-xs ${
-            statusFilter === 'Pending' ? 'border-rose-400 bg-rose-50/10 ring-1 ring-rose-400/20' : 'border-slate-200 bg-white'
+          className={`p-5 rounded-2xl border cursor-pointer transition-all ${
+            statusFilter === 'Pending'
+              ? 'bg-rose-600 text-white shadow-md ring-2 ring-rose-400/50 scale-[1.01]'
+              : 'bg-white border-slate-200 hover:border-rose-300 hover:shadow-xs text-slate-900'
           }`}
         >
-          <span className="text-xs font-bold text-rose-600 uppercase tracking-wider">Pending Execution</span>
-          <div className="flex items-baseline justify-between mt-1">
-            <span className="text-2xl font-black text-rose-600">{totalBaseCount - doneCount}</span>
-            <span className="text-[10px] text-rose-500 font-bold bg-rose-50 px-1.5 py-0.5 rounded">
+          <div className="flex items-center justify-between">
+            <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === 'Pending' ? 'text-white' : 'text-rose-600'}`}>
+              Pending Execution
+            </span>
+            <AlertTriangle className={`w-5 h-5 ${statusFilter === 'Pending' ? 'text-white' : 'text-rose-500'}`} />
+          </div>
+          <div className="mt-3 flex items-baseline justify-between">
+            <span className={`text-3xl sm:text-4xl font-black ${statusFilter === 'Pending' ? 'text-white' : 'text-slate-900'}`}>
+              {totalBaseCount - doneCount}
+            </span>
+            <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${
+              statusFilter === 'Pending'
+                ? 'bg-white/25 text-white'
+                : 'bg-rose-50 text-rose-700 border border-rose-100'
+            }`}>
               Needs Done
             </span>
           </div>
@@ -192,72 +319,54 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
         <div 
           onClick={() => setStatusFilter(statusFilter === 'Done' ? 'ALL' : 'Done')}
           title="Click to filter Completed checklists"
-          className={`p-4 rounded-xl border cursor-pointer transition-all hover:scale-[1.01] hover:shadow-xs ${
-            statusFilter === 'Done' ? 'border-emerald-400 bg-emerald-50/10 ring-1 ring-emerald-400/20' : 'border-slate-200 bg-white'
+          className={`p-5 rounded-2xl border cursor-pointer transition-all ${
+            statusFilter === 'Done'
+              ? 'bg-emerald-600 text-white shadow-md ring-2 ring-emerald-400/50 scale-[1.01]'
+              : 'bg-white border-slate-200 hover:border-emerald-300 hover:shadow-xs text-slate-900'
           }`}
         >
-          <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Completed Compliance</span>
-          <div className="flex items-baseline justify-between mt-1">
-            <span className="text-2xl font-black text-emerald-600">{doneCount}</span>
-            <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">
+          <div className="flex items-center justify-between">
+            <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === 'Done' ? 'text-white' : 'text-emerald-600'}`}>
+              Completed Compliance
+            </span>
+            <CheckCircle2 className={`w-5 h-5 ${statusFilter === 'Done' ? 'text-white' : 'text-emerald-500'}`} />
+          </div>
+          <div className="mt-3 flex items-baseline justify-between">
+            <span className={`text-3xl sm:text-4xl font-black ${statusFilter === 'Done' ? 'text-white' : 'text-slate-900'}`}>
+              {doneCount}
+            </span>
+            <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${
+              statusFilter === 'Done'
+                ? 'bg-white/25 text-white'
+                : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+            }`}>
               Verified OK
             </span>
           </div>
         </div>
       </div>
 
-      {/* Scope banner if USER_ONLY */}
-      {viewScope === 'USER_ONLY' ? (
-        <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl flex items-center justify-between text-xs text-indigo-900">
-          <div className="flex items-center gap-2">
-            <User className="w-4 h-4 text-indigo-600 shrink-0" />
-            <span>
-              Showing <strong>{myItemsTotal.length} checklist items</strong> assigned specifically to <strong>{currentUser.name}</strong> ({currentUser.email}).
-            </span>
-          </div>
-          <button
-            onClick={() => onToggleScope('ALL_ORG')}
-            className="font-bold underline text-indigo-700 hover:text-indigo-900 shrink-0 ml-2"
-          >
-            View all {items.length} organization checklists →
-          </button>
-        </div>
-      ) : (
-        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs text-slate-700">
-          <div className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-slate-500 shrink-0" />
-            <span>
-              Viewing <strong>All Organization Checklists ({items.length} total)</strong> across all staff.
-            </span>
-          </div>
-          <button
-            onClick={() => onToggleScope('USER_ONLY')}
-            className="font-bold text-indigo-600 hover:text-indigo-800 shrink-0 ml-2"
-          >
-            Focus only on my checklists ({myItemsTotal.length}) →
-          </button>
-        </div>
-      )}
-
       {/* Frequency Tabs & Filters */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
         <div className="flex flex-wrap items-center gap-2">
-          {/* User scope selector as dropdown */}
-          <div className="flex items-center bg-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-200/80 shadow-2xs gap-1.5">
-            <User className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-            <select
-              aria-label="Filter by scope"
-              value={viewScope}
-              onChange={(e) => onToggleScope(e.target.value as any)}
-              className="text-xs font-bold bg-transparent border-none text-slate-700 hover:text-slate-900 focus:outline-none cursor-pointer py-0.5"
-            >
-              <option value="USER_ONLY">My Tasks — {myItemsTotal.length}</option>
-              <option value="ALL_ORG">All Staff — {items.length}</option>
-            </select>
-          </div>
+          {/* User scope selector as dropdown - Super Admin Only */}
+          {isSuperAdmin && (
+            <div className="flex items-center bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs gap-1.5">
+              <User className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+              <select
+                aria-label="Filter by scope"
+                value={viewScope}
+                onChange={(e) => onToggleScope(e.target.value as any)}
+                className="text-xs font-bold bg-transparent border-none text-slate-700 hover:text-slate-900 focus:outline-none cursor-pointer py-0.5"
+              >
+                <option value="USER_ONLY">My Tasks — {myItemsTotal.length}</option>
+                <option value="ALL_ORG">All Staff — {items.length}</option>
+              </select>
+            </div>
+          )}
 
           {/* Frequency selector as dropdown */}
-          <div className="flex items-center bg-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-200/80 shadow-2xs gap-1.5">
+          <div className="flex items-center bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs gap-1.5">
             <Filter className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
             <select
               aria-label="Filter by frequency"
@@ -271,13 +380,13 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
             </select>
           </div>
 
-          {/* Department filter (useful in ALL_ORG mode) */}
-          {viewScope === 'ALL_ORG' && (
+          {/* Department filter (useful in ALL_ORG mode) - Super Admin Only */}
+          {isSuperAdmin && viewScope === 'ALL_ORG' && (
             <select
               aria-label="Filter by department"
               value={departmentFilter}
               onChange={(e) => setDepartmentFilter(e.target.value)}
-              className="text-xs bg-slate-50 border border-slate-300 rounded-lg py-1.5 px-2 text-slate-700 font-medium max-w-[150px]"
+              className="text-xs bg-white border border-slate-300 rounded-lg py-1.5 px-2 text-slate-700 font-medium max-w-[150px] cursor-pointer"
             >
               <option value="ALL">All Depts</option>
               {departments.map((dept) => (
@@ -293,7 +402,7 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
             aria-label="Filter by status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="text-xs bg-slate-50 border border-slate-300 rounded-lg py-1.5 px-2 text-slate-700 font-medium"
+            className="text-xs bg-white border border-slate-300 rounded-lg py-1.5 px-2 text-slate-700 font-medium cursor-pointer"
           >
             <option value="ALL">All Status</option>
             <option value="Done">Done</option>
@@ -308,27 +417,82 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
               placeholder="Search tasks..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg w-36 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg w-36 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
         </div>
 
-        <button
-          onClick={onNewItem}
-          className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Checklist Item</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExportFilteredCsv}
+            title="Export currently filtered checklist items to CSV/Excel"
+            className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-lg text-xs transition-colors shrink-0 border border-slate-300 cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5 text-slate-600" />
+            <span>Export CSV ({filteredItems.length})</span>
+          </button>
+          {isSuperAdmin && onBatchGenerateNextCycle && (
+            <button
+              onClick={onBatchGenerateNextCycle}
+              title="Auto-generates next recurring maintenance cycle"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-lg text-xs font-semibold transition-colors cursor-pointer shrink-0"
+            >
+              <Sparkles className="w-4 h-4 text-emerald-600" />
+              <span>Auto Roll Out Next Cycle</span>
+            </button>
+          )}
+          {(isSuperAdmin || hasModulePermission(currentUser, 'checklist', 'edit')) && onNewItem && (
+            <button
+              onClick={onNewItem}
+              className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors shrink-0 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Checklist Item</span>
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Floating Batch Action Bar */}
+      {selectedIds.length > 0 && (
+        <div className="bg-indigo-950 text-white p-3 px-4 rounded-xl shadow-lg border border-indigo-700/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-2 text-xs font-bold">
+            <CheckSquare className="w-4 h-4 text-indigo-300" />
+            <span>{selectedIds.length} Checklist Items Selected for Batch Action</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleBatchMarkDone}
+              className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition-colors cursor-pointer"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Bulk Mark Done ({selectedIds.length})
+            </button>
+            <button
+              onClick={() => setSelectedIds([])}
+              className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold border border-white/20 cursor-pointer"
+            >
+              Cancel Selection
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Checklist Table (Exact reflection of Sheet 3) */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-[#8989eb] text-white font-bold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+            <thead className="bg-white text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
               <tr>
-                <th className="py-2.5 px-3 w-10 text-center">Status</th>
+                <th className="py-2.5 px-3 w-8 text-center">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.length === filteredItems.length && filteredItems.length > 0}
+                    onChange={handleSelectAll}
+                    className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    title="Select all for batch action"
+                  />
+                </th>
                 <th className="py-2.5 px-4">Name (Staff)</th>
                 <th className="py-2.5 px-3">Email Accountable</th>
                 <th className="py-2.5 px-3">Department</th>
@@ -339,32 +503,30 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
                 <th className="py-2.5 px-3">Actual</th>
                 <th className="py-2.5 px-3">Status</th>
                 <th className="py-2.5 px-3">Buddy Email</th>
+                <th className="py-2.5 px-4 text-right">Quick Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredItems.length > 0 ? (
-                filteredItems.map((item, idx) => {
+                filteredItems.map((item) => {
                   const isDone = item.status === 'Done';
-                  const rowBg = idx % 2 === 1 ? 'bg-[#e8e7fc]/30' : 'bg-white';
+                  const rowBg = 'bg-white';
                   const isMine = isMyItem(item);
+                  const isSelected = selectedIds.includes(item.id);
 
                   return (
                     <tr
                       key={item.id}
-                      className={`hover:bg-indigo-50/40 transition-colors ${rowBg}`}
+                      className={`hover:bg-slate-50 transition-colors ${isSelected ? 'bg-indigo-50/70' : rowBg}`}
                     >
-                      {/* Interactive completion toggle */}
+                      {/* Batch select checkbox */}
                       <td className="py-2.5 px-3 text-center">
-                        <button
-                          onClick={() => handleToggleStatus(item)}
-                          className={`w-5 h-5 rounded flex items-center justify-center transition-colors mx-auto ${
-                            isDone
-                              ? 'bg-emerald-600 text-white'
-                              : 'border border-slate-300 text-transparent hover:border-indigo-500'
-                          }`}
-                        >
-                          <CheckCircle2 className="w-4 h-4" />
-                        </button>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelectId(item.id)}
+                          className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        />
                       </td>
 
                       {/* Name */}
@@ -416,6 +578,14 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
                         <span className={isDone ? 'line-through text-slate-400' : ''}>
                           {item.task}
                         </span>
+                        {item.processRemarks && item.processRemarks.length > 0 && (
+                          <div className="mt-1 p-1 rounded bg-purple-50 border border-purple-200 text-[10px] text-purple-900 flex items-start gap-1">
+                            <MessageSquare className="w-3 h-3 text-purple-600 shrink-0 mt-0.5" />
+                            <span>
+                              <strong>Note ({item.processRemarks[0].authorName}):</strong> {item.processRemarks[0].remarkText}
+                            </span>
+                          </div>
+                        )}
                       </td>
 
                       {/* Planned Date */}
@@ -445,12 +615,61 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
                       <td className="py-2.5 px-3 text-slate-400 font-mono text-[11px] whitespace-nowrap">
                         {item.buddyEmail || '—'}
                       </td>
+
+                      {/* Quick Action Buttons */}
+                      <td className="py-2.5 px-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* Mark Done / Reopen button (Strict User Assignment Check & Due Today/Overdue Only) */}
+                          {isMine && (
+                            isDone ? (
+                              <button
+                                onClick={() => handleToggleStatus(item)}
+                                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded text-[11px] transition-colors cursor-pointer"
+                              >
+                                Reopen
+                              </button>
+                            ) : isItemDueOrOverdue(item) ? (
+                              <button
+                                onClick={() => handleToggleStatus(item)}
+                                className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded text-[11px] transition-colors cursor-pointer"
+                              >
+                                Mark Done
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 font-medium px-2 py-1 bg-slate-50 border border-slate-200 rounded">
+                                Scheduled {item.plannedDate}
+                              </span>
+                            )
+                          )}
+
+                          {/* View Detail Context (Available to all users to see current stage/progress) */}
+                          <button
+                            onClick={() => setViewDetailItem(item)}
+                            title="View checklist detail & context"
+                            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer"
+                          >
+                            <Eye className="w-4 h-4 text-slate-600" />
+                          </button>
+
+                          {/* Add Process Remark */}
+                          <button
+                            onClick={() => {
+                              setRemarkTarget(item);
+                              setRemarkText('');
+                            }}
+                            title="Add Process Coordinator Remark"
+                            className="p-1.5 hover:bg-purple-50 text-slate-400 hover:text-purple-700 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan={11} className="py-12 text-center text-slate-500">
+                  <td colSpan={12} className="py-12 text-center text-slate-500">
                     <User className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                     <p className="font-semibold text-slate-700">No checklist items found for {currentUser.name}</p>
                     <p className="text-xs text-slate-400 mt-1">
@@ -458,7 +677,7 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
                     </p>
                     <button
                       onClick={() => onToggleScope('ALL_ORG')}
-                      className="mt-3 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-lg transition-colors"
+                      className="mt-3 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
                     >
                       View All Organization Checklists ({items.length})
                     </button>
@@ -468,7 +687,231 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
             </tbody>
           </table>
         </div>
+
+        {/* Table Footer */}
+        <div className="px-4 py-3 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
+          <div>
+            Showing <span className="font-semibold text-slate-800">{filteredItems.length}</span> checklist tasks ({doneCount} completed)
+          </div>
+          <div className="text-[11px] font-medium text-slate-400">
+            BarBrik Compliance System • Frequency: {activeFrequency}
+          </div>
+        </div>
       </div>
+
+      {/* Checklist Detail Context Modal */}
+      {viewDetailItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-800 text-white">
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <Info className="w-4 h-4 text-indigo-400" />
+                <span>Checklist Context — {viewDetailItem.taskId}</span>
+              </div>
+              <button
+                onClick={() => setViewDetailItem(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4 text-xs">
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-blue-950 text-sm">{viewDetailItem.task}</span>
+                  <span className="px-2 py-0.5 rounded font-bold text-[10px] bg-blue-100 text-blue-800">
+                    CHECKLIST
+                  </span>
+                </div>
+                <p className="text-blue-800 font-medium">Department: {viewDetailItem.department} • Accountable: {viewDetailItem.name} ({viewDetailItem.email})</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] text-slate-500 font-semibold block">Frequency</span>
+                  <span className="font-bold text-slate-900 text-xs mt-0.5 block">
+                    {viewDetailItem.frequency === 'W' ? 'Weekly' : viewDetailItem.frequency === 'M' ? 'Monthly' : 'Daily'}
+                  </span>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] text-slate-500 font-semibold block">Planned Date</span>
+                  <span className="font-mono font-bold text-slate-900 text-xs mt-0.5 block">{viewDetailItem.plannedDate}</span>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] text-slate-500 font-semibold block">Actual Execution Date</span>
+                  <span className="font-mono font-bold text-slate-900 text-xs mt-0.5 block">{viewDetailItem.actualDate || '—'}</span>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] text-slate-500 font-semibold block">Status</span>
+                  <span className={`font-bold text-xs mt-0.5 block ${
+                    viewDetailItem.status === 'Done' ? 'text-emerald-700' : 'text-amber-700'
+                  }`}>
+                    {viewDetailItem.status}
+                  </span>
+                </div>
+              </div>
+
+              {/* Evidence Document link */}
+              {viewDetailItem.evidenceUrl && (
+                <div className="p-3 rounded-xl bg-purple-50 border border-purple-200">
+                  <span className="font-bold text-purple-950 block text-[11px]">Submitted Photo / Document Evidence</span>
+                  <a
+                    href={viewDetailItem.evidenceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1 text-purple-700 underline font-semibold flex items-center gap-1"
+                  >
+                    <ExternalLink className="w-3 h-3" /> View Evidence Document
+                  </a>
+                </div>
+              )}
+
+              {/* Process Remarks */}
+              <div className="space-y-2 pt-2 border-t border-slate-200">
+                <span className="font-bold text-purple-950 uppercase tracking-wider text-[10px] flex items-center gap-1">
+                  <MessageSquare className="w-3.5 h-3.5 text-purple-600" />
+                  Process Audit Notes ({viewDetailItem.processRemarks?.length || 0})
+                </span>
+
+                {viewDetailItem.processRemarks && viewDetailItem.processRemarks.length > 0 ? (
+                  <div className="space-y-2">
+                    {viewDetailItem.processRemarks.map((rem, rIdx) => (
+                      <div key={rem.id || rIdx} className="p-2.5 rounded-lg bg-purple-50 border border-purple-200 space-y-1">
+                        <div className="flex items-center justify-between font-bold text-purple-950">
+                          <span>{rem.authorName} ({rem.authorRole})</span>
+                          <span className="font-mono text-[10px] font-normal text-purple-600">{rem.timestamp}</span>
+                        </div>
+                        <span className="inline-block px-1.5 py-0.2 rounded bg-purple-200/80 text-purple-900 font-bold text-[10px]">
+                          {rem.category.replace('_', ' ')}
+                        </span>
+                        <p className="text-purple-900 font-medium leading-relaxed mt-0.5">{rem.remarkText}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-slate-400 italic text-[11px] p-2 bg-slate-50 rounded-lg">
+                    No process remarks logged yet.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setViewDetailItem(null)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg transition-colors text-xs cursor-pointer"
+              >
+                Close Inspection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remark Modal */}
+      {remarkTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-purple-900 text-white">
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <MessageSquare className="w-4 h-4 text-purple-300" />
+                <span>Process Audit Remark — {remarkTarget.taskId}</span>
+              </div>
+              <button
+                onClick={() => setRemarkTarget(null)}
+                className="text-purple-200 hover:text-white p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              <div>
+                <span className="font-semibold text-slate-700 block mb-1">Checklist Task:</span>
+                <p className="p-2.5 bg-slate-50 rounded-lg text-slate-800 font-medium border border-slate-200">
+                  {remarkTarget.task} ({remarkTarget.name})
+                </p>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Compliance / Delay Category
+                </label>
+                <select
+                  value={remarkCategory}
+                  onChange={(e) => setRemarkCategory(e.target.value as ProcessRemark['category'])}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 font-medium text-xs cursor-pointer"
+                >
+                  <option value="AWAITING_APPROVAL">Awaiting Management / Verification</option>
+                  <option value="VENDOR_DELAY">Vendor / Third-Party Delay</option>
+                  <option value="SITE_DOCS_MISSING">Site Unavailable / Docs Missing</option>
+                  <option value="STAFF_ON_LEAVE">Staff On Leave / Shift Gap</option>
+                  <option value="TECHNICAL_ISSUE">Equipment Breakdown / Technical Issue</option>
+                  <option value="OTHER">General Operations / Other Remark</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Detailed Justification / Remark Note <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={remarkText}
+                  onChange={(e) => setRemarkText(e.target.value)}
+                  placeholder="Enter detailed compliance remark or note..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-xs"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setRemarkTarget(null)}
+                  className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!remarkText.trim()) return;
+                    if (onAddProcessRemark) {
+                      onAddProcessRemark(
+                        'CHECKLIST',
+                        remarkTarget.id,
+                        remarkCategory,
+                        remarkText.trim()
+                      );
+                    } else {
+                      const newRemark: ProcessRemark = {
+                        id: `rem-${Date.now()}`,
+                        authorName: currentUser.name,
+                        authorRole: currentUser.role,
+                        category: remarkCategory,
+                        remarkText: remarkText.trim(),
+                        timestamp: new Date().toLocaleString('en-GB')
+                      };
+                      const existing = remarkTarget.processRemarks || [];
+                      onUpdateItem({
+                        ...remarkTarget,
+                        processRemarks: [newRemark, ...existing]
+                      });
+                    }
+                    setRemarkTarget(null);
+                    setRemarkText('');
+                  }}
+                  className="px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" /> Log Process Note
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

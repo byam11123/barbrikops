@@ -11,9 +11,24 @@ import {
   ShieldCheck, 
   RefreshCw,
   ExternalLink,
-  Code2
+  Code2,
+  Plus,
+  Edit3,
+  Trash2,
+  Building2,
+  ShoppingCart,
+  Warehouse,
+  Landmark,
+  Wrench,
+  Truck,
+  Users,
+  FileText,
+  X,
+  GitBranch
 } from 'lucide-react';
-import { CentralRegistryConfig } from '../../types';
+import { CentralRegistryConfig, DepartmentDefinition } from '../../types';
+import { storageAdapter } from '../../services/storageAdapter';
+import { FmsMasterCatalogView } from '../fms/FmsMasterCatalogView';
 import { 
   GENERATED_POSTGRES_SCHEMA, 
   FMS_MIGRATION_MAPPINGS, 
@@ -25,17 +40,106 @@ interface CentralRegistryViewProps {
   config: CentralRegistryConfig;
   onSaveConfig: (config: CentralRegistryConfig) => void;
   onResetSeedData: () => void;
+  onOpenTemplateStudio?: (templateKey?: string) => void;
+  onCreateFlow?: (flowType?: string) => void;
 }
 
 export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
   config,
   onSaveConfig,
   onResetSeedData,
+  onOpenTemplateStudio,
+  onCreateFlow,
 }) => {
-  const [activeTab, setActiveTab] = useState<'CONFIG' | 'SQL_SCHEMA' | 'COLUMN_MAPPINGS'>('CONFIG');
+  const [activeTab, setActiveTab] = useState<'CONFIG' | 'DEPARTMENTS' | 'FMS_WORKFLOWS' | 'SQL_SCHEMA' | 'COLUMN_MAPPINGS'>('DEPARTMENTS');
   const [formConfig, setFormConfig] = useState<CentralRegistryConfig>(config);
   const [copied, setCopied] = useState<boolean>(false);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
+
+  // Department Hub State
+  const [departments, setDepartments] = useState<DepartmentDefinition[]>(() => storageAdapter.getDepartments());
+  const [deptStatusFilter, setDeptStatusFilter] = useState<'ALL' | 'ACTIVE' | 'ARCHIVED'>('ALL');
+  const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
+  const [editingDept, setEditingDept] = useState<DepartmentDefinition | null>(null);
+  const [deptKey, setDeptKey] = useState('');
+  const [deptName, setDeptName] = useState('');
+  const [deptDesc, setDeptDesc] = useState('');
+  const [deptIcon, setDeptIcon] = useState('Building2');
+  const [deptError, setDeptError] = useState<string | null>(null);
+
+  const handleToggleArchive = (dept: DepartmentDefinition) => {
+    storageAdapter.toggleArchiveDepartment(dept.id);
+    setDepartments(storageAdapter.getDepartments());
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 2500);
+  };
+
+  const handleOpenAddDept = () => {
+    setEditingDept(null);
+    setDeptKey('');
+    setDeptName('');
+    setDeptDesc('');
+    setDeptIcon('Building2');
+    setDeptError(null);
+    setIsDeptModalOpen(true);
+  };
+
+  const handleOpenEditDept = (dept: DepartmentDefinition) => {
+    setEditingDept(dept);
+    setDeptKey(dept.key);
+    setDeptName(dept.name);
+    setDeptDesc(dept.description || '');
+    setDeptIcon(dept.icon || 'Building2');
+    setDeptError(null);
+    setIsDeptModalOpen(true);
+  };
+
+  const handleSaveDepartment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deptName.trim()) {
+      setDeptError('Department Name is required');
+      return;
+    }
+
+    const key = (deptKey.trim() || deptName.trim().toUpperCase().replace(/[^A-Z0-9]/g, '_')).toUpperCase();
+
+    const newDept: DepartmentDefinition = {
+      id: editingDept ? editingDept.id : `dept_${Date.now()}`,
+      key,
+      name: deptName.trim(),
+      description: deptDesc.trim() || undefined,
+      icon: deptIcon,
+      isDefault: editingDept ? editingDept.isDefault : false,
+      createdAt: editingDept ? editingDept.createdAt : new Date().toLocaleDateString('en-GB'),
+    };
+
+    storageAdapter.saveDepartment(newDept);
+    const updated = storageAdapter.getDepartments();
+    setDepartments(updated);
+    setIsDeptModalOpen(false);
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 2500);
+  };
+
+  const handleDeleteDept = (dept: DepartmentDefinition) => {
+    if (window.confirm(`Are you sure you want to delete department "${dept.name}"?`)) {
+      storageAdapter.deleteDepartment(dept.id);
+      setDepartments(storageAdapter.getDepartments());
+    }
+  };
+
+  const getIconComponent = (iconName?: string) => {
+    switch (iconName) {
+      case 'ShoppingCart': return <ShoppingCart className="w-4 h-4 text-amber-600" />;
+      case 'Warehouse': return <Warehouse className="w-4 h-4 text-blue-600" />;
+      case 'Landmark': return <Landmark className="w-4 h-4 text-emerald-600" />;
+      case 'Wrench': return <Wrench className="w-4 h-4 text-purple-600" />;
+      case 'Truck': return <Truck className="w-4 h-4 text-indigo-600" />;
+      case 'Users': return <Users className="w-4 h-4 text-rose-600" />;
+      case 'FileText': return <FileText className="w-4 h-4 text-slate-600" />;
+      default: return <Building2 className="w-4 h-4 text-indigo-600" />;
+    }
+  };
 
   const handleCopySql = () => {
     navigator.clipboard.writeText(GENERATED_POSTGRES_SCHEMA);
@@ -79,12 +183,34 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex items-center bg-slate-100 p-1 rounded-xl">
+        <div className="flex items-center bg-white p-1 rounded-xl border border-slate-200 gap-1">
+          <button
+            onClick={() => setActiveTab('DEPARTMENTS')}
+            className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'DEPARTMENTS'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 font-semibold'
+            }`}
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            <span>Department Hub ({departments.length})</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('FMS_WORKFLOWS')}
+            className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'FMS_WORKFLOWS'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 font-semibold'
+            }`}
+          >
+            <GitBranch className="w-3.5 h-3.5" />
+            <span>FMS Workflows Master</span>
+          </button>
           <button
             onClick={() => setActiveTab('CONFIG')}
             className={`px-3 py-1.5 text-xs rounded-lg font-semibold transition-all ${
               activeTab === 'CONFIG'
-                ? 'bg-white text-slate-900 shadow-xs'
+                ? 'bg-slate-100 text-slate-900 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -94,7 +220,7 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
             onClick={() => setActiveTab('SQL_SCHEMA')}
             className={`px-3 py-1.5 text-xs rounded-lg font-semibold transition-all ${
               activeTab === 'SQL_SCHEMA'
-                ? 'bg-white text-indigo-700 shadow-xs'
+                ? 'bg-slate-100 text-indigo-700 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -104,7 +230,7 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
             onClick={() => setActiveTab('COLUMN_MAPPINGS')}
             className={`px-3 py-1.5 text-xs rounded-lg font-semibold transition-all ${
               activeTab === 'COLUMN_MAPPINGS'
-                ? 'bg-white text-indigo-700 shadow-xs'
+                ? 'bg-slate-100 text-indigo-700 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -112,6 +238,294 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
           </button>
         </div>
       </div>
+
+      {activeTab === 'FMS_WORKFLOWS' && (
+        <FmsMasterCatalogView
+          onOpenTemplateStudio={onOpenTemplateStudio}
+          onCreateFlow={onCreateFlow}
+        />
+      )}
+
+      {activeTab === 'DEPARTMENTS' && (
+        <div className="space-y-6">
+          {savedSuccess && (
+            <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs rounded-xl flex items-center gap-2">
+              <Check className="w-4 h-4" />
+              <span>Department Hub updated and audit logged successfully!</span>
+            </div>
+          )}
+
+          {/* Department Hub Header Card */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-indigo-600" />
+                <span>Central Department Master</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-2xl">
+                Single source of truth for organization departments. Rename existing departments or add new ones (e.g., <span className="font-semibold text-slate-700">HR, Quality, Safety, Civil</span>). Sidebar branches, Template Studio, and FMS Pipeline filters update automatically without losing historical data.
+              </p>
+            </div>
+            <button
+              onClick={handleOpenAddDept}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors shrink-0 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Add Department</span>
+            </button>
+          </div>
+
+          {/* Department Master Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+            {/* Table Header Filter Bar */}
+            <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setDeptStatusFilter('ALL')}
+                  className={`px-3 py-1 text-xs rounded-lg font-bold transition-all ${
+                    deptStatusFilter === 'ALL'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  All ({departments.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeptStatusFilter('ACTIVE')}
+                  className={`px-3 py-1 text-xs rounded-lg font-bold transition-all ${
+                    deptStatusFilter === 'ACTIVE'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Active ({departments.filter((d) => !d.isArchived).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeptStatusFilter('ARCHIVED')}
+                  className={`px-3 py-1 text-xs rounded-lg font-bold transition-all ${
+                    deptStatusFilter === 'ARCHIVED'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Archived / Inactive ({departments.filter((d) => d.isArchived).length})
+                </button>
+              </div>
+
+              <div className="text-xs text-slate-500 font-medium">
+                Archived departments are hidden from sidebar branches &amp; template creation.
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4">Department Icon &amp; Name</th>
+                    <th className="py-3 px-4">System Key / Code</th>
+                    <th className="py-3 px-4">Description</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {departments
+                    .filter((d) => {
+                      if (deptStatusFilter === 'ACTIVE') return !d.isArchived;
+                      if (deptStatusFilter === 'ARCHIVED') return d.isArchived;
+                      return true;
+                    })
+                    .map((dept) => (
+                      <tr key={dept.id} className={`hover:bg-slate-50/80 transition-colors ${dept.isArchived ? 'bg-slate-50/40 opacity-75' : ''}`}>
+                        <td className="py-3 px-4 font-bold text-slate-900 flex items-center gap-2.5">
+                          <div className={`p-2 rounded-lg shrink-0 ${dept.isArchived ? 'bg-amber-50' : 'bg-slate-100'}`}>
+                            {getIconComponent(dept.icon)}
+                          </div>
+                          <div>
+                            <div className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                              <span>{dept.name}</span>
+                              {dept.isDefault && (
+                                <span className="text-[10px] px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded font-semibold">
+                                  Baseline
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-400 font-mono">ID: {dept.id}</div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 font-mono font-bold text-indigo-700">
+                          {dept.key}
+                        </td>
+                        <td className="py-3 px-4 text-slate-600">
+                          {dept.description || '—'}
+                        </td>
+                        <td className="py-3 px-4">
+                          {dept.isArchived ? (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 w-fit">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                              <span>Archived / Inactive</span>
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300 flex items-center gap-1 w-fit">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              <span>Active</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => handleOpenEditDept(dept)}
+                              className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 font-bold rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                              title="Rename or edit department details"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              <span>Rename / Edit</span>
+                            </button>
+
+                            <button
+                              onClick={() => handleToggleArchive(dept)}
+                              className={`px-2.5 py-1.5 font-bold rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer ${
+                                dept.isArchived
+                                  ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'
+                                  : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
+                              }`}
+                              title={dept.isArchived ? 'Reactivate department and make visible on sidebar' : 'Archive department and hide from sidebar'}
+                            >
+                              <span>{dept.isArchived ? 'Reactivate' : 'Archive'}</span>
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteDept(dept)}
+                              className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg transition-colors cursor-pointer"
+                              title="Permanently delete department"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Department Add/Edit Modal */}
+          {isDeptModalOpen && (
+            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-200">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <Building2 className="w-5 h-5 text-indigo-600" />
+                    <span>{editingDept ? 'Rename / Edit Department' : 'Add New Department'}</span>
+                  </h3>
+                  <button
+                    onClick={() => setIsDeptModalOpen(false)}
+                    className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {deptError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl font-semibold">
+                    {deptError}
+                  </div>
+                )}
+
+                <form onSubmit={handleSaveDepartment} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Department Name *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Finance & Accounts, Central Store, Quality"
+                      value={deptName}
+                      onChange={(e) => {
+                        setDeptName(e.target.value);
+                        if (!editingDept) {
+                          setDeptKey(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '_'));
+                        }
+                      }}
+                      className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Department System Key / Code
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. ACCOUNTS, STORE, QUALITY"
+                      value={deptKey}
+                      onChange={(e) => setDeptKey(e.target.value.toUpperCase())}
+                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Immutable key used for workflow mappings.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Department Icon
+                    </label>
+                    <select
+                      value={deptIcon}
+                      onChange={(e) => setDeptIcon(e.target.value)}
+                      className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      <option value="Building2">Building / General</option>
+                      <option value="ShoppingCart font-semibold">Shopping Cart (Purchase)</option>
+                      <option value="Warehouse">Warehouse (Store)</option>
+                      <option value="Landmark">Landmark (Finance / Accounts)</option>
+                      <option value="Wrench">Wrench (Plant / Operations)</option>
+                      <option value="Truck">Truck (Logistics)</option>
+                      <option value="Users">Users (HR / Admin)</option>
+                      <option value="FileText">FileText (Contracts)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Description (Optional)
+                    </label>
+                    <textarea
+                      rows={2}
+                      placeholder="Brief overview of department scope and responsibilities..."
+                      value={deptDesc}
+                      onChange={(e) => setDeptDesc(e.target.value)}
+                      className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setIsDeptModalOpen(false)}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-colors shadow-xs cursor-pointer"
+                    >
+                      {editingDept ? 'Save Changes' : 'Create Department'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {activeTab === 'CONFIG' && (
         <form onSubmit={handleSave} className="space-y-6">
@@ -363,7 +777,7 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
             </h3>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+                <thead className="bg-white text-slate-700 font-semibold border-b border-slate-200">
                   <tr>
                     <th className="py-2.5 px-3">Google Sheet Column</th>
                     <th className="py-2.5 px-3">PostgreSQL Table / Column</th>
@@ -394,7 +808,7 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
             </h3>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+                <thead className="bg-white text-slate-700 font-semibold border-b border-slate-200">
                   <tr>
                     <th className="py-2.5 px-3">Google Sheet Column</th>
                     <th className="py-2.5 px-3">PostgreSQL Table / Column</th>
@@ -425,7 +839,7 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
             </h3>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+                <thead className="bg-white text-slate-700 font-semibold border-b border-slate-200">
                   <tr>
                     <th className="py-2.5 px-3">Google Sheet Column</th>
                     <th className="py-2.5 px-3">PostgreSQL Table / Column</th>
