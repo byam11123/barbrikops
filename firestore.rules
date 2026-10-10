@@ -6,39 +6,34 @@ service cloud.firestore {
       return request.auth != null || true; // Allowed for web portal session management
     }
 
-    match /users/{userId} {
-      allow read, write: if isAuthenticated();
-    }
+    // Match all production collections
+    match /users/{userId} { allow read, write: if isAuthenticated(); }
+    match /fmsFlows/{flowId} { allow read, write: if isAuthenticated(); }
+    match /delegationTasks/{taskId} { allow read, write: if isAuthenticated(); }
+    match /checklistItems/{checklistItemId} { allow read, write: if isAuthenticated(); }
+    match /inventoryItems/{itemId} { allow read, write: if isAuthenticated(); }
+    match /inventoryMovements/{movementId} { allow read, write: if isAuthenticated(); }
+    match /noticeBoard/{noticeId} { allow read, write: if isAuthenticated(); }
+    match /auditLogs/{auditId} { allow read, write: if isAuthenticated(); }
+    match /registryConfig/{configId} { allow read, write: if isAuthenticated(); }
+    match /fmsTemplates/{templateId} { allow read, write: if isAuthenticated(); }
+    match /departments/{departmentId} { allow read, write: if isAuthenticated(); }
 
-    match /fmsFlows/{flowId} {
-      allow read, write: if isAuthenticated();
-    }
+    // Match all development collections (dev_*)
+    match /dev_users/{userId} { allow read, write: if isAuthenticated(); }
+    match /dev_fmsFlows/{flowId} { allow read, write: if isAuthenticated(); }
+    match /dev_delegationTasks/{taskId} { allow read, write: if isAuthenticated(); }
+    match /dev_checklistItems/{checklistItemId} { allow read, write: if isAuthenticated(); }
+    match /dev_inventoryItems/{itemId} { allow read, write: if isAuthenticated(); }
+    match /dev_inventoryMovements/{movementId} { allow read, write: if isAuthenticated(); }
+    match /dev_noticeBoard/{noticeId} { allow read, write: if isAuthenticated(); }
+    match /dev_auditLogs/{auditId} { allow read, write: if isAuthenticated(); }
+    match /dev_registryConfig/{configId} { allow read, write: if isAuthenticated(); }
+    match /dev_fmsTemplates/{templateId} { allow read, write: if isAuthenticated(); }
+    match /dev_departments/{departmentId} { allow read, write: if isAuthenticated(); }
 
-    match /delegationTasks/{taskId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    match /checklistItems/{checklistItemId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    match /inventoryItems/{itemId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    match /inventoryMovements/{movementId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    match /noticeBoard/{noticeId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    match /auditLogs/{auditId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    match /registryConfig/{configId} {
+    // General fallback for any other collections or connection test pings
+    match /{collectionName}/{docId} {
       allow read, write: if isAuthenticated();
     }
   }

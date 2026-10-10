@@ -294,6 +294,17 @@ export default function App() {
 
   useEffect(() => {
     loadAllData();
+    storageAdapter.initFirestoreRealtimeSync();
+    const unsubscribe = storageAdapter.subscribe(() => {
+      setFlows(storageAdapter.getFmsFlows());
+      setDelegationTasks(storageAdapter.getDelegationTasks());
+      setChecklistItems(storageAdapter.getChecklistItems());
+      setInventoryItems(storageAdapter.getInventoryItems());
+      setInventoryMovements(storageAdapter.getInventoryMovements());
+      setUsersList(storageAdapter.getUsers());
+      setNoticeBoardItems(storageAdapter.getNoticeBoard());
+    });
+    return () => unsubscribe();
   }, []);
 
   // Global Keyboard Shortcut: Ctrl+K or Cmd+K to open universal search

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { db, testConnection } from './firebase';
-import { collection, doc, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { 
   ChecklistItem, 
   DelegationTask, 
@@ -115,7 +115,27 @@ export const InventoryItemInputSchema = z.object({
   condition: z.enum(['Good', 'Fair', 'Degraded/Damaged', 'Under Repair']),
 });
 
-const STORAGE_KEYS = {
+export function getEnvCollectionName(baseName: string): string {
+  if (typeof window === 'undefined') return baseName;
+  const isDev =
+    window.location.hostname.includes('ais-dev-') ||
+    window.location.hostname === 'localhost' ||
+    Boolean(import.meta.env.DEV);
+
+  return isDev ? `dev_${baseName}` : baseName;
+}
+
+export function getStorageKey(baseKey: string): string {
+  if (typeof window === 'undefined') return baseKey;
+  const isDev =
+    window.location.hostname.includes('ais-dev-') ||
+    window.location.hostname === 'localhost' ||
+    Boolean(import.meta.env.DEV);
+
+  return isDev ? `dev_${baseKey}` : baseKey;
+}
+
+const RAW_STORAGE_KEYS = {
   FMS: 'barbrik_ops_fms_instances_v1',
   DELEGATION: 'barbrik_ops_delegation_tasks_v1',
   CHECKLIST: 'barbrik_ops_checklist_items_v1',
@@ -129,6 +149,13 @@ const STORAGE_KEYS = {
   NOTICE_BOARD: 'barbrik_ops_notice_board_v1',
   AUTH_USER: 'barbrik_ops_auth_user_v1',
 };
+
+const STORAGE_KEYS = new Proxy(RAW_STORAGE_KEYS, {
+  get(target, prop: keyof typeof RAW_STORAGE_KEYS) {
+    const val = target[prop];
+    return val ? getStorageKey(val) : val;
+  }
+});
 
 export function sanitizeForFirestore<T>(obj: T): T {
   if (obj === null || obj === undefined) return null as any;
@@ -149,12 +176,210 @@ export function sanitizeForFirestore<T>(obj: T): T {
 
 class StorageAdapter {
   private auditLogs: AuditLogEntry[] = [];
+  private listeners: Array<() => void> = [];
+  private isSyncInitialized = false;
 
   constructor() {
     this.initStorage();
   }
 
-  private syncToFirestore(collectionName: string, items: any[], idKey: string) {
+  public subscribe(callback: () => void) {
+    this.listeners.push(callback);
+    return () => {
+      this.listeners = this.listeners.filter((cb) => cb !== callback);
+    };
+  }
+
+  private notifyListeners() {
+    this.listeners.forEach((cb) => {
+      try {
+        cb();
+      } catch (e) {
+        // Callback warning
+      }
+    });
+  }
+
+  public initFirestoreRealtimeSync() {
+    if (typeof window === 'undefined' || this.isSyncInitialized) return;
+    this.isSyncInitialized = true;
+
+    const handleSnapshotError = (err: any) => {
+      console.warn('[Firestore Snapshot Listener Notice]:', err?.message || err);
+    };
+
+    try {
+      // 1. Users
+      onSnapshot(
+        collection(db, getEnvCollectionName('users')),
+        (snap) => {
+          if (!snap.empty) {
+            const remoteUsers = snap.docs.map((d) => d.data() as UserProfile);
+            if (remoteUsers.length > 0) {
+              localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(remoteUsers));
+              this.notifyListeners();
+            }
+          }
+        },
+        handleSnapshotError
+      );
+
+      // 2. FMS Workflows
+      onSnapshot(
+        collection(db, getEnvCollectionName('fmsFlows')),
+        (snap) => {
+          if (!snap.empty) {
+            const remoteFlows = snap.docs.map((d) => d.data() as FmsInstance);
+            if (remoteFlows.length > 0) {
+              localStorage.setItem(STORAGE_KEYS.FMS, JSON.stringify(remoteFlows));
+              this.notifyListeners();
+            }
+          }
+        },
+        handleSnapshotError
+      );
+
+      // 3. Delegation Tasks
+      onSnapshot(
+        collection(db, getEnvCollectionName('delegationTasks')),
+        (snap) => {
+          if (!snap.empty) {
+            const remoteDeleg = snap.docs.map((d) => d.data() as DelegationTask);
+            if (remoteDeleg.length > 0) {
+              localStorage.setItem(STORAGE_KEYS.DELEGATION, JSON.stringify(remoteDeleg));
+              this.notifyListeners();
+            }
+          }
+        },
+        handleSnapshotError
+      );
+
+      // 4. Checklist Items
+      onSnapshot(
+        collection(db, getEnvCollectionName('checklistItems')),
+        (snap) => {
+          if (!snap.empty) {
+            const remoteChk = snap.docs.map((d) => d.data() as ChecklistItem);
+            if (remoteChk.length > 0) {
+              localStorage.setItem(STORAGE_KEYS.CHECKLIST, JSON.stringify(remoteChk));
+              this.notifyListeners();
+            }
+          }
+        },
+        handleSnapshotError
+      );
+
+      // 5. Inventory Items
+      onSnapshot(
+        collection(db, getEnvCollectionName('inventoryItems')),
+        (snap) => {
+          if (!snap.empty) {
+            const remoteInv = snap.docs.map((d) => d.data() as InventoryItem);
+            if (remoteInv.length > 0) {
+              localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(remoteInv));
+              this.notifyListeners();
+            }
+          }
+        },
+        handleSnapshotError
+      );
+
+      // 6. Notice Board
+      onSnapshot(
+        collection(db, getEnvCollectionName('noticeBoard')),
+        (snap) => {
+          if (!snap.empty) {
+            const remoteNotice = snap.docs.map((d) => d.data() as NoticeBoardItem);
+            if (remoteNotice.length > 0) {
+              localStorage.setItem(STORAGE_KEYS.NOTICE_BOARD, JSON.stringify(remoteNotice));
+              this.notifyListeners();
+            }
+          }
+        },
+        handleSnapshotError
+      );
+
+      // 7. FMS Templates
+      onSnapshot(
+        collection(db, getEnvCollectionName('fmsTemplates')),
+        (snap) => {
+          if (!snap.empty) {
+            const remoteTemplates = snap.docs.map((d) => d.data() as FmsTemplateDefinition);
+            if (remoteTemplates.length > 0) {
+              localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(remoteTemplates));
+              this.notifyListeners();
+            }
+          }
+        },
+        handleSnapshotError
+      );
+
+      // 8. Department Hub
+      onSnapshot(
+        collection(db, getEnvCollectionName('departments')),
+        (snap) => {
+          if (!snap.empty) {
+            const remoteDepts = snap.docs.map((d) => d.data() as DepartmentDefinition);
+            if (remoteDepts.length > 0) {
+              localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, JSON.stringify(remoteDepts));
+              this.notifyListeners();
+            }
+          }
+        },
+        handleSnapshotError
+      );
+
+      // 9. Inventory Movements
+      onSnapshot(
+        collection(db, getEnvCollectionName('inventoryMovements')),
+        (snap) => {
+          if (!snap.empty) {
+            const remoteMov = snap.docs.map((d) => d.data() as InventoryMovement);
+            if (remoteMov.length > 0) {
+              localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(remoteMov));
+              this.notifyListeners();
+            }
+          }
+        },
+        handleSnapshotError
+      );
+
+      // 10. Central Registry Config
+      onSnapshot(
+        collection(db, getEnvCollectionName('registryConfig')),
+        (snap) => {
+          if (!snap.empty) {
+            const remoteCfg = snap.docs.map((d) => d.data() as CentralRegistryConfig);
+            if (remoteCfg.length > 0) {
+              localStorage.setItem(STORAGE_KEYS.REGISTRY, JSON.stringify(remoteCfg[0]));
+              this.notifyListeners();
+            }
+          }
+        },
+        handleSnapshotError
+      );
+
+      // 11. System Audit Trail
+      onSnapshot(
+        collection(db, getEnvCollectionName('auditLogs')),
+        (snap) => {
+          if (!snap.empty) {
+            const remoteAudit = snap.docs.map((d) => d.data() as AuditLogEntry);
+            if (remoteAudit.length > 0) {
+              localStorage.setItem(STORAGE_KEYS.AUDIT, JSON.stringify(remoteAudit));
+              this.notifyListeners();
+            }
+          }
+        },
+        handleSnapshotError
+      );
+    } catch (e) {
+      console.warn('Real-time Firestore listeners initialization failed:', e);
+    }
+  }
+
+  private syncToFirestore(baseCollectionName: string, items: any[], idKey: string) {
+    const collectionName = getEnvCollectionName(baseCollectionName);
     try {
       const currentIds = new Set(
         items.map((item) => String(item[idKey] || item.id || item.flowId || item.taskId || item.itemId || item.userId || item.auditId)).filter(Boolean)
@@ -185,7 +410,8 @@ class StorageAdapter {
     }
   }
 
-  public deleteFromFirestore(collectionName: string, id: string) {
+  public deleteFromFirestore(baseCollectionName: string, id: string) {
+    const collectionName = getEnvCollectionName(baseCollectionName);
     try {
       deleteDoc(doc(db, collectionName, id)).catch((err) => {
         console.warn(`[Firestore Delete Error] ${collectionName}/${id}:`, err?.message || err);
@@ -204,7 +430,7 @@ class StorageAdapter {
       }
 
       // 1. Users
-      const usersSnap = await getDocs(collection(db, 'users'));
+      const usersSnap = await getDocs(collection(db, getEnvCollectionName('users')));
       if (!usersSnap.empty) {
         const remoteUsers = usersSnap.docs.map((d) => d.data() as UserProfile);
         if (remoteUsers.length > 0) {
@@ -216,7 +442,7 @@ class StorageAdapter {
       }
 
       // 2. FMS Workflows
-      const fmsSnap = await getDocs(collection(db, 'fmsFlows'));
+      const fmsSnap = await getDocs(collection(db, getEnvCollectionName('fmsFlows')));
       if (!fmsSnap.empty) {
         const remoteFlows = fmsSnap.docs.map((d) => d.data() as FmsInstance);
         if (remoteFlows.length > 0) {
@@ -228,7 +454,7 @@ class StorageAdapter {
       }
 
       // 3. Delegation Tasks
-      const delegSnap = await getDocs(collection(db, 'delegationTasks'));
+      const delegSnap = await getDocs(collection(db, getEnvCollectionName('delegationTasks')));
       if (!delegSnap.empty) {
         const remoteDeleg = delegSnap.docs.map((d) => d.data() as DelegationTask);
         if (remoteDeleg.length > 0) {
@@ -240,7 +466,7 @@ class StorageAdapter {
       }
 
       // 4. Checklist Items
-      const chkSnap = await getDocs(collection(db, 'checklistItems'));
+      const chkSnap = await getDocs(collection(db, getEnvCollectionName('checklistItems')));
       if (!chkSnap.empty) {
         const remoteChk = chkSnap.docs.map((d) => d.data() as ChecklistItem);
         if (remoteChk.length > 0) {
@@ -252,7 +478,7 @@ class StorageAdapter {
       }
 
       // 5. Inventory Items
-      const invSnap = await getDocs(collection(db, 'inventoryItems'));
+      const invSnap = await getDocs(collection(db, getEnvCollectionName('inventoryItems')));
       if (!invSnap.empty) {
         const remoteInv = invSnap.docs.map((d) => d.data() as InventoryItem);
         if (remoteInv.length > 0) {
@@ -264,7 +490,7 @@ class StorageAdapter {
       }
 
       // 6. Notice Board
-      const noticeSnap = await getDocs(collection(db, 'noticeBoard'));
+      const noticeSnap = await getDocs(collection(db, getEnvCollectionName('noticeBoard')));
       if (!noticeSnap.empty) {
         const remoteNotice = noticeSnap.docs.map((d) => d.data() as NoticeBoardItem);
         if (remoteNotice.length > 0) {
@@ -273,6 +499,74 @@ class StorageAdapter {
       } else {
         const localNotices = this.getNoticeBoard();
         this.syncToFirestore('noticeBoard', localNotices, 'id');
+      }
+
+      // 7. Custom FMS Templates
+      const tplSnap = await getDocs(collection(db, getEnvCollectionName('fmsTemplates')));
+      if (!tplSnap.empty) {
+        const remoteTemplates = tplSnap.docs.map((d) => d.data() as FmsTemplateDefinition);
+        if (remoteTemplates.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(remoteTemplates));
+        }
+      } else {
+        const localTemplates = this.getFmsTemplates();
+        if (localTemplates.length > 0) {
+          this.syncToFirestore('fmsTemplates', localTemplates, 'id');
+        }
+      }
+
+      // 8. Department Hub
+      const deptSnap = await getDocs(collection(db, getEnvCollectionName('departments')));
+      if (!deptSnap.empty) {
+        const remoteDepts = deptSnap.docs.map((d) => d.data() as DepartmentDefinition);
+        if (remoteDepts.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, JSON.stringify(remoteDepts));
+        }
+      } else {
+        const localDepts = this.getDepartments();
+        if (localDepts.length > 0) {
+          this.syncToFirestore('departments', localDepts, 'id');
+        }
+      }
+
+      // 9. Inventory Movements
+      const movSnap = await getDocs(collection(db, getEnvCollectionName('inventoryMovements')));
+      if (!movSnap.empty) {
+        const remoteMov = movSnap.docs.map((d) => d.data() as InventoryMovement);
+        if (remoteMov.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(remoteMov));
+        }
+      } else {
+        const localMov = this.getInventoryMovements();
+        if (localMov.length > 0) {
+          this.syncToFirestore('inventoryMovements', localMov, 'movementId');
+        }
+      }
+
+      // 10. Central Registry Config
+      const cfgSnap = await getDocs(collection(db, getEnvCollectionName('registryConfig')));
+      if (!cfgSnap.empty) {
+        const remoteCfg = cfgSnap.docs.map((d) => d.data() as CentralRegistryConfig);
+        if (remoteCfg.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.REGISTRY, JSON.stringify(remoteCfg[0]));
+        }
+      } else {
+        const localCfg = this.getRegistryConfig();
+        this.syncToFirestore('registryConfig', [{ ...localCfg, id: 'main_config' }], 'id');
+      }
+
+      // 11. Audit Logs
+      const auditSnap = await getDocs(collection(db, getEnvCollectionName('auditLogs')));
+      if (!auditSnap.empty) {
+        const remoteAudit = auditSnap.docs.map((d) => d.data() as AuditLogEntry);
+        if (remoteAudit.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.AUDIT, JSON.stringify(remoteAudit));
+        }
+      } else {
+        const localAudit = this.getAuditLogs();
+        if (localAudit.length > 0) {
+          this.syncToFirestore('auditLogs', localAudit, 'auditId');
+        }
       }
 
       return true;
@@ -583,6 +877,7 @@ class StorageAdapter {
     const normalized = flows.map((f) => this.normalizeFmsFlow(f));
     localStorage.setItem(STORAGE_KEYS.FMS, JSON.stringify(normalized));
     this.syncToFirestore('fmsFlows', normalized, 'flowId');
+    this.notifyListeners();
   }
 
   // Delegation Operations
@@ -600,6 +895,7 @@ class StorageAdapter {
     if (typeof window === 'undefined') return;
     localStorage.setItem(STORAGE_KEYS.DELEGATION, JSON.stringify(tasks));
     this.syncToFirestore('delegationTasks', tasks, 'taskId');
+    this.notifyListeners();
   }
 
   // Checklist Operations
@@ -617,6 +913,7 @@ class StorageAdapter {
     if (typeof window === 'undefined') return;
     localStorage.setItem(STORAGE_KEYS.CHECKLIST, JSON.stringify(items));
     this.syncToFirestore('checklistItems', items, 'id');
+    this.notifyListeners();
   }
 
   // IMS Inventory Operations
@@ -634,6 +931,7 @@ class StorageAdapter {
     if (typeof window === 'undefined') return;
     localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(items));
     this.syncToFirestore('inventoryItems', items, 'itemId');
+    this.notifyListeners();
   }
 
   public getInventoryMovements(): InventoryMovement[] {
@@ -650,6 +948,7 @@ class StorageAdapter {
     if (typeof window === 'undefined') return;
     localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(movements));
     this.syncToFirestore('inventoryMovements', movements, 'movementId');
+    this.notifyListeners();
   }
 
   // Central Registry Config
@@ -666,6 +965,8 @@ class StorageAdapter {
   public saveRegistryConfig(config: CentralRegistryConfig) {
     if (typeof window === 'undefined') return;
     localStorage.setItem(STORAGE_KEYS.REGISTRY, JSON.stringify(config));
+    this.syncToFirestore('registryConfig', [{ ...config, id: 'main_config' }], 'id');
+    this.notifyListeners();
     this.logAudit({
       userId: 'ADMIN',
       userName: 'Central Administrator',
@@ -773,6 +1074,8 @@ class StorageAdapter {
     );
     const updated = [template, ...filtered];
     localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(updated));
+    this.syncToFirestore('fmsTemplates', updated, 'id');
+    this.notifyListeners();
     this.logAudit({
       userId: 'ADMIN',
       userName: 'Process Administrator',
@@ -797,6 +1100,8 @@ class StorageAdapter {
         t.id !== `builtin_${cleanId}`
     );
     localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(updated));
+    this.syncToFirestore('fmsTemplates', updated, 'id');
+    this.notifyListeners();
     this.logAudit({
       userId: 'ADMIN',
       userName: 'Process Administrator',
@@ -836,6 +1141,8 @@ class StorageAdapter {
   public saveDepartments(departments: DepartmentDefinition[]) {
     if (typeof window === 'undefined') return;
     localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, JSON.stringify(departments));
+    this.syncToFirestore('departments', departments, 'id');
+    this.notifyListeners();
     this.logAudit({
       userId: 'ADMIN',
       userName: 'Central Administrator',
@@ -884,7 +1191,7 @@ class StorageAdapter {
       }
       return d;
     });
-    localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, JSON.stringify(updated));
+    this.saveDepartments(updated);
   }
 
   // Users Management
@@ -914,6 +1221,7 @@ class StorageAdapter {
     if (typeof window === 'undefined') return;
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
     this.syncToFirestore('users', users, 'userId');
+    this.notifyListeners();
   }
 
   // Notice Board Management
@@ -935,6 +1243,7 @@ class StorageAdapter {
     if (typeof window === 'undefined') return;
     localStorage.setItem(STORAGE_KEYS.NOTICE_BOARD, JSON.stringify(notices));
     this.syncToFirestore('noticeBoard', notices, 'id');
+    this.notifyListeners();
   }
 
   // Active Authenticated User Session
