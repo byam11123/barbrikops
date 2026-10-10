@@ -56,6 +56,7 @@ interface MobileDrawerProps {
   onSelectDepartmentFms?: (deptKey: string | null) => void;
   onOpenQuickAction?: () => void;
   onRefresh?: () => void;
+  usersList?: UserProfile[];
 }
 
 export const MobileDrawer: React.FC<MobileDrawerProps> = ({
@@ -75,8 +76,10 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
   onSelectDepartmentFms,
   onOpenQuickAction,
   onRefresh,
+  usersList,
 }) => {
   const [collapsedDepts, setCollapsedDepts] = useState<Record<string, boolean>>({});
+  const availableUsers = usersList && usersList.length > 0 ? usersList : USERS;
 
   if (!isOpen) return null;
 
@@ -277,12 +280,12 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                   aria-label="Active Staff Profile"
                   value={currentUser.userId}
                   onChange={(e) => {
-                    const found = USERS.find((u) => u.userId === e.target.value);
+                    const found = availableUsers.find((u) => u.userId === e.target.value);
                     if (found) onUserChange(found);
                   }}
                   className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-2 font-semibold text-slate-800"
                 >
-                  {USERS.map((user) => (
+                  {availableUsers.map((user) => (
                     <option key={user.userId} value={user.userId}>
                       {user.name} ({user.departmentName})
                     </option>

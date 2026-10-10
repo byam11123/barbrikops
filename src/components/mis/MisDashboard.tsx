@@ -849,79 +849,44 @@ export const MisDashboard: React.FC<MisDashboardProps> = ({
         </div>
       </div>
 
-      {/* BOTTOM ROW: ATTENTION RADAR & QUICK ACTIONS */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5 flex flex-col justify-between">
-        <div>
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-600" />
-              <h3 className="font-extrabold text-slate-900 text-sm">Attention Radar</h3>
-            </div>
-            <span className="text-[11px] text-slate-400 font-semibold">{bottlenecks.length} flagged</span>
+      {/* BOTTOM ROW: QUICK MODULE NAVIGATION */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-indigo-600" />
+            <h3 className="font-extrabold text-slate-900 text-sm">Quick Module Access</h3>
           </div>
-
-          <div className="divide-y divide-slate-100 mt-2">
-            {bottlenecks.length > 0 ? (
-              bottlenecks.slice(0, 5).map((b, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => onNavigateTab(b.actionTab)}
-                  className="py-3 flex items-center justify-between hover:bg-slate-50 px-2 rounded-xl cursor-pointer transition-colors"
-                >
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded uppercase ${
-                          b.severity === 'HIGH'
-                            ? 'bg-rose-100 text-rose-800'
-                            : 'bg-amber-100 text-amber-800'
-                        }`}
-                      >
-                        {b.severity}
-                      </span>
-                      <p className="text-xs font-bold text-slate-900">{b.title}</p>
-                    </div>
-                    <p className="text-[11px] text-slate-500">{b.subtitle}</p>
-                  </div>
-                  <ArrowUpRight className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                </div>
-              ))
-            ) : (
-              <div className="py-6 text-center text-slate-500 text-xs">
-                All SLAs on track! No bottlenecks flagged.
-              </div>
-            )}
-          </div>
+          <span className="text-[11px] text-slate-400 font-semibold">Active Portal Shortcuts</span>
         </div>
 
         {/* Quick Module Navigation Shortcuts */}
-        <div className="pt-4 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
           <button
             onClick={() => onNavigateTab('checklist')}
-            className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold transition-all flex items-center justify-between cursor-pointer"
+            className="p-3 rounded-xl bg-slate-50 hover:bg-indigo-50/50 border border-slate-200 hover:border-indigo-200 text-slate-700 font-bold transition-all flex items-center justify-between cursor-pointer group"
           >
-            <span>Checklists</span>
+            <span className="group-hover:text-indigo-700">Checklists</span>
             <span className="font-mono text-indigo-600 font-black">{totalChecklists}</span>
           </button>
           <button
             onClick={() => onNavigateTab('delegation')}
-            className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold transition-all flex items-center justify-between cursor-pointer"
+            className="p-3 rounded-xl bg-slate-50 hover:bg-amber-50/50 border border-slate-200 hover:border-amber-200 text-slate-700 font-bold transition-all flex items-center justify-between cursor-pointer group"
           >
-            <span>Delegation</span>
+            <span className="group-hover:text-amber-700">Delegation</span>
             <span className="font-mono text-amber-600 font-black">{totalTasks}</span>
           </button>
           <button
             onClick={() => onNavigateTab('fms')}
-            className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold transition-all flex items-center justify-between cursor-pointer"
+            className="p-3 rounded-xl bg-slate-50 hover:bg-blue-50/50 border border-slate-200 hover:border-blue-200 text-slate-700 font-bold transition-all flex items-center justify-between cursor-pointer group"
           >
-            <span>FMS Pipeline</span>
+            <span className="group-hover:text-blue-700">FMS Pipeline</span>
             <span className="font-mono text-blue-600 font-black">{activeFlows.length}</span>
           </button>
           <button
             onClick={() => onNavigateTab('ims')}
-            className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold transition-all flex items-center justify-between cursor-pointer"
+            className="p-3 rounded-xl bg-slate-50 hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-200 text-slate-700 font-bold transition-all flex items-center justify-between cursor-pointer group"
           >
-            <span>IMS Store</span>
+            <span className="group-hover:text-emerald-700">IMS Store</span>
             <span className="font-mono text-emerald-600 font-black">{inventoryItems.length}</span>
           </button>
         </div>

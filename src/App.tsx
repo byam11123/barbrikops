@@ -118,6 +118,11 @@ export default function App() {
   const handleUpdateUsersList = (updatedUsers: UserProfile[]) => {
     setUsersList(updatedUsers);
     storageAdapter.saveUsers(updatedUsers);
+    const matchingCurrentUser = updatedUsers.find((u) => u.userId === currentUser.userId);
+    if (matchingCurrentUser) {
+      setCurrentUser(matchingCurrentUser);
+      storageAdapter.saveAuthUser(matchingCurrentUser);
+    }
   };
 
   const handleUpdateNoticeBoard = (updatedNotices: NoticeBoardItem[]) => {
@@ -264,7 +269,7 @@ export default function App() {
     showToast(`Nudge alert issued by ${currentUser.name}! Assignee notified.`);
   };
 
-  const loadAllData = () => {
+  const loadAllData = async () => {
     setFlows(storageAdapter.getFmsFlows());
     setDelegationTasks(storageAdapter.getDelegationTasks());
     setChecklistItems(storageAdapter.getChecklistItems());
@@ -272,6 +277,19 @@ export default function App() {
     setInventoryMovements(storageAdapter.getInventoryMovements());
     setRegistryConfig(storageAdapter.getRegistryConfig());
     setAuditLogs(storageAdapter.getAuditLogs());
+    setUsersList(storageAdapter.getUsers());
+
+    // Asynchronous Firestore sync
+    const synced = await storageAdapter.loadFromFirestore();
+    if (synced) {
+      setFlows(storageAdapter.getFmsFlows());
+      setDelegationTasks(storageAdapter.getDelegationTasks());
+      setChecklistItems(storageAdapter.getChecklistItems());
+      setInventoryItems(storageAdapter.getInventoryItems());
+      setInventoryMovements(storageAdapter.getInventoryMovements());
+      setUsersList(storageAdapter.getUsers());
+      setNoticeBoardItems(storageAdapter.getNoticeBoard());
+    }
   };
 
   useEffect(() => {
@@ -319,6 +337,14 @@ export default function App() {
         setActiveTab('summary');
       } else if (hasModulePermission(currentUser, 'mis', 'view')) {
         setActiveTab('mis');
+      } else if (hasModulePermission(currentUser, 'delegation', 'view')) {
+        setActiveTab('delegation');
+      } else if (hasModulePermission(currentUser, 'checklist', 'view')) {
+        setActiveTab('checklist');
+      } else if (hasModulePermission(currentUser, 'fms', 'view')) {
+        setActiveTab('fms');
+      } else if (hasModulePermission(currentUser, 'ims', 'view')) {
+        setActiveTab('ims');
       } else {
         setActiveTab('profile');
       }
@@ -327,28 +353,61 @@ export default function App() {
     setActiveTab(tab);
   };
 
+  // Real-time permission guard: if currentUser permissions change and current activeTab is revoked, redirect
+  useEffect(() => {
+    if (isSuperAdmin) return;
+    if (activeTab === 'profile') return;
+    if (activeTab === 'super-admin') {
+      setActiveTab('profile');
+      return;
+    }
+    if (!hasModulePermission(currentUser, activeTab, 'view')) {
+      if (hasModulePermission(currentUser, 'summary', 'view')) {
+        setActiveTab('summary');
+      } else if (hasModulePermission(currentUser, 'mis', 'view')) {
+        setActiveTab('mis');
+      } else if (hasModulePermission(currentUser, 'delegation', 'view')) {
+        setActiveTab('delegation');
+      } else if (hasModulePermission(currentUser, 'checklist', 'view')) {
+        setActiveTab('checklist');
+      } else if (hasModulePermission(currentUser, 'fms', 'view')) {
+        setActiveTab('fms');
+      } else if (hasModulePermission(currentUser, 'ims', 'view')) {
+        setActiveTab('ims');
+      } else {
+        setActiveTab('profile');
+      }
+    }
+  }, [currentUser, activeTab, isSuperAdmin]);
+
   const handleUserChange = (newUser: UserProfile) => {
-    setCurrentUser(newUser);
-    const newIsSuper = isUserSuperAdmin(newUser);
+    const latestUser = usersList.find((u) => u.userId === newUser.userId) || newUser;
+    setCurrentUser(latestUser);
+    storageAdapter.saveAuthUser(latestUser);
+    const newIsSuper = isUserSuperAdmin(latestUser);
     if (!newIsSuper) {
       setViewScope('USER_ONLY');
       setPcDeskActive(false);
       setActiveTab((prev) => {
         if (prev === 'profile') return prev;
-        if (hasModulePermission(newUser, prev, 'view')) return prev;
-        if (hasModulePermission(newUser, 'summary', 'view')) return 'summary';
-        if (hasModulePermission(newUser, 'mis', 'view')) return 'mis';
+        if (hasModulePermission(latestUser, prev, 'view')) return prev;
+        if (hasModulePermission(latestUser, 'summary', 'view')) return 'summary';
+        if (hasModulePermission(latestUser, 'mis', 'view')) return 'mis';
+        if (hasModulePermission(latestUser, 'delegation', 'view')) return 'delegation';
+        if (hasModulePermission(latestUser, 'checklist', 'view')) return 'checklist';
+        if (hasModulePermission(latestUser, 'fms', 'view')) return 'fms';
+        if (hasModulePermission(latestUser, 'ims', 'view')) return 'ims';
         return 'profile';
       });
-      showToast(`Switched active profile to ${newUser.name} (${newUser.role})`);
+      showToast(`Switched active profile to ${latestUser.name} (${latestUser.role})`);
     } else {
-      const isPc = newUser.role.toLowerCase().includes('process coordinator') || newUser.name.toLowerCase().includes('ritu sahu');
+      const isPc = latestUser.role.toLowerCase().includes('process coordinator') || latestUser.name.toLowerCase().includes('ritu sahu');
       setPcDeskActive(isPc);
       if (isPc) {
         setViewScope('ALL_ORG');
-        showToast(`Switched active profile to ${newUser.name} (${newUser.role}). Scope automatically expanded to view ALL user data across all departments!`);
+        showToast(`Switched active profile to ${latestUser.name} (${latestUser.role}). Scope automatically expanded to view ALL user data across all departments!`);
       } else {
-        showToast(`Switched active profile to ${newUser.name} (${newUser.role})`);
+        showToast(`Switched active profile to ${latestUser.name} (${latestUser.role})`);
       }
     }
   };
@@ -1147,9 +1206,9 @@ export default function App() {
       {/* Header with scope toggle and user switcher */}
       <Header
         currentUser={currentUser}
+        usersList={usersList}
         onUserChange={(newUser) => {
-          setCurrentUser(newUser);
-          storageAdapter.saveAuthUser(newUser);
+          handleUserChange(newUser);
           const deptName = (newUser.departmentName || newUser.role || '').toUpperCase();
           if (deptName.includes('PURCHASE')) {
             setSelectedFmsDepartment('PURCHASE');
@@ -1477,6 +1536,7 @@ export default function App() {
           }
         }}
         currentUser={currentUser}
+        usersList={usersList}
         onUserChange={handleUserChange}
         viewScope={isSuperAdmin ? viewScope : 'USER_ONLY'}
         onToggleScope={handleToggleScope}

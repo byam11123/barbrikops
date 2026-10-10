@@ -37,6 +37,7 @@ interface HeaderProps {
   onOpenSuperAdmin?: () => void;
   onLogout?: () => void;
   onOpenGlobalSearch?: () => void;
+  usersList?: UserProfile[];
 }
 
 export function getDynamicGreetingHeader(name: string): string {
@@ -67,8 +68,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSuperAdmin,
   onLogout,
   onOpenGlobalSearch,
+  usersList,
 }) => {
   const isSuperAdmin = isUserSuperAdmin(currentUser);
+  const availableUsers = usersList && usersList.length > 0 ? usersList : USERS;
 
   return (
     <header className="h-16 border-b border-slate-200 bg-white sticky top-0 z-30 flex items-center justify-between px-3 sm:px-6 shadow-xs">
@@ -215,12 +218,12 @@ export const Header: React.FC<HeaderProps> = ({
               aria-label="Active Staff Profile"
               value={currentUser.userId}
               onChange={(e) => {
-                const found = USERS.find((u) => u.userId === e.target.value);
+                const found = availableUsers.find((u) => u.userId === e.target.value);
                 if (found) onUserChange(found);
               }}
               className="text-[11px] bg-slate-50 border border-slate-200 rounded-lg py-1 px-1.5 font-bold text-slate-800 max-w-[85px] truncate"
             >
-              {USERS.map((user) => (
+              {availableUsers.map((user) => (
                 <option key={user.userId} value={user.userId}>
                   {user.name.split(' ')[0]} ({user.role.slice(0, 8)})
                 </option>
@@ -271,12 +274,12 @@ export const Header: React.FC<HeaderProps> = ({
                 aria-label="Active Staff Profile"
                 value={currentUser.userId}
                 onChange={(e) => {
-                  const found = USERS.find((u) => u.userId === e.target.value);
+                  const found = availableUsers.find((u) => u.userId === e.target.value);
                   if (found) onUserChange(found);
                 }}
                 className="text-xs bg-slate-50 border border-slate-300 rounded-lg py-1.5 px-2 font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer max-w-[150px] truncate"
               >
-                {USERS.map((user) => (
+                {availableUsers.map((user) => (
                   <option key={user.userId} value={user.userId}>
                     {user.name} ({user.departmentName})
                   </option>

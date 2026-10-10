@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { db, testConnection } from './firebase';
+import { collection, doc, getDocs, setDoc } from 'firebase/firestore';
 import { 
   ChecklistItem, 
   DelegationTask, 
@@ -133,6 +135,78 @@ class StorageAdapter {
 
   constructor() {
     this.initStorage();
+  }
+
+  private syncToFirestore(collectionName: string, items: any[], idKey: string) {
+    try {
+      for (const item of items) {
+        const id = item[idKey] || item.id || item.flowId || item.taskId || item.itemId || item.userId || item.auditId;
+        if (id) {
+          setDoc(doc(db, collectionName, String(id)), item, { merge: true }).catch(() => {});
+        }
+      }
+    } catch (err) {
+      // Background sync warning
+    }
+  }
+
+  public async loadFromFirestore() {
+    try {
+      const isConnected = await testConnection();
+      if (!isConnected) return false;
+
+      const usersSnap = await getDocs(collection(db, 'users'));
+      if (!usersSnap.empty) {
+        const remoteUsers = usersSnap.docs.map((d) => d.data() as UserProfile);
+        if (remoteUsers.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(remoteUsers));
+        }
+      }
+
+      const fmsSnap = await getDocs(collection(db, 'fmsFlows'));
+      if (!fmsSnap.empty) {
+        const remoteFlows = fmsSnap.docs.map((d) => d.data() as FmsInstance);
+        if (remoteFlows.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.FMS, JSON.stringify(remoteFlows));
+        }
+      }
+
+      const delegSnap = await getDocs(collection(db, 'delegationTasks'));
+      if (!delegSnap.empty) {
+        const remoteDeleg = delegSnap.docs.map((d) => d.data() as DelegationTask);
+        if (remoteDeleg.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.DELEGATION, JSON.stringify(remoteDeleg));
+        }
+      }
+
+      const chkSnap = await getDocs(collection(db, 'checklistItems'));
+      if (!chkSnap.empty) {
+        const remoteChk = chkSnap.docs.map((d) => d.data() as ChecklistItem);
+        if (remoteChk.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.CHECKLIST, JSON.stringify(remoteChk));
+        }
+      }
+
+      const invSnap = await getDocs(collection(db, 'inventoryItems'));
+      if (!invSnap.empty) {
+        const remoteInv = invSnap.docs.map((d) => d.data() as InventoryItem);
+        if (remoteInv.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(remoteInv));
+        }
+      }
+
+      const noticeSnap = await getDocs(collection(db, 'noticeBoard'));
+      if (!noticeSnap.empty) {
+        const remoteNotice = noticeSnap.docs.map((d) => d.data() as NoticeBoardItem);
+        if (remoteNotice.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.NOTICE_BOARD, JSON.stringify(remoteNotice));
+        }
+      }
+
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   private initStorage() {
@@ -434,6 +508,7 @@ class StorageAdapter {
     if (typeof window === 'undefined') return;
     const normalized = flows.map((f) => this.normalizeFmsFlow(f));
     localStorage.setItem(STORAGE_KEYS.FMS, JSON.stringify(normalized));
+    this.syncToFirestore('fmsFlows', normalized, 'flowId');
   }
 
   // Delegation Operations
@@ -450,6 +525,7 @@ class StorageAdapter {
   public saveDelegationTasks(tasks: DelegationTask[]) {
     if (typeof window === 'undefined') return;
     localStorage.setItem(STORAGE_KEYS.DELEGATION, JSON.stringify(tasks));
+    this.syncToFirestore('delegationTasks', tasks, 'taskId');
   }
 
   // Checklist Operations
@@ -466,6 +542,7 @@ class StorageAdapter {
   public saveChecklistItems(items: ChecklistItem[]) {
     if (typeof window === 'undefined') return;
     localStorage.setItem(STORAGE_KEYS.CHECKLIST, JSON.stringify(items));
+    this.syncToFirestore('checklistItems', items, 'id');
   }
 
   // IMS Inventory Operations
@@ -482,6 +559,7 @@ class StorageAdapter {
   public saveInventoryItems(items: InventoryItem[]) {
     if (typeof window === 'undefined') return;
     localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(items));
+    this.syncToFirestore('inventoryItems', items, 'itemId');
   }
 
   public getInventoryMovements(): InventoryMovement[] {
@@ -497,6 +575,7 @@ class StorageAdapter {
   public saveInventoryMovements(movements: InventoryMovement[]) {
     if (typeof window === 'undefined') return;
     localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(movements));
+    this.syncToFirestore('inventoryMovements', movements, 'movementId');
   }
 
   // Central Registry Config
@@ -760,6 +839,7 @@ class StorageAdapter {
   public saveUsers(users: UserProfile[]) {
     if (typeof window === 'undefined') return;
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    this.syncToFirestore('users', users, 'userId');
   }
 
   // Notice Board Management
@@ -780,6 +860,7 @@ class StorageAdapter {
   public saveNoticeBoard(notices: NoticeBoardItem[]) {
     if (typeof window === 'undefined') return;
     localStorage.setItem(STORAGE_KEYS.NOTICE_BOARD, JSON.stringify(notices));
+    this.syncToFirestore('noticeBoard', notices, 'id');
   }
 
   // Active Authenticated User Session

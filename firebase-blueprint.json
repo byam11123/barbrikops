@@ -1,0 +1,134 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile with role and custom permissions",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "username": { "type": "string" },
+        "role": { "type": "string" },
+        "systemRole": { "type": "string" },
+        "departmentId": { "type": "string" },
+        "departmentName": { "type": "string" },
+        "email": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["userId", "name", "role", "systemRole", "departmentId", "departmentName"]
+    },
+    "FmsInstance": {
+      "title": "FmsInstance",
+      "description": "FMS workflow instance tracking stages and status",
+      "type": "object",
+      "properties": {
+        "flowId": { "type": "string" },
+        "flowType": { "type": "string" },
+        "title": { "type": "string" },
+        "departmentId": { "type": "string" },
+        "currentStageIndex": { "type": "number" },
+        "status": { "type": "string" },
+        "initiatedBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["flowId", "flowType", "title", "departmentId", "status", "initiatedBy"]
+    },
+    "DelegationTask": {
+      "title": "DelegationTask",
+      "description": "Delegated task item assigned to staff",
+      "type": "object",
+      "properties": {
+        "taskId": { "type": "string" },
+        "uniqueNo": { "type": "string" },
+        "taskName": { "type": "string" },
+        "assignedTo": { "type": "string" },
+        "status": { "type": "string" },
+        "department": { "type": "string" }
+      },
+      "required": ["taskId", "taskName", "assignedTo", "status", "department"]
+    },
+    "ChecklistItem": {
+      "title": "ChecklistItem",
+      "description": "Checklist recurring task item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "taskId": { "type": "string" },
+        "name": { "type": "string" },
+        "department": { "type": "string" },
+        "frequency": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "taskId", "name", "department", "status"]
+    },
+    "InventoryItem": {
+      "title": "InventoryItem",
+      "description": "Inventory stock item in IMS",
+      "type": "object",
+      "properties": {
+        "itemId": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "currentStock": { "type": "number" },
+        "unit": { "type": "string" }
+      },
+      "required": ["itemId", "name", "category", "currentStock", "unit"]
+    },
+    "NoticeBoardItem": {
+      "title": "NoticeBoardItem",
+      "description": "Notice board message item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "content": { "type": "string" },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "title", "category", "content", "date"]
+    },
+    "AuditLogEntry": {
+      "title": "AuditLogEntry",
+      "description": "Audit trail log entry",
+      "type": "object",
+      "properties": {
+        "auditId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "action": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["auditId", "userId", "userName", "action", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Registered staff user profiles"
+    },
+    "/fmsFlows/{flowId}": {
+      "schema": "FmsInstance",
+      "description": "Workflow management system instances"
+    },
+    "/delegationTasks/{taskId}": {
+      "schema": "DelegationTask",
+      "description": "Delegated operational tasks"
+    },
+    "/checklistItems/{checklistItemId}": {
+      "schema": "ChecklistItem",
+      "description": "Operational recurring checklist items"
+    },
+    "/inventoryItems/{itemId}": {
+      "schema": "InventoryItem",
+      "description": "Inventory stock items"
+    },
+    "/noticeBoard/{noticeId}": {
+      "schema": "NoticeBoardItem",
+      "description": "Organization notice board items"
+    },
+    "/auditLogs/{auditId}": {
+      "schema": "AuditLogEntry",
+      "description": "System audit trail logs"
+    }
+  }
+}
