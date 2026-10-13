@@ -24,10 +24,18 @@ import {
   Users,
   FileText,
   X,
-  GitBranch
+  GitBranch,
+  Bell,
+  Send,
+  Clock,
+  Coffee,
+  CalendarDays,
+  Timer
 } from 'lucide-react';
-import { CentralRegistryConfig, DepartmentDefinition } from '../../types';
+import { CentralRegistryConfig, DepartmentDefinition, UserProfile, isUserSuperAdmin } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
+import { downloadCentralRegistryExcel } from '../../services/centralRegistryExcelService';
+import { addWorkingSlaHours, formatToStandardDateTime, calculateWorkingHoursDelay, DEFAULT_WORK_SHIFT_CONFIG } from '../../services/workShiftService';
 import { FmsMasterCatalogView } from '../fms/FmsMasterCatalogView';
 import { 
   GENERATED_POSTGRES_SCHEMA, 
@@ -38,6 +46,7 @@ import {
 
 interface CentralRegistryViewProps {
   config: CentralRegistryConfig;
+  currentUser?: UserProfile;
   onSaveConfig: (config: CentralRegistryConfig) => void;
   onResetSeedData: () => void;
   onOpenTemplateStudio?: (templateKey?: string) => void;
@@ -46,15 +55,41 @@ interface CentralRegistryViewProps {
 
 export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
   config,
+  currentUser,
   onSaveConfig,
   onResetSeedData,
   onOpenTemplateStudio,
   onCreateFlow,
 }) => {
-  const [activeTab, setActiveTab] = useState<'CONFIG' | 'DEPARTMENTS' | 'FMS_WORKFLOWS' | 'SQL_SCHEMA' | 'COLUMN_MAPPINGS'>('DEPARTMENTS');
+  const [activeTab, setActiveTab] = useState<'SHIFT_CONFIG' | 'DEPARTMENTS' | 'FMS_WORKFLOWS' | 'CONFIG' | 'SQL_SCHEMA' | 'COLUMN_MAPPINGS'>('SHIFT_CONFIG');
   const [formConfig, setFormConfig] = useState<CentralRegistryConfig>(config);
   const [copied, setCopied] = useState<boolean>(false);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
+
+  const isSuper = isUserSuperAdmin(currentUser);
+
+  React.useEffect(() => {
+    if (!isSuper && activeTab !== 'SHIFT_CONFIG' && activeTab !== 'DEPARTMENTS') {
+      setActiveTab('SHIFT_CONFIG');
+    }
+  }, [isSuper, activeTab]);
+
+  const handleUpdateNotificationToggle = (field: 'enableDesktopPush' | 'enableFmsAlerts' | 'enableSlaBreachAlerts' | 'enableDelegationAlerts' | 'enableStockAlerts', checked: boolean) => {
+    const current = formConfig.notificationSettings || {
+      enableDesktopPush: true,
+      enableSlaBreachAlerts: true,
+      enableDelegationAlerts: true,
+      enableStockAlerts: true,
+      enableFmsAlerts: true,
+    };
+    setFormConfig({
+      ...formConfig,
+      notificationSettings: {
+        ...current,
+        [field]: checked,
+      },
+    });
+  };
 
   // Department Hub State
   const [departments, setDepartments] = useState<DepartmentDefinition[]>(() => storageAdapter.getDepartments());
@@ -166,81 +201,335 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-xl font-bold text-slate-900">
-              Central Registry &amp; Migration Architecture
-            </h2>
-            <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-              Migration-Friendly Layer
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-            Decoupled business logic from Google Sheet row indices. Every record uses immutable stable IDs (e.g. <span className="font-mono text-slate-700">taskId: &quot;vhdlgas&quot;</span>, <span className="font-mono text-slate-700">flowId: &quot;FLOW-IND-752&quot;</span>) and maps cleanly to PostgreSQL/Supabase.
-          </p>
-        </div>
-
+      {/* Header Tab Switcher */}
+      <div className="flex items-center justify-between bg-white p-2 rounded-2xl border border-slate-200 shadow-2xs">
         {/* Tab Switcher */}
-        <div className="flex items-center bg-white p-1 rounded-xl border border-slate-200 gap-1">
-          <button
-            onClick={() => setActiveTab('DEPARTMENTS')}
-            className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all flex items-center gap-1.5 ${
-              activeTab === 'DEPARTMENTS'
-                ? 'bg-indigo-600 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 font-semibold'
-            }`}
-          >
-            <Building2 className="w-3.5 h-3.5" />
-            <span>Department Hub ({departments.length})</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('FMS_WORKFLOWS')}
-            className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all flex items-center gap-1.5 ${
-              activeTab === 'FMS_WORKFLOWS'
-                ? 'bg-indigo-600 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 font-semibold'
-            }`}
-          >
-            <GitBranch className="w-3.5 h-3.5" />
-            <span>FMS Workflows Master</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('CONFIG')}
-            className={`px-3 py-1.5 text-xs rounded-lg font-semibold transition-all ${
-              activeTab === 'CONFIG'
-                ? 'bg-slate-100 text-slate-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Google IDs Registry
-          </button>
-          <button
-            onClick={() => setActiveTab('SQL_SCHEMA')}
-            className={`px-3 py-1.5 text-xs rounded-lg font-semibold transition-all ${
-              activeTab === 'SQL_SCHEMA'
-                ? 'bg-slate-100 text-indigo-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            PostgreSQL DDL
-          </button>
-          <button
-            onClick={() => setActiveTab('COLUMN_MAPPINGS')}
-            className={`px-3 py-1.5 text-xs rounded-lg font-semibold transition-all ${
-              activeTab === 'COLUMN_MAPPINGS'
-                ? 'bg-slate-100 text-indigo-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Field Mappings
-          </button>
+        <div className="flex items-center bg-white p-1 rounded-xl gap-1 flex-wrap shrink-0">
+            <button
+              onClick={() => setActiveTab('SHIFT_CONFIG')}
+              className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all flex items-center gap-1.5 ${
+                activeTab === 'SHIFT_CONFIG'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 font-semibold'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>⏰ Shift &amp; Working Hours</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('DEPARTMENTS')}
+              className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all flex items-center gap-1.5 ${
+                activeTab === 'DEPARTMENTS'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 font-semibold'
+              }`}
+            >
+              <Building2 className="w-3.5 h-3.5" />
+              <span>Department Hub ({departments.length})</span>
+            </button>
+            {/* Technical Migration & Governance Tabs (SUPER ADMIN ONLY) */}
+            {isUserSuperAdmin(currentUser) && (
+              <>
+                <button
+                  onClick={() => setActiveTab('FMS_WORKFLOWS')}
+                  className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all flex items-center gap-1.5 ${
+                    activeTab === 'FMS_WORKFLOWS'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 font-semibold'
+                  }`}
+                >
+                  <GitBranch className="w-3.5 h-3.5" />
+                  <span>FMS Workflows Master</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('CONFIG')}
+                  className={`px-3 py-1.5 text-xs rounded-lg font-semibold transition-all ${
+                    activeTab === 'CONFIG'
+                      ? 'bg-slate-100 text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Google IDs Registry
+                </button>
+                <button
+                  onClick={() => setActiveTab('SQL_SCHEMA')}
+                  className={`px-3 py-1.5 text-xs rounded-lg font-semibold transition-all ${
+                    activeTab === 'SQL_SCHEMA'
+                      ? 'bg-slate-100 text-indigo-700 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  PostgreSQL DDL
+                </button>
+                <button
+                  onClick={() => setActiveTab('COLUMN_MAPPINGS')}
+                  className={`px-3 py-1.5 text-xs rounded-lg font-semibold transition-all ${
+                    activeTab === 'COLUMN_MAPPINGS'
+                      ? 'bg-slate-100 text-indigo-700 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Field Mappings
+                </button>
+              </>
+            )}
+          </div>
         </div>
-      </div>
 
-      {activeTab === 'FMS_WORKFLOWS' && (
+      {/* SHIFT & OPERATING HOURS CONSOLE (Central Organization Work Shift & SLA Engine) */}
+      {activeTab === 'SHIFT_CONFIG' && (
+        <div className="space-y-6">
+          {savedSuccess && (
+            <div className="p-3.5 bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs rounded-xl flex items-center gap-2 shadow-2xs">
+              <Check className="w-4 h-4 text-emerald-600" />
+              <span className="font-semibold">Organization Shift &amp; Operating Hours settings saved successfully!</span>
+            </div>
+          )}
+
+          {/* Quick Stats & Operational Profile */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                Day Shift Hours
+              </span>
+              <div className="text-lg font-mono font-bold text-slate-900">
+                {formConfig.workShiftConfig?.shiftStartTime || '09:30'} – {formConfig.workShiftConfig?.shiftEndTime || '18:30'}
+              </div>
+              <p className="text-[11px] text-slate-500">Official working shift window</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider flex items-center gap-1">
+                <Coffee className="w-3.5 h-3.5 text-amber-600" />
+                Lunch Break Pause
+              </span>
+              <div className="text-lg font-mono font-bold text-amber-900">
+                {formConfig.workShiftConfig?.lunchStartTime || '13:30'} – {formConfig.workShiftConfig?.lunchEndTime || '14:30'}
+              </div>
+              <p className="text-[11px] text-slate-500">1-hour SLA clock suspension</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider flex items-center gap-1">
+                <CalendarDays className="w-3.5 h-3.5 text-emerald-600" />
+                Operating Schedule
+              </span>
+              <div className="text-lg font-bold text-emerald-900">
+                Monday to Saturday
+              </div>
+              <p className="text-[11px] text-slate-500">Sunday is weekly off (0 hours counted)</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider flex items-center gap-1">
+                <Timer className="w-3.5 h-3.5 text-rose-600" />
+                Time Delay Format
+              </span>
+              <div className="text-lg font-mono font-bold text-rose-700">
+                - hh:mm:ss
+              </div>
+              <p className="text-[11px] text-slate-500">On-time tasks display 00:00:00</p>
+            </div>
+          </div>
+
+          {/* Main Shift Configuration Form */}
+          <form onSubmit={handleSave} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-indigo-600" />
+                  <span>Shift Timings, Lunch Break &amp; Operating Days</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Customize your organization&apos;s shift hours. These timings govern all FMS planned deadline timestamps and delay variance measurements.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                >
+                  Save Shift Settings
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                <label className="block text-xs font-bold text-slate-800 mb-1 flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Day Shift Start Time</span>
+                </label>
+                <input
+                  type="time"
+                  value={formConfig.workShiftConfig?.shiftStartTime || '09:30'}
+                  onChange={(e) =>
+                    setFormConfig({
+                      ...formConfig,
+                      workShiftConfig: {
+                        shiftStartTime: e.target.value,
+                        shiftEndTime: formConfig.workShiftConfig?.shiftEndTime || '18:30',
+                        lunchStartTime: formConfig.workShiftConfig?.lunchStartTime || '13:30',
+                        lunchEndTime: formConfig.workShiftConfig?.lunchEndTime || '14:30',
+                        workingDays: formConfig.workShiftConfig?.workingDays || [1, 2, 3, 4, 5, 6],
+                      },
+                    })
+                  }
+                  className="w-full text-xs font-mono font-bold px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">Default: 09:30 AM morning reporting</p>
+              </div>
+
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                <label className="block text-xs font-bold text-slate-800 mb-1 flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Day Shift End Time</span>
+                </label>
+                <input
+                  type="time"
+                  value={formConfig.workShiftConfig?.shiftEndTime || '18:30'}
+                  onChange={(e) =>
+                    setFormConfig({
+                      ...formConfig,
+                      workShiftConfig: {
+                        shiftStartTime: formConfig.workShiftConfig?.shiftStartTime || '09:30',
+                        shiftEndTime: e.target.value,
+                        lunchStartTime: formConfig.workShiftConfig?.lunchStartTime || '13:30',
+                        lunchEndTime: formConfig.workShiftConfig?.lunchEndTime || '14:30',
+                        workingDays: formConfig.workShiftConfig?.workingDays || [1, 2, 3, 4, 5, 6],
+                      },
+                    })
+                  }
+                  className="w-full text-xs font-mono font-bold px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">Default: 06:30 PM closing</p>
+              </div>
+
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                <label className="block text-xs font-bold text-slate-800 mb-1 flex items-center gap-1">
+                  <Coffee className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Lunch Break Start</span>
+                </label>
+                <input
+                  type="time"
+                  value={formConfig.workShiftConfig?.lunchStartTime || '13:30'}
+                  onChange={(e) =>
+                    setFormConfig({
+                      ...formConfig,
+                      workShiftConfig: {
+                        shiftStartTime: formConfig.workShiftConfig?.shiftStartTime || '09:30',
+                        shiftEndTime: formConfig.workShiftConfig?.shiftEndTime || '18:30',
+                        lunchStartTime: e.target.value,
+                        lunchEndTime: formConfig.workShiftConfig?.lunchEndTime || '14:30',
+                        workingDays: formConfig.workShiftConfig?.workingDays || [1, 2, 3, 4, 5, 6],
+                      },
+                    })
+                  }
+                  className="w-full text-xs font-mono font-bold px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">Default: 01:30 PM pause begins</p>
+              </div>
+
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                <label className="block text-xs font-bold text-slate-800 mb-1 flex items-center gap-1">
+                  <Coffee className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Lunch Break End</span>
+                </label>
+                <input
+                  type="time"
+                  value={formConfig.workShiftConfig?.lunchEndTime || '14:30'}
+                  onChange={(e) =>
+                    setFormConfig({
+                      ...formConfig,
+                      workShiftConfig: {
+                        shiftStartTime: formConfig.workShiftConfig?.shiftStartTime || '09:30',
+                        shiftEndTime: formConfig.workShiftConfig?.shiftEndTime || '18:30',
+                        lunchStartTime: formConfig.workShiftConfig?.lunchStartTime || '13:30',
+                        lunchEndTime: e.target.value,
+                        workingDays: formConfig.workShiftConfig?.workingDays || [1, 2, 3, 4, 5, 6],
+                      },
+                    })
+                  }
+                  className="w-full text-xs font-mono font-bold px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">Default: 02:30 PM timer resumes</p>
+              </div>
+            </div>
+
+            {/* Working Days Selector */}
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+              <label className="block text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <CalendarDays className="w-4 h-4 text-indigo-600" />
+                <span>Working Days of the Week</span>
+              </label>
+              <p className="text-[11px] text-slate-500">
+                Select which days of the week your staff operates. Unselected days (such as Sunday) are treated as Weekly Off and will pause the SLA clock completely.
+              </p>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {[
+                  { day: 1, label: 'Monday' },
+                  { day: 2, label: 'Tuesday' },
+                  { day: 3, label: 'Wednesday' },
+                  { day: 4, label: 'Thursday' },
+                  { day: 5, label: 'Friday' },
+                  { day: 6, label: 'Saturday' },
+                  { day: 0, label: 'Sunday (Weekly Off)' },
+                ].map(({ day, label }) => {
+                  const currentWorkingDays = formConfig.workShiftConfig?.workingDays || [1, 2, 3, 4, 5, 6];
+                  const isSelected = currentWorkingDays.includes(day);
+
+                  const toggleDay = () => {
+                    const nextDays = isSelected
+                      ? currentWorkingDays.filter((d) => d !== day)
+                      : [...currentWorkingDays, day];
+                    setFormConfig({
+                      ...formConfig,
+                      workShiftConfig: {
+                        shiftStartTime: formConfig.workShiftConfig?.shiftStartTime || '09:30',
+                        shiftEndTime: formConfig.workShiftConfig?.shiftEndTime || '18:30',
+                        lunchStartTime: formConfig.workShiftConfig?.lunchStartTime || '13:30',
+                        lunchEndTime: formConfig.workShiftConfig?.lunchEndTime || '14:30',
+                        workingDays: nextDays,
+                      },
+                    });
+                  };
+
+                  return (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={toggleDay}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                        isSelected
+                          ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
+                          : 'bg-white text-slate-400 border-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      {label} {isSelected ? '✓' : '(Off)'}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Bottom Actions */}
+            <div className="flex items-center justify-end pt-2">
+              <button
+                type="submit"
+                className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              >
+                Save All Shift &amp; Registry Settings
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {isUserSuperAdmin(currentUser) && activeTab === 'FMS_WORKFLOWS' && (
         <FmsMasterCatalogView
+          currentUser={currentUser}
           onOpenTemplateStudio={onOpenTemplateStudio}
           onCreateFlow={onCreateFlow}
         />
@@ -527,7 +816,7 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
         </div>
       )}
 
-      {activeTab === 'CONFIG' && (
+      {isUserSuperAdmin(currentUser) && activeTab === 'CONFIG' && (
         <form onSubmit={handleSave} className="space-y-6">
           {savedSuccess && (
             <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs rounded-xl flex items-center gap-2">
@@ -713,6 +1002,309 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
             </div>
           </div>
 
+          {/* Work Shift, Lunch Break & Operating Calendar Settings */}
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-emerald-600" />
+                <h3 className="text-sm font-bold text-slate-900">
+                  Day Shift, Lunch Break &amp; Working Week SLA Engine
+                </h3>
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200 flex items-center gap-1">
+                <Timer className="w-3 h-3" />
+                <span>Format: - hh:mm:ss</span>
+              </span>
+            </div>
+
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Target planned deadlines and delay variances count only during official shift working hours. Non-working hours, lunch breaks, and non-working days (Sundays) are suspended from SLA elapsed time. Delays are displayed in exact <span className="font-mono font-bold text-slate-800">- hh:mm:ss</span> format.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-1">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Shift Start Time</span>
+                </label>
+                <input
+                  type="time"
+                  value={formConfig.workShiftConfig?.shiftStartTime || '09:30'}
+                  onChange={(e) =>
+                    setFormConfig({
+                      ...formConfig,
+                      workShiftConfig: {
+                        shiftStartTime: e.target.value,
+                        shiftEndTime: formConfig.workShiftConfig?.shiftEndTime || '18:30',
+                        lunchStartTime: formConfig.workShiftConfig?.lunchStartTime || '13:30',
+                        lunchEndTime: formConfig.workShiftConfig?.lunchEndTime || '14:30',
+                        workingDays: formConfig.workShiftConfig?.workingDays || [1, 2, 3, 4, 5, 6],
+                      },
+                    })
+                  }
+                  className="w-full text-xs font-mono font-bold px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Morning reporting time</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Shift End Time</span>
+                </label>
+                <input
+                  type="time"
+                  value={formConfig.workShiftConfig?.shiftEndTime || '18:30'}
+                  onChange={(e) =>
+                    setFormConfig({
+                      ...formConfig,
+                      workShiftConfig: {
+                        shiftStartTime: formConfig.workShiftConfig?.shiftStartTime || '09:30',
+                        shiftEndTime: e.target.value,
+                        lunchStartTime: formConfig.workShiftConfig?.lunchStartTime || '13:30',
+                        lunchEndTime: formConfig.workShiftConfig?.lunchEndTime || '14:30',
+                        workingDays: formConfig.workShiftConfig?.workingDays || [1, 2, 3, 4, 5, 6],
+                      },
+                    })
+                  }
+                  className="w-full text-xs font-mono font-bold px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Evening closing time</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
+                  <Coffee className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Lunch Start Time</span>
+                </label>
+                <input
+                  type="time"
+                  value={formConfig.workShiftConfig?.lunchStartTime || '13:30'}
+                  onChange={(e) =>
+                    setFormConfig({
+                      ...formConfig,
+                      workShiftConfig: {
+                        shiftStartTime: formConfig.workShiftConfig?.shiftStartTime || '09:30',
+                        shiftEndTime: formConfig.workShiftConfig?.shiftEndTime || '18:30',
+                        lunchStartTime: e.target.value,
+                        lunchEndTime: formConfig.workShiftConfig?.lunchEndTime || '14:30',
+                        workingDays: formConfig.workShiftConfig?.workingDays || [1, 2, 3, 4, 5, 6],
+                      },
+                    })
+                  }
+                  className="w-full text-xs font-mono font-bold px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Lunch break starts</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
+                  <Coffee className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Lunch End Time</span>
+                </label>
+                <input
+                  type="time"
+                  value={formConfig.workShiftConfig?.lunchEndTime || '14:30'}
+                  onChange={(e) =>
+                    setFormConfig({
+                      ...formConfig,
+                      workShiftConfig: {
+                        shiftStartTime: formConfig.workShiftConfig?.shiftStartTime || '09:30',
+                        shiftEndTime: formConfig.workShiftConfig?.shiftEndTime || '18:30',
+                        lunchStartTime: formConfig.workShiftConfig?.lunchStartTime || '13:30',
+                        lunchEndTime: e.target.value,
+                        workingDays: formConfig.workShiftConfig?.workingDays || [1, 2, 3, 4, 5, 6],
+                      },
+                    })
+                  }
+                  className="w-full text-xs font-mono font-bold px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+                <span className="text-[10px] text-slate-400 mt-0.5 block">SLA resumes after lunch</span>
+              </div>
+            </div>
+
+            {/* Working Days of the Week Selection */}
+            <div className="pt-2 border-t border-slate-100">
+              <label className="block text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5">
+                <CalendarDays className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Working Days of the Week (Unselected days treated as Weekly Off / SLA clock paused)</span>
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                {[
+                  { day: 1, label: 'Mon' },
+                  { day: 2, label: 'Tue' },
+                  { day: 3, label: 'Wed' },
+                  { day: 4, label: 'Thu' },
+                  { day: 5, label: 'Fri' },
+                  { day: 6, label: 'Sat' },
+                  { day: 0, label: 'Sun' },
+                ].map(({ day, label }) => {
+                  const currentWorkingDays = formConfig.workShiftConfig?.workingDays || [1, 2, 3, 4, 5, 6];
+                  const isSelected = currentWorkingDays.includes(day);
+
+                  const toggleDay = () => {
+                    const nextDays = isSelected
+                      ? currentWorkingDays.filter((d) => d !== day)
+                      : [...currentWorkingDays, day];
+                    setFormConfig({
+                      ...formConfig,
+                      workShiftConfig: {
+                        shiftStartTime: formConfig.workShiftConfig?.shiftStartTime || '09:30',
+                        shiftEndTime: formConfig.workShiftConfig?.shiftEndTime || '18:30',
+                        lunchStartTime: formConfig.workShiftConfig?.lunchStartTime || '13:30',
+                        lunchEndTime: formConfig.workShiftConfig?.lunchEndTime || '14:30',
+                        workingDays: nextDays,
+                      },
+                    });
+                  };
+
+                  return (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={toggleDay}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                        isSelected
+                          ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
+                          : 'bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200'
+                      }`}
+                    >
+                      {label} {isSelected ? '✓' : '(Off)'}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Notification & Webhook Dispatch Settings */}
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Bell className="w-4 h-4 text-indigo-600" />
+                <span>Notification &amp; External Webhook Dispatch Settings</span>
+              </h3>
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full border border-indigo-100">
+                Multi-Channel Alerts
+              </span>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Webhook URL Endpoint (Slack, Microsoft Teams, Zapier, Webhook Relay)
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  placeholder="https://hooks.slack.com/services/... or https://your-server.com/api/webhook"
+                  value={formConfig.notificationSettings?.webhookUrl || ''}
+                  onChange={(e) =>
+                    setFormConfig({
+                      ...formConfig,
+                      notificationSettings: {
+                        enableDesktopPush: formConfig.notificationSettings?.enableDesktopPush ?? true,
+                        enableSlaBreachAlerts: formConfig.notificationSettings?.enableSlaBreachAlerts ?? true,
+                        enableDelegationAlerts: formConfig.notificationSettings?.enableDelegationAlerts ?? true,
+                        enableStockAlerts: formConfig.notificationSettings?.enableStockAlerts ?? true,
+                        enableFmsAlerts: formConfig.notificationSettings?.enableFmsAlerts ?? true,
+                        ...formConfig.notificationSettings,
+                        webhookUrl: e.target.value,
+                      },
+                    })
+                  }
+                  className="flex-1 text-xs font-mono px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const url = formConfig.notificationSettings?.webhookUrl;
+                    if (!url || !url.startsWith('http')) {
+                      alert('Please provide a valid HTTP/HTTPS webhook URL first.');
+                      return;
+                    }
+                    try {
+                      await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          source: 'BarBrik Operations FMS Tracker',
+                          event: 'TEST_PING',
+                          title: 'Test Webhook Notification',
+                          message: 'Webhook integration successfully pinged from Central Registry!',
+                          timestamp: new Date().toISOString()
+                        }),
+                        mode: 'no-cors'
+                      });
+                      alert('Test dispatch signal sent to webhook endpoint!');
+                    } catch (e: any) {
+                      alert('Webhook dispatch test failed: ' + e.message);
+                    }
+                  }}
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs transition-colors flex items-center gap-1.5 shrink-0"
+                >
+                  <Send className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Test Ping</span>
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                When specified, all selected operational triggers dispatch a JSON payload to this endpoint.
+              </p>
+            </div>
+
+            {/* Notification Event Toggles */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2">
+              <label className="flex items-center gap-2 p-2.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-white transition-colors cursor-pointer text-xs font-medium text-slate-800">
+                <input
+                  type="checkbox"
+                  checked={formConfig.notificationSettings?.enableDesktopPush ?? true}
+                  onChange={(e) => handleUpdateNotificationToggle('enableDesktopPush', e.target.checked)}
+                  className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                />
+                <span>Browser Push Notifications</span>
+              </label>
+
+              <label className="flex items-center gap-2 p-2.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-white transition-colors cursor-pointer text-xs font-medium text-slate-800">
+                <input
+                  type="checkbox"
+                  checked={formConfig.notificationSettings?.enableFmsAlerts ?? true}
+                  onChange={(e) => handleUpdateNotificationToggle('enableFmsAlerts', e.target.checked)}
+                  className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                />
+                <span>FMS Stage &amp; Approval Alerts</span>
+              </label>
+
+              <label className="flex items-center gap-2 p-2.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-white transition-colors cursor-pointer text-xs font-medium text-slate-800">
+                <input
+                  type="checkbox"
+                  checked={formConfig.notificationSettings?.enableSlaBreachAlerts ?? true}
+                  onChange={(e) => handleUpdateNotificationToggle('enableSlaBreachAlerts', e.target.checked)}
+                  className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                />
+                <span>SLA Delay / Breach Alerts</span>
+              </label>
+
+              <label className="flex items-center gap-2 p-2.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-white transition-colors cursor-pointer text-xs font-medium text-slate-800">
+                <input
+                  type="checkbox"
+                  checked={formConfig.notificationSettings?.enableDelegationAlerts ?? true}
+                  onChange={(e) => handleUpdateNotificationToggle('enableDelegationAlerts', e.target.checked)}
+                  className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                />
+                <span>Delegation Task Alerts</span>
+              </label>
+
+              <label className="flex items-center gap-2 p-2.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-white transition-colors cursor-pointer text-xs font-medium text-slate-800">
+                <input
+                  type="checkbox"
+                  checked={formConfig.notificationSettings?.enableStockAlerts ?? true}
+                  onChange={(e) => handleUpdateNotificationToggle('enableStockAlerts', e.target.checked)}
+                  className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                />
+                <span>Low Stock / Inventory Alerts</span>
+              </label>
+            </div>
+          </div>
+
           {/* Footer Actions */}
           <div className="flex items-center justify-between pt-2">
             <button
@@ -735,7 +1327,7 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
       )}
 
       {/* SQL DDL Tab */}
-      {activeTab === 'SQL_SCHEMA' && (
+      {isUserSuperAdmin(currentUser) && activeTab === 'SQL_SCHEMA' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden space-y-0">
           <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -768,7 +1360,7 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
       )}
 
       {/* Field Mappings Tab */}
-      {activeTab === 'COLUMN_MAPPINGS' && (
+      {isUserSuperAdmin(currentUser) && activeTab === 'COLUMN_MAPPINGS' && (
         <div className="space-y-6">
           {/* FMS Mapping */}
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-3">

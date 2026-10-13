@@ -245,7 +245,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
             title: `Staff: ${user.name} (${user.role})`,
             subtitle: `Email: ${user.email} • Phone: ${user.phone || '9827100000'} • Site: ${user.siteLocation || 'Siladehi Site'}`,
             badge: user.systemRole || 'STAFF',
-            badgeColor: user.systemRole === 'SUPER_ADMIN' ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-indigo-100 text-indigo-900',
+            badgeColor: user.systemRole === 'SUPER_ADMIN' ? 'bg-amber-100 text-amber-900 border-amber-300' : user.systemRole === 'ADMIN' ? 'bg-purple-100 text-purple-900 border-purple-300' : 'bg-indigo-100 text-indigo-900',
             metadata: user.departmentName || 'Operations',
             targetTab: 'super-admin',
             onSelectAction: () => {

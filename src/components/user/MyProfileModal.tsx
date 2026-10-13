@@ -33,7 +33,8 @@ import {
   FmsInstance, 
   DelegationTask, 
   ChecklistItem, 
-  AuditLogEntry 
+  AuditLogEntry,
+  isUserSuperAdmin 
 } from '../../types';
 
 export interface ActivityStreamItem {
@@ -436,9 +437,9 @@ export const MyProfileModal: React.FC<MyProfileModalProps> = ({
                 <span className="text-[10px] font-extrabold bg-indigo-500/30 text-indigo-300 border border-indigo-400/40 px-2 py-0.5 rounded-full uppercase">
                   {currentUser.role || 'Staff Member'}
                 </span>
-                {currentUser.systemRole === 'SUPER_ADMIN' && (
+                {isUserSuperAdmin(currentUser) && (
                   <span className="text-[10px] font-extrabold bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full uppercase flex items-center gap-1">
-                    <ShieldCheck className="w-3 h-3" /> SUPER ADMIN
+                    <ShieldCheck className="w-3 h-3" /> {currentUser.systemRole === 'SUPER_ADMIN' ? 'SUPER ADMIN' : 'ADMINISTRATOR'}
                   </span>
                 )}
               </div>

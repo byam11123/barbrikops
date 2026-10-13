@@ -1,4 +1,4 @@
-import { FmsStageDefinition, FmsStageExecution, FmsInstance, UserProfile } from '../types';
+import { FmsStageDefinition, FmsStageExecution, FmsInstance, UserProfile, ChecklistItem, DelegationTask } from '../types';
 import { 
   FMS_CHECK_STOCK_STAGES, 
   FMS_STANDARD_PURCHASE_STAGES, 
@@ -11,7 +11,8 @@ import {
   FMS_HR_ATTENDANCE_PAYMENT_STAGES,
   FMS_BREAKDOWN_REPORTING_STAGES,
   FMS_EQUIPMENT_PART_REPAIR_STAGES,
-  FMS_DPR_REPORTING_STAGES 
+  FMS_DPR_REPORTING_STAGES,
+  FMS_BENEFICIARY_APPROVAL_STAGES
 } from '../data/initialData';
 
 /**
@@ -53,15 +54,15 @@ import {
  *    - Stages 9, 10: Site DEO (Site Data Entry Operator)
  */
 export const isUserResponsibleForStage = (
-  stageDef: FmsStageDefinition,
+  stageDef: FmsStageDefinition | undefined,
   stageExec: FmsStageExecution | undefined,
   user: UserProfile
 ): boolean => {
-  if (!user || !stageDef) return false;
+  if (!user || (!stageDef && !stageExec)) return false;
 
   const userName = user.name.toLowerCase().trim();
   const userRole = user.role.toLowerCase().trim();
-  const targetAssignee = (stageExec?.assignee || stageDef.whoDefaultAssignee || '').toLowerCase().trim();
+  const targetAssignee = (stageExec?.assignee || stageDef?.whoDefaultAssignee || '').toLowerCase().trim();
 
   // 1. Direct Explicit Assignee Name Check
   if (targetAssignee) {
@@ -85,6 +86,10 @@ export const isUserResponsibleForStage = (
     if (assignedToOtherIndividual) {
       return false;
     }
+  }
+
+  if (!stageDef) {
+    return false;
   }
 
   // Equipment Part Repair FMS Stages
@@ -409,6 +414,25 @@ export const isUserResponsibleForStage = (
     }
   }
 
+  // Beneficiary Approval Form FMS Stages (Columns J to O)
+  if (stageDef.stageId?.startsWith('STG-BEN-')) {
+    // Stage 1: Finance approval -> Pranjal Agrawal / Khushboo Sahu
+    if (stageDef.stageId === 'STG-BEN-01') {
+      return userName.includes('pranjal') || 
+             userName.includes('khushboo') || 
+             userRole.includes('finance') ||
+             userRole.includes('director');
+    }
+    // Stages 2 & 3: Net Banking Entry & Addition Confirmation -> Byamkesh Kaiwartya / Manish / Accounts
+    if (['STG-BEN-02', 'STG-BEN-03'].includes(stageDef.stageId)) {
+      return userName.includes('byamkesh') || 
+             userName.includes('manish') || 
+             userName.includes('priyanka') || 
+             userName.includes('pranjal') || 
+             userRole.includes('accounts');
+    }
+  }
+
   // Standard Indent to PO Purchase FMS Stages:
   // 1. Stage 1: Store Manager (Amanat Bharadwaj)
   if (stageDef.stageId === 'STG-01' || stageDef.stageNumber === 1) {
@@ -469,6 +493,16 @@ export const isFlowAwaitingUserAction = (
   const curStage = flow.stages[curIndex];
   if (!curStage) return false;
 
+  // Direct Assignee check on the active stage execution (essential for custom workflow templates)
+  if (curStage.assignee && user?.name) {
+    const userName = user.name.toLowerCase().trim();
+    const targetAssignee = curStage.assignee.toLowerCase().trim();
+    const userParts = userName.split(/[\s,._/-]+/).filter(Boolean);
+    if (userParts.some(p => p.length >= 3 && targetAssignee.includes(p))) {
+      return true;
+    }
+  }
+
   const stageDefs = flow.flowType === 'CHECK_STOCK'
     ? FMS_CHECK_STOCK_STAGES
     : flow.flowType === 'PO_TO_PAYMENT'
@@ -504,6 +538,8 @@ export const isFlowAwaitingUserAction = (
  */
 export const getStageDefinitionsForFlowType = (flowType: string): FmsStageDefinition[] => {
   switch (flowType) {
+    case 'BENEFICIARY_APPROVAL':
+      return FMS_BENEFICIARY_APPROVAL_STAGES;
     case 'CHECK_STOCK':
       return FMS_CHECK_STOCK_STAGES;
     case 'PO_TO_PAYMENT':
@@ -549,6 +585,7 @@ export const getFmsDomainCategory = (flowType: string): {
         label: 'Procurement & Vendor Sourcing',
         badgeClass: 'bg-amber-100 text-amber-900 border-amber-300'
       };
+    case 'BENEFICIARY_APPROVAL':
     case 'PO_TO_PAYMENT':
     case 'ACCOUNTS_INVOICE_COLLECTION':
     case 'PAYROLL':
@@ -700,7 +737,7 @@ export const getFlowDepartmentKey = (
   if (['INDENT_PURCHASE', 'SUBCONTRACTOR_BILLING'].includes(ft)) {
     return 'PURCHASE';
   }
-  if (['PO_TO_PAYMENT', 'ACCOUNTS_INVOICE_COLLECTION', 'PAYROLL'].includes(ft)) {
+  if (['PO_TO_PAYMENT', 'ACCOUNTS_INVOICE_COLLECTION', 'PAYROLL', 'BENEFICIARY_APPROVAL'].includes(ft)) {
     return 'ACCOUNTS';
   }
   if (['BREAKDOWN_REPORTING', 'EQUIPMENT_PART_REPAIR', 'DPR_REPORTING', 'HR_ATTENDANCE_PAYMENT', 'LEAVE_SUBMISSION'].includes(ft)) {
@@ -747,5 +784,98 @@ export const getDepartmentBranchLabel = (deptKey: string): string => {
     default:
       return deptKey.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   }
+};
+
+/**
+ * Checks if a ChecklistItem belongs to a given department key
+ */
+export const matchItemDepartment = (itemDept: string | undefined, deptKey: string): boolean => {
+  if (!itemDept || !deptKey) return false;
+  const d1 = itemDept.trim().toUpperCase();
+  const d2 = deptKey.trim().toUpperCase();
+
+  if (d1 === d2) return true;
+
+  if (d2 === 'PURCHASE') {
+    return d1.includes('PURCHASE') || d1.includes('PROCUREMENT');
+  }
+  if (d2 === 'STORE') {
+    return d1.includes('STORE') || d1.includes('WAREHOUSE') || d1.includes('CSR');
+  }
+  if (d2 === 'ACCOUNTS') {
+    return d1.includes('ACCOUNT') || d1.includes('FINANCE') || d1.includes('AUDIT');
+  }
+  if (d2 === 'PLANT_OPS') {
+    return d1.includes('PLANT') || d1.includes('HR') || d1.includes('MECHANIC') || d1.includes('EQUIP');
+  }
+  if (d2 === 'OPERATIONS') {
+    return d1.includes('IT') || d1.includes('STRUCTURE') || d1.includes('SR. STRUCTURE') || d1.includes('MIS') || d1.includes('OPERAT');
+  }
+
+  return d1.includes(d2) || d2.includes(d1);
+};
+
+/**
+ * Checks if a DelegationTask belongs to a given department key based on assignee and role
+ */
+export const matchTaskDepartment = (
+  task: DelegationTask, 
+  deptKey: string, 
+  usersList?: UserProfile[]
+): boolean => {
+  if (!task || !deptKey) return false;
+  const targetDept = deptKey.trim().toUpperCase();
+  const taskName = (task.name || '').toLowerCase();
+  const rolePhone = (task.rolePhone || '').toLowerCase();
+  const taskDesc = (task.task || '').toLowerCase();
+
+  // 1. Try matching with configured users
+  if (usersList && usersList.length > 0) {
+    const matchedUser = usersList.find((u) => {
+      const uName = u.name.toLowerCase();
+      return taskName.includes(uName) || rolePhone.includes(uName);
+    });
+
+    if (matchedUser) {
+      if (matchedUser.departmentKeys && matchedUser.departmentKeys.some(k => k.toUpperCase() === targetDept)) {
+        return true;
+      }
+      if (matchedUser.departmentId?.toUpperCase().includes(targetDept)) {
+        return true;
+      }
+      if (matchedUser.departmentName && matchItemDepartment(matchedUser.departmentName, targetDept)) {
+        return true;
+      }
+    }
+  }
+
+  // 2. Fallback to keyword matching on task assignee, role, and task description
+  if (targetDept === 'PURCHASE') {
+    return rolePhone.includes('purchase') || rolePhone.includes('procurement') ||
+           taskName.includes('shyam') || taskName.includes('rajnikant') || taskName.includes('vivek') || taskName.includes('rajendra') ||
+           taskDesc.includes('indent') || taskDesc.includes('quotation') || taskDesc.includes('purchase order') || taskDesc.includes('po ');
+  }
+  if (targetDept === 'STORE') {
+    return rolePhone.includes('store') || rolePhone.includes('warehouse') ||
+           taskName.includes('amanat') || taskName.includes('sumant') || taskName.includes('hemant') ||
+           taskDesc.includes('stock') || taskDesc.includes('inventory') || taskDesc.includes('dispatch') || taskDesc.includes('mrn');
+  }
+  if (targetDept === 'ACCOUNTS') {
+    return rolePhone.includes('account') || rolePhone.includes('finance') ||
+           taskName.includes('priyanka') || taskName.includes('khushboo') || taskName.includes('pranjal') || taskName.includes('manish') ||
+           taskDesc.includes('payment') || taskDesc.includes('voucher') || taskDesc.includes('bill') || taskDesc.includes('salary') || taskDesc.includes('payroll');
+  }
+  if (targetDept === 'PLANT_OPS') {
+    return rolePhone.includes('plant') || rolePhone.includes('mechanic') || rolePhone.includes('hr') ||
+           taskName.includes('garima') || taskName.includes('mamta') || taskName.includes('chakraworti') || taskName.includes('chakraborty') ||
+           taskDesc.includes('breakdown') || taskDesc.includes('repair') || taskDesc.includes('attendance') || taskDesc.includes('machine');
+  }
+  if (targetDept === 'OPERATIONS') {
+    return rolePhone.includes('it ') || rolePhone.includes('mis') || rolePhone.includes('project') || rolePhone.includes('structure') ||
+           taskName.includes('byamkesh') || taskName.includes('pooja') || taskName.includes('pranay') || taskName.includes('aman kumar') ||
+           taskDesc.includes('vpn') || taskDesc.includes('server') || taskDesc.includes('pole') || taskDesc.includes('dpr');
+  }
+
+  return false;
 };
 

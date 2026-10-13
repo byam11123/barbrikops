@@ -47,8 +47,17 @@ import {
   FmsTemplateDefinition,
   NoticeBoardItem,
   isUserSuperAdmin,
-  hasModulePermission
+  isUserAdminOrSuperAdmin,
+  hasModulePermission,
+  AppNotification
 } from './types';
+import { 
+  getBrowserNotificationPermission, 
+  requestBrowserNotificationPermission, 
+  sendBrowserDesktopNotification,
+  dispatchWebhookNotification
+} from './services/notificationService';
+import { addWorkingSlaHours, formatToStandardDateTime, DEFAULT_WORK_SHIFT_CONFIG } from './services/workShiftService';
 import { 
   USERS, 
   FMS_CHECK_STOCK_STAGES, 
@@ -75,20 +84,28 @@ export default function App() {
   const [isMyProfileOpen, setIsMyProfileOpen] = useState<boolean>(false);
   const [isSuperAdminOpen, setIsSuperAdminOpen] = useState<boolean>(false);
 
-  // Default to USER_ONLY so staff members see only what belongs to them first
-  const [viewScope, setViewScope] = useState<ViewScope>('USER_ONLY');
+  // Super Admin & Admin default to ALL_ORG to view all organization entries; standard staff default to USER_ONLY
+  const [viewScope, setViewScope] = useState<ViewScope>(() => {
+    const authUser = storageAdapter.getAuthUser() || USERS[0];
+    return isUserAdminOrSuperAdmin(authUser) ? 'ALL_ORG' : 'USER_ONLY';
+  });
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [pcDeskActive, setPcDeskActive] = useState<boolean>(false);
 
   // Data states
   const [flows, setFlows] = useState<FmsInstance[]>([]);
   const [selectedFmsDepartment, setSelectedFmsDepartment] = useState<string | null>(null);
+  const [selectedFmsWorkflowKey, setSelectedFmsWorkflowKey] = useState<string | null>(null);
+  const [selectedChecklistDepartment, setSelectedChecklistDepartment] = useState<string | null>(null);
+  const [selectedDelegationDepartment, setSelectedDelegationDepartment] = useState<string | null>(null);
   const [delegationTasks, setDelegationTasks] = useState<DelegationTask[]>([]);
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [inventoryMovements, setInventoryMovements] = useState<InventoryMovement[]>([]);
   const [registryConfig, setRegistryConfig] = useState<CentralRegistryConfig>(storageAdapter.getRegistryConfig());
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>(() => storageAdapter.getNotifications());
+  const [desktopPermission, setDesktopPermission] = useState<NotificationPermission>(() => getBrowserNotificationPermission());
 
   // Modals
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
@@ -143,6 +160,75 @@ export default function App() {
     setIsMyProfileOpen(false);
     setIsSuperAdminOpen(false);
     showToast('Signed out of session.');
+  };
+
+  // Notification handlers (Channels 1 & 2)
+  const handleMarkNotificationRead = (id: string) => {
+    storageAdapter.markNotificationRead(id);
+    setNotifications(storageAdapter.getNotifications());
+  };
+
+  const handleMarkAllNotificationsRead = () => {
+    storageAdapter.markAllNotificationsRead(currentUser.userId);
+    setNotifications(storageAdapter.getNotifications());
+    showToast('All notifications marked as read.');
+  };
+
+  const handleClearAllNotifications = () => {
+    storageAdapter.clearAllNotifications(currentUser.userId);
+    setNotifications(storageAdapter.getNotifications());
+    showToast('Cleared notifications.');
+  };
+
+  const handleRequestDesktopPermission = async () => {
+    const res = await requestBrowserNotificationPermission();
+    setDesktopPermission(res);
+    if (res === 'granted') {
+      showToast('Browser desktop notifications enabled!');
+      sendBrowserDesktopNotification({
+        title: 'Barbrik Operations Portal',
+        body: 'Desktop notifications are active. You will receive real-time FMS alerts.',
+      });
+    } else {
+      showToast('Desktop notification permission declined.');
+    }
+  };
+
+  const handleSelectNotification = (notif: AppNotification) => {
+    // 1. Mark as read immediately
+    handleMarkNotificationRead(notif.id);
+
+    // 2. Switch tab
+    if (notif.linkTab) {
+      handleTabChange(notif.linkTab as NavTab);
+    }
+
+    // 3. Open entity details & focus
+    if (notif.linkTab === 'fms' && notif.linkEntityId) {
+      const foundFlow = flows.find(
+        (f) =>
+          f.id === notif.linkEntityId ||
+          f.flowId === notif.linkEntityId ||
+          f.indentNo === notif.linkEntityId ||
+          f.poNumber === notif.linkEntityId
+      );
+      if (foundFlow) {
+        setSelectedFmsDetail(foundFlow);
+        showToast(`Opened FMS Flow: ${foundFlow.poNumber || foundFlow.flowId}`);
+      }
+    } else if (notif.linkTab === 'delegation' && notif.linkEntityId) {
+      const foundTask = delegationTasks.find(
+        (t) => t.id === notif.linkEntityId || t.taskId === notif.linkEntityId
+      );
+      if (foundTask) {
+        setSelectedTaskForRevision(foundTask);
+        showToast(`Opened Delegated Task #${foundTask.taskId}`);
+      }
+    } else if (notif.linkTab === 'ims') {
+      showToast(`Navigated to Inventory Management (${notif.title})`);
+    } else if (notif.linkTab === 'checklist') {
+      showToast(`Navigated to Operational Checklists`);
+    }
   };
 
   const handleAddProcessRemark = (
@@ -213,16 +299,36 @@ export default function App() {
     showToast(`Process Coordination Remark logged by ${currentUser.name}!`);
   };
 
+  // Helper to map an operational assignee name or role to a specific registered UserProfile
+  const resolveTargetUser = (assigneeNameOrRole?: string): UserProfile | undefined => {
+    if (!assigneeNameOrRole) return undefined;
+    const clean = assigneeNameOrRole.toLowerCase().trim();
+    return usersList.find((u) => {
+      const uName = u.name.toLowerCase();
+      const uRole = (u.role || '').toLowerCase();
+      const uDept = (u.departmentName || '').toLowerCase();
+      return (
+        clean.includes(uName) ||
+        uName.includes(clean) ||
+        clean.includes(uRole) ||
+        uRole.includes(clean) ||
+        clean.includes(uDept)
+      );
+    });
+  };
+
   const handleNudgeItem = (
     module: 'FMS' | 'CHECKLIST' | 'DELEGATION',
     targetId: string,
     stageIndex?: number
   ) => {
     const nudgeTime = new Date().toLocaleString('en-GB');
+    let targetAssigneeName = '';
 
     if (module === 'CHECKLIST') {
       const updated = checklistItems.map((chk) => {
         if (chk.id === targetId || chk.taskId === targetId) {
+          targetAssigneeName = chk.name;
           return { ...chk, lastNudgeTimestamp: nudgeTime };
         }
         return chk;
@@ -232,6 +338,7 @@ export default function App() {
     } else if (module === 'DELEGATION') {
       const updated = delegationTasks.map((del) => {
         if (del.id === targetId || del.taskId === targetId) {
+          targetAssigneeName = del.name;
           return { ...del, lastNudgeTimestamp: nudgeTime };
         }
         return del;
@@ -244,6 +351,7 @@ export default function App() {
           const stagesCopy = [...f.stages];
           const stgIdx = stageIndex !== undefined ? stageIndex : f.currentStageIndex;
           if (stagesCopy[stgIdx]) {
+            targetAssigneeName = stagesCopy[stgIdx].assignee || '';
             stagesCopy[stgIdx] = {
               ...stagesCopy[stgIdx],
               lastNudgeTimestamp: nudgeTime
@@ -266,6 +374,32 @@ export default function App() {
       details: `Issued Nudge / Follow-up alert for ${module} #${targetId}`
     });
     setAuditLogs(storageAdapter.getAuditLogs());
+
+    // Channel 1 & Channel 2: Emit user-based Nudge notification
+    const matchedUser = resolveTargetUser(targetAssigneeName);
+    const targetUserId = matchedUser ? matchedUser.userId : (targetAssigneeName ? targetAssigneeName : currentUser.userId);
+    const nudgeTitle = `Nudge / Expedite: ${module} #${targetId}`;
+    const nudgeMessage = `${currentUser.name} (${currentUser.role}) requested expedite action on this item.`;
+
+    storageAdapter.addNotification({
+      userId: targetUserId,
+      title: nudgeTitle,
+      message: nudgeMessage,
+      type: 'NUDGE',
+      linkTab: module.toLowerCase(),
+      linkEntityId: targetId,
+    });
+    setNotifications(storageAdapter.getNotifications());
+
+    // Only fire browser push for the active user if it is targeted to them or if they triggered it
+    if (targetUserId === currentUser.userId || isSuperAdmin) {
+      sendBrowserDesktopNotification({
+        title: nudgeTitle,
+        body: nudgeMessage,
+        onClick: () => handleTabChange(module.toLowerCase() as NavTab),
+      });
+    }
+
     showToast(`Nudge alert issued by ${currentUser.name}! Assignee notified.`);
   };
 
@@ -278,6 +412,7 @@ export default function App() {
     setRegistryConfig(storageAdapter.getRegistryConfig());
     setAuditLogs(storageAdapter.getAuditLogs());
     setUsersList(storageAdapter.getUsers());
+    setNotifications(storageAdapter.getNotifications());
 
     // Asynchronous Firestore sync
     const synced = await storageAdapter.loadFromFirestore();
@@ -289,6 +424,7 @@ export default function App() {
       setInventoryMovements(storageAdapter.getInventoryMovements());
       setUsersList(storageAdapter.getUsers());
       setNoticeBoardItems(storageAdapter.getNoticeBoard());
+      setNotifications(storageAdapter.getNotifications());
     }
   };
 
@@ -303,6 +439,7 @@ export default function App() {
       setInventoryMovements(storageAdapter.getInventoryMovements());
       setUsersList(storageAdapter.getUsers());
       setNoticeBoardItems(storageAdapter.getNoticeBoard());
+      setNotifications(storageAdapter.getNotifications());
     });
     return () => unsubscribe();
   }, []);
@@ -318,6 +455,86 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // Periodic SLA Breach Evaluator
+  useEffect(() => {
+    if (flows.length === 0) return;
+    if (registryConfig.notificationSettings && !registryConfig.notificationSettings.enableSlaBreachAlerts) return;
+
+    const existingNotifs = storageAdapter.getNotifications();
+    const now = new Date().getTime();
+
+    flows.forEach((flow) => {
+      if (flow.status !== 'In Progress') return;
+      const currentStage = flow.stages[flow.currentStageIndex];
+      if (!currentStage || !currentStage.plannedDateTime) return;
+
+      // Parse plannedDateTime "DD/MM/YYYY, HH:MM:SS" or similar
+      const parts = currentStage.plannedDateTime.split(/[/, :]+/);
+      if (parts.length >= 3) {
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const year = parseInt(parts[2], 10);
+        const hour = parts[3] ? parseInt(parts[3], 10) : 18;
+        const minute = parts[4] ? parseInt(parts[4], 10) : 0;
+        const plannedTime = new Date(year, month, day, hour, minute).getTime();
+
+        // Check if overdue by more than 1 hour and not yet alerted in the last 24h
+        if (now > plannedTime) {
+          const notifKey = `sla-breach-${flow.flowId}-${currentStage.stageId}`;
+          const alreadyNotified = existingNotifs.some(
+            (n) => n.data?.slaKey === notifKey && n.timestamp.includes(new Date().toLocaleDateString('en-GB'))
+          );
+
+          if (!alreadyNotified) {
+            const matchedUser = resolveTargetUser(currentStage.assignee);
+            const targetUserId = matchedUser ? matchedUser.userId : 'ALL';
+            const notifTitle = `SLA Delay: ${flow.poNumber || flow.indentNo} (${currentStage.stageName})`;
+            const notifMessage = `Stage ${flow.currentStageIndex + 1} assigned to ${currentStage.assignee || 'Operations'} is running behind schedule.`;
+
+            storageAdapter.addNotification({
+              userId: targetUserId,
+              title: notifTitle,
+              message: notifMessage,
+              type: 'SLA_BREACH',
+              linkTab: 'fms',
+              linkEntityId: flow.id,
+              data: { slaKey: notifKey, flowId: flow.flowId, stageId: currentStage.stageId }
+            });
+            setNotifications(storageAdapter.getNotifications());
+
+            if (targetUserId === currentUser.userId || isSuperAdmin) {
+              sendBrowserDesktopNotification({
+                title: notifTitle,
+                body: notifMessage,
+                onClick: () => {
+                  handleTabChange('fms');
+                  setSelectedFmsDetail(flow);
+                }
+              });
+            }
+
+            if (registryConfig.notificationSettings?.webhookUrl && (registryConfig.notificationSettings.enableSlaBreachAlerts ?? true)) {
+              dispatchWebhookNotification(registryConfig.notificationSettings.webhookUrl, {
+                event: 'FMS_SLA_BREACH',
+                title: notifTitle,
+                message: notifMessage,
+                timestamp: new Date().toISOString(),
+                entityId: flow.flowId,
+                data: {
+                  flowId: flow.flowId,
+                  indentNo: flow.indentNo,
+                  stageName: currentStage.stageName,
+                  assignee: currentStage.assignee,
+                  plannedDateTime: currentStage.plannedDateTime,
+                }
+              });
+            }
+          }
+        }
+      }
+    });
+  }, [flows, registryConfig.notificationSettings]);
 
   const handleToggleScope = (newScope: ViewScope) => {
     if (!isSuperAdmin) {
@@ -414,8 +631,8 @@ export default function App() {
     } else {
       const isPc = latestUser.role.toLowerCase().includes('process coordinator') || latestUser.name.toLowerCase().includes('ritu sahu');
       setPcDeskActive(isPc);
+      setViewScope('ALL_ORG');
       if (isPc) {
-        setViewScope('ALL_ORG');
         showToast(`Switched active profile to ${latestUser.name} (${latestUser.role}). Scope automatically expanded to view ALL user data across all departments!`);
       } else {
         showToast(`Switched active profile to ${latestUser.name} (${latestUser.role})`);
@@ -661,8 +878,9 @@ export default function App() {
       updatedStages[nextIndex].status = 'In Progress';
       const def = stageDefs.find((s) => s.stageId === updatedStages[nextIndex].stageId);
       const sla = def?.slaHours || 1;
-      const targetDate = new Date(now.getTime() + sla * 3600000);
-      updatedStages[nextIndex].plannedDateTime = targetDate.toLocaleString('en-GB');
+      const workShiftConfig = storageAdapter.getRegistryConfig().workShiftConfig || DEFAULT_WORK_SHIFT_CONFIG;
+      const targetDate = addWorkingSlaHours(now, sla, workShiftConfig);
+      updatedStages[nextIndex].plannedDateTime = formatToStandardDateTime(targetDate);
     }
 
     const updatedFlow: FmsInstance = {
@@ -938,6 +1156,61 @@ export default function App() {
       details: `Advanced stage ${currentStage.stageName}. Decision: ${currentStage.decisionValue || 'Done'}`
     });
     setAuditLogs(storageAdapter.getAuditLogs());
+
+    // Channel 1 & Channel 2: Emit in-app and desktop notifications
+    const nextStage = !isComplete ? updatedFlow.stages[nextIndex] : null;
+    const targetAssignee = nextStage?.assignee;
+    const targetUser = usersList.find((u) => u.name === targetAssignee);
+    const notifTargetUserId = targetUser ? targetUser.userId : 'ALL';
+
+    const notifTitle = isComplete
+      ? `FMS Completed: ${updatedFlow.poNumber || updatedFlow.indentNo}`
+      : `Action Required: Stage ${nextIndex + 1} (${nextStage?.stageName})`;
+    const notifMessage = isComplete
+      ? `Flow ${updatedFlow.flowId} has completed all operational stages.`
+      : `${currentUser.name} advanced stage. Assigned to ${targetAssignee || 'Operations'}.`;
+
+    storageAdapter.addNotification({
+      userId: notifTargetUserId,
+      title: notifTitle,
+      message: notifMessage,
+      type: isComplete ? 'STAGE_ADVANCED' : 'FMS_ACTION_REQUIRED',
+      linkTab: 'fms',
+      linkEntityId: updatedFlow.id,
+      data: { flowId: updatedFlow.flowId, stageIndex: nextIndex }
+    });
+    setNotifications(storageAdapter.getNotifications());
+
+    // Channel 2: Desktop push notification (sent to current device if matching target user or super admin)
+    if (notifTargetUserId === currentUser.userId || isSuperAdmin) {
+      sendBrowserDesktopNotification({
+        title: notifTitle,
+        body: notifMessage,
+        onClick: () => {
+          handleTabChange('fms');
+          setSelectedFmsDetail(updatedFlow);
+        }
+      });
+    }
+
+    // Webhook dispatch if configured
+    if (registryConfig.notificationSettings?.webhookUrl && (registryConfig.notificationSettings.enableFmsAlerts ?? true)) {
+      dispatchWebhookNotification(registryConfig.notificationSettings.webhookUrl, {
+        event: isComplete ? 'FMS_FLOW_COMPLETED' : 'FMS_STAGE_ADVANCED',
+        title: notifTitle,
+        message: notifMessage,
+        timestamp: new Date().toISOString(),
+        entityId: updatedFlow.flowId,
+        data: {
+          flowId: updatedFlow.flowId,
+          indentNo: updatedFlow.indentNo,
+          poNumber: updatedFlow.poNumber,
+          stageIndex: nextIndex,
+          assignee: targetAssignee,
+        }
+      });
+    }
+
     showToast(`FMS #${updatedFlow.poNumber || updatedFlow.indentNo} advanced to stage: ${updatedFlow.stages[updatedFlow.currentStageIndex]?.stageName || 'Completed'}`);
   };
 
@@ -955,6 +1228,40 @@ export default function App() {
     handleAdvanceCurrentStage(flow, decision, submittedData);
   };
 
+  const handleDeleteFlow = (flowId: string) => {
+    if (!isSuperAdmin) {
+      showToast('Permission denied. Only Super Admin can delete FMS records.');
+      return;
+    }
+    const targetFlow = flows.find((f) => f.id === flowId || f.flowId === flowId);
+    const idToDelete = targetFlow ? targetFlow.id : flowId;
+    const codeToDelete = targetFlow ? targetFlow.flowId : flowId;
+
+    storageAdapter.deleteFmsFlow(idToDelete, currentUser);
+    if (codeToDelete && codeToDelete !== idToDelete) {
+      storageAdapter.deleteFmsFlow(codeToDelete, currentUser);
+    }
+
+    const updated = flows.filter((f) => f.id !== idToDelete && f.flowId !== codeToDelete);
+    setFlows(updated);
+    setAuditLogs(storageAdapter.getAuditLogs());
+
+    if (selectedFmsDetail && (selectedFmsDetail.id === idToDelete || selectedFmsDetail.flowId === codeToDelete)) {
+      setSelectedFmsDetail(null);
+    }
+    showToast(`FMS Record ${codeToDelete} permanently deleted by Super Admin.`);
+  };
+
+  const handleDeleteTemplate = (templateKey: string) => {
+    if (!isSuperAdmin) {
+      showToast('Permission denied. Only Super Admin can delete workflow templates.');
+      return;
+    }
+    storageAdapter.deleteFmsTemplate(templateKey, currentUser);
+    setAuditLogs(storageAdapter.getAuditLogs());
+    showToast(`FMS Workflow Template (${templateKey}) deleted by Super Admin.`);
+  };
+
   // Delegation Handlers
   const handleCreateDelegationTask = (newTask: DelegationTask) => {
     const updated = [newTask, ...delegationTasks];
@@ -969,6 +1276,40 @@ export default function App() {
       details: `Delegated task "${newTask.task}" to ${newTask.name} (Deadline: ${newTask.firstDate})`
     });
     setAuditLogs(storageAdapter.getAuditLogs());
+
+    // Trigger Notification & Desktop push for Delegation Assignee
+    const assignedUser = usersList.find((u) => u.name === newTask.name);
+    const targetUserId = assignedUser ? assignedUser.userId : 'ALL';
+    const notifTitle = `New Task Delegated: #${newTask.taskId}`;
+    const notifMessage = `${currentUser.name} delegated: "${newTask.task}" to ${newTask.name} (Due: ${newTask.firstDate})`;
+
+    storageAdapter.addNotification({
+      userId: targetUserId,
+      title: notifTitle,
+      message: notifMessage,
+      type: 'DELEGATION',
+      linkTab: 'delegation',
+      linkEntityId: newTask.id,
+    });
+    setNotifications(storageAdapter.getNotifications());
+
+    sendBrowserDesktopNotification({
+      title: notifTitle,
+      body: notifMessage,
+      onClick: () => handleTabChange('delegation'),
+    });
+
+    if (registryConfig.notificationSettings?.webhookUrl && (registryConfig.notificationSettings.enableDelegationAlerts ?? true)) {
+      dispatchWebhookNotification(registryConfig.notificationSettings.webhookUrl, {
+        event: 'DELEGATION_TASK_CREATED',
+        title: notifTitle,
+        message: notifMessage,
+        timestamp: new Date().toISOString(),
+        entityId: newTask.taskId,
+        data: newTask,
+      });
+    }
+
     showToast(`Task ${newTask.taskId} delegated to ${newTask.name}!`);
   };
 
@@ -987,6 +1328,32 @@ export default function App() {
         : `Shifted task #${updatedTask.taskId} to ${updatedTask.latestRevision} (Rev #${updatedTask.totalRevisions})`
     });
     setAuditLogs(storageAdapter.getAuditLogs());
+
+    if (updatedTask.status === 'Completed') {
+      const notifTitle = `Task Completed: #${updatedTask.taskId}`;
+      const notifMessage = `${updatedTask.name} marked task "${updatedTask.task}" as Completed.`;
+      storageAdapter.addNotification({
+        userId: 'ALL',
+        title: notifTitle,
+        message: notifMessage,
+        type: 'DELEGATION',
+        linkTab: 'delegation',
+        linkEntityId: updatedTask.id,
+      });
+      setNotifications(storageAdapter.getNotifications());
+
+      if (registryConfig.notificationSettings?.webhookUrl && (registryConfig.notificationSettings.enableDelegationAlerts ?? true)) {
+        dispatchWebhookNotification(registryConfig.notificationSettings.webhookUrl, {
+          event: 'DELEGATION_TASK_COMPLETED',
+          title: notifTitle,
+          message: notifMessage,
+          timestamp: new Date().toISOString(),
+          entityId: updatedTask.taskId,
+          data: updatedTask,
+        });
+      }
+    }
+
     showToast(`Task #${updatedTask.taskId} updated successfully.`);
   };
 
@@ -1099,6 +1466,51 @@ export default function App() {
       details: `${movement.type} ${movement.quantity} units of ${movement.itemName} from ${movement.sourceLocation} to ${movement.destinationLocation}`
     });
     setAuditLogs(storageAdapter.getAuditLogs());
+
+    // Low Stock Alert Trigger: Check if updated stock is at or below threshold
+    const affectedItem = updatedItems.find((i) => i.itemId === movement.itemId);
+    if (affectedItem && affectedItem.currentStock <= affectedItem.minThreshold) {
+      const notifTitle = `Low Stock Alert: ${affectedItem.name}`;
+      const notifMessage = `Stock reached ${affectedItem.currentStock} ${affectedItem.unit} (Min Threshold: ${affectedItem.minThreshold}) at ${affectedItem.location}. Immediate replenishment required.`;
+
+      // Find store manager or purchase officer for stock alert
+      const storeUser = usersList.find((u) => 
+        (u.departmentName || '').toUpperCase().includes('STORE') ||
+        (u.role || '').toUpperCase().includes('STORE') ||
+        (u.role || '').toUpperCase().includes('PURCHASE')
+      );
+      const stockTargetUserId = storeUser ? storeUser.userId : currentUser.userId;
+
+      storageAdapter.addNotification({
+        userId: stockTargetUserId,
+        title: notifTitle,
+        message: notifMessage,
+        type: 'STOCK_ALERT',
+        linkTab: 'ims',
+        linkEntityId: affectedItem.id,
+      });
+      setNotifications(storageAdapter.getNotifications());
+
+      if (stockTargetUserId === currentUser.userId || isSuperAdmin) {
+        sendBrowserDesktopNotification({
+          title: notifTitle,
+          body: notifMessage,
+          onClick: () => handleTabChange('ims'),
+        });
+      }
+
+      if (registryConfig.notificationSettings?.webhookUrl && (registryConfig.notificationSettings.enableStockAlerts ?? true)) {
+        dispatchWebhookNotification(registryConfig.notificationSettings.webhookUrl, {
+          event: 'LOW_STOCK_BREACH',
+          title: notifTitle,
+          message: notifMessage,
+          timestamp: new Date().toISOString(),
+          entityId: affectedItem.itemId,
+          data: affectedItem,
+        });
+      }
+    }
+
     showToast(`Stock transaction ${movement.transactionId} recorded!`);
   };
 
@@ -1197,6 +1609,7 @@ export default function App() {
           storageAdapter.saveAuthUser(u);
           setCurrentUser(u);
           setIsAuthenticated(true);
+          setViewScope(isUserAdminOrSuperAdmin(u) ? 'ALL_ORG' : 'USER_ONLY');
           showToast(`Welcome back, ${u.name}!`);
         }}
         noticeItems={noticeBoardItems}
@@ -1205,7 +1618,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-white flex flex-col font-sans text-slate-900 antialiased">
+    <div className="h-screen max-h-screen bg-white flex flex-col font-sans text-slate-900 antialiased overflow-hidden">
       {/* Toast */}
       {toastMessage && (
         <div className="fixed bottom-5 right-5 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-xl border border-slate-700 text-xs font-semibold flex items-center gap-2 animate-bounce">
@@ -1251,9 +1664,24 @@ export default function App() {
         onOpenSuperAdmin={isSuperAdmin ? () => setActiveTab('super-admin') : undefined}
         onLogout={handleLogout}
         onOpenGlobalSearch={() => setIsGlobalSearchOpen(true)}
+        notifications={notifications.filter((n) => {
+          if (isSuperAdmin && viewScope === 'ALL_ORG') return true;
+          return (
+            n.userId === currentUser.userId ||
+            n.userId === currentUser.name ||
+            n.targetUserName === currentUser.name ||
+            n.userId === 'ALL'
+          );
+        })}
+        onMarkNotificationRead={handleMarkNotificationRead}
+        onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
+        onClearAllNotifications={handleClearAllNotifications}
+        onSelectNotification={handleSelectNotification}
+        desktopPermission={desktopPermission}
+        onRequestDesktopPermission={handleRequestDesktopPermission}
       />
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
         {/* Sidebar */}
         <Sidebar
           activeTab={activeTab}
@@ -1261,23 +1689,52 @@ export default function App() {
             handleTabChange(tab);
             if (tab === 'fms') {
               setSelectedFmsDepartment(null);
+              setSelectedFmsWorkflowKey(null);
+            }
+            if (tab === 'checklist') {
+              setSelectedChecklistDepartment(null);
+            }
+            if (tab === 'delegation') {
+              setSelectedDelegationDepartment(null);
             }
           }}
           badgeCounts={badgeCounts}
           isOpen={isSidebarOpen}
           flows={flows}
-          selectedDepartment={selectedFmsDepartment}
+          checklistItems={checklistItems}
+          delegationTasks={delegationTasks}
+          usersList={usersList}
+          selectedDepartment={
+            activeTab === 'fms' ? selectedFmsDepartment :
+            activeTab === 'checklist' ? selectedChecklistDepartment :
+            activeTab === 'delegation' ? selectedDelegationDepartment : null
+          }
+          selectedWorkflowKey={selectedFmsWorkflowKey}
           onSelectDepartmentFms={(deptKey) => {
             handleTabChange('fms');
             setSelectedFmsDepartment(deptKey);
+            setSelectedFmsWorkflowKey(null);
+          }}
+          onSelectWorkflowFms={(deptKey, flowKey) => {
+            handleTabChange('fms');
+            setSelectedFmsDepartment(deptKey);
+            setSelectedFmsWorkflowKey(flowKey);
+          }}
+          onSelectDepartmentChecklist={(deptKey) => {
+            handleTabChange('checklist');
+            setSelectedChecklistDepartment(deptKey);
+          }}
+          onSelectDepartmentDelegation={(deptKey) => {
+            handleTabChange('delegation');
+            setSelectedDelegationDepartment(deptKey);
           }}
           currentUser={currentUser}
           onOpenMyProfile={() => handleTabChange('profile')}
         />
 
         {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto p-3 sm:p-6 pb-28 md:pb-6 bg-white">
-          <div className="max-w-7xl mx-auto">
+        <main className="flex-1 overflow-y-auto min-h-0 p-3 sm:p-5 pb-28 md:pb-6 bg-white">
+          <div className={activeTab === 'summary' ? "w-full" : "max-w-7xl mx-auto w-full"}>
             {activeTab === 'summary' && (isSuperAdmin || hasModulePermission(currentUser, 'summary', 'view')) && (
               <UnifiedWorkSummary
                 currentUser={currentUser}
@@ -1325,6 +1782,7 @@ export default function App() {
                   setFlows(updated);
                   storageAdapter.saveFmsFlows(updated);
                 }}
+                onDeleteFlow={handleDeleteFlow}
                 onCreateFlow={(isSuperAdmin || hasModulePermission(currentUser, 'fms', 'edit')) ? () => setIsCreateFmsOpen(true) : undefined}
                 onSelectFlow={(f) => setSelectedFmsDetail(f)}
                 onOpenTemplateStudio={(isSuperAdmin || hasModulePermission(currentUser, 'fms', 'edit')) ? (key) => {
@@ -1333,7 +1791,12 @@ export default function App() {
                 } : undefined}
                 onOpenStageAction={(flow, stageIndex) => setStageActionTarget({ flow, stageIndex })}
                 selectedDepartmentFilter={selectedFmsDepartment}
-                onClearDepartmentFilter={() => setSelectedFmsDepartment(null)}
+                onClearDepartmentFilter={() => {
+                  setSelectedFmsDepartment(null);
+                  setSelectedFmsWorkflowKey(null);
+                }}
+                selectedWorkflowFilter={selectedFmsWorkflowKey}
+                onClearWorkflowFilter={() => setSelectedFmsWorkflowKey(null)}
               />
             )}
 
@@ -1342,6 +1805,7 @@ export default function App() {
                 flows={flows}
                 currentUser={currentUser}
                 onSelectFlow={(f) => setSelectedFmsDetail(f)}
+                onDeleteFlow={handleDeleteFlow}
               />
             )}
 
@@ -1355,6 +1819,9 @@ export default function App() {
                 onNewTask={(isSuperAdmin || hasModulePermission(currentUser, 'delegation', 'edit')) ? () => setIsNewTaskOpen(true) : undefined}
                 onReviseTask={(task) => setSelectedTaskForRevision(task)}
                 onAddProcessRemark={handleAddProcessRemark}
+                selectedDepartmentFilter={selectedDelegationDepartment}
+                onClearDepartmentFilter={() => setSelectedDelegationDepartment(null)}
+                usersList={usersList}
               />
             )}
 
@@ -1368,6 +1835,8 @@ export default function App() {
                 onNewItem={(isSuperAdmin || hasModulePermission(currentUser, 'checklist', 'edit')) ? () => setIsNewChecklistOpen(true) : undefined}
                 onBatchGenerateNextCycle={(isSuperAdmin || hasModulePermission(currentUser, 'checklist', 'edit')) ? handleBatchGenerateNextCycle : undefined}
                 onAddProcessRemark={handleAddProcessRemark}
+                selectedDepartmentFilter={selectedChecklistDepartment}
+                onClearDepartmentFilter={() => setSelectedChecklistDepartment(null)}
               />
             )}
 
@@ -1388,6 +1857,7 @@ export default function App() {
             {activeTab === 'registry' && (isSuperAdmin || hasModulePermission(currentUser, 'registry', 'view')) && (
               <CentralRegistryView
                 config={registryConfig}
+                currentUser={currentUser}
                 onSaveConfig={handleSaveRegistryConfig}
                 onResetSeedData={handleResetSeedData}
                 onOpenTemplateStudio={(key) => {
@@ -1474,6 +1944,9 @@ export default function App() {
         flow={selectedFmsDetail}
         currentUser={currentUser}
         onClose={() => setSelectedFmsDetail(null)}
+        onDeleteFlow={handleDeleteFlow}
+        allFlows={flows}
+        onSelectFlow={(f) => setSelectedFmsDetail(f)}
       />
 
       <NewTaskModal
@@ -1559,10 +2032,31 @@ export default function App() {
         } : undefined}
         badgeCounts={badgeCounts}
         flows={flows}
-        selectedDepartment={selectedFmsDepartment}
+        checklistItems={checklistItems}
+        delegationTasks={delegationTasks}
+        selectedDepartment={
+          activeTab === 'fms' ? selectedFmsDepartment :
+          activeTab === 'checklist' ? selectedChecklistDepartment :
+          activeTab === 'delegation' ? selectedDelegationDepartment : null
+        }
+        selectedWorkflowKey={selectedFmsWorkflowKey}
         onSelectDepartmentFms={(deptKey) => {
           handleTabChange('fms');
           setSelectedFmsDepartment(deptKey);
+          setSelectedFmsWorkflowKey(null);
+        }}
+        onSelectWorkflowFms={(deptKey, flowKey) => {
+          handleTabChange('fms');
+          setSelectedFmsDepartment(deptKey);
+          setSelectedFmsWorkflowKey(flowKey);
+        }}
+        onSelectDepartmentChecklist={(deptKey) => {
+          handleTabChange('checklist');
+          setSelectedChecklistDepartment(deptKey);
+        }}
+        onSelectDepartmentDelegation={(deptKey) => {
+          handleTabChange('delegation');
+          setSelectedDelegationDepartment(deptKey);
         }}
         onOpenQuickAction={isSuperAdmin ? () => {
           setIsMobileDrawerOpen(false);

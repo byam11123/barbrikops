@@ -27,6 +27,7 @@ import { downloadCsv } from '../../utils/csvExporter';
 import { CustomSelect } from '../common/CustomSelect';
 import { ChecklistItem, Frequency, UserProfile, ProcessRemark, isUserSuperAdmin, hasModulePermission } from '../../types';
 import { ViewScope } from '../layout/Header';
+import { matchItemDepartment, getDepartmentBranchLabel } from '../../services/stageAssignment';
 
 interface ChecklistManagerProps {
   items: ChecklistItem[];
@@ -43,6 +44,8 @@ interface ChecklistManagerProps {
     remarkText: string,
     stageIndex?: number
   ) => void;
+  selectedDepartmentFilter?: string | null;
+  onClearDepartmentFilter?: () => void;
 }
 
 export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
@@ -54,6 +57,8 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
   onNewItem,
   onBatchGenerateNextCycle,
   onAddProcessRemark,
+  selectedDepartmentFilter = null,
+  onClearDepartmentFilter,
 }) => {
   const [activeFrequency, setActiveFrequency] = useState<string>('ALL');
   const [departmentFilter, setDepartmentFilter] = useState<string>('ALL');
@@ -92,6 +97,11 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
   const filteredItems = items.filter((item) => {
     // 1. User Scope Filtering - non-superadmin only sees own tasks
     if (effectiveScope === 'USER_ONLY' && !isMyItem(item)) {
+      return false;
+    }
+
+    // 1b. Department Filter from Sidebar
+    if (selectedDepartmentFilter && !matchItemDepartment(item.department, selectedDepartmentFilter)) {
       return false;
     }
 
@@ -254,6 +264,29 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
 
   return (
     <div className="space-y-5">
+      {/* Department Filter Indicator from Sidebar */}
+      {selectedDepartmentFilter && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 px-3.5 py-2.5 bg-blue-50/90 border border-blue-200 rounded-xl text-xs shadow-2xs">
+          <div className="flex items-center gap-2 text-blue-950 font-semibold">
+            <CheckSquare className="w-4 h-4 text-blue-600 shrink-0" />
+            <span>
+              Department: <strong className="text-blue-700">{getDepartmentBranchLabel(selectedDepartmentFilter)}</strong>
+            </span>
+            <span className="text-slate-400">·</span>
+            <span className="text-slate-600 font-normal">{filteredItems.length} checklist tasks</span>
+          </div>
+          {onClearDepartmentFilter && (
+            <button
+              type="button"
+              onClick={onClearDepartmentFilter}
+              className="px-2.5 py-1 bg-blue-200 hover:bg-blue-300 text-blue-900 rounded-md font-bold text-[11px] transition-colors cursor-pointer"
+            >
+              Clear Filter ✕
+            </button>
+          )}
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {/* Total Checklists Card */}

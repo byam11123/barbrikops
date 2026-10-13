@@ -20,9 +20,10 @@ import {
   CheckSquare, 
   SlidersHorizontal,
   RefreshCw,
-  FolderOpen
+  FolderOpen,
+  Trash2
 } from 'lucide-react';
-import { FmsInstance, FmsStageExecution, UserProfile } from '../../types';
+import { FmsInstance, FmsStageExecution, UserProfile, isUserSuperAdmin } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { downloadCsv } from '../../utils/csvExporter';
 import { FilePreviewModal } from '../common/FilePreviewModal';
@@ -32,13 +33,17 @@ interface FmsAuditLedgerViewProps {
   flows: FmsInstance[];
   currentUser: UserProfile;
   onSelectFlow?: (flow: FmsInstance) => void;
+  onDeleteFlow?: (flowId: string) => void;
 }
 
 export const FmsAuditLedgerView: React.FC<FmsAuditLedgerViewProps> = ({
   flows,
   currentUser,
   onSelectFlow,
+  onDeleteFlow,
 }) => {
+  const isSuperAdmin = isUserSuperAdmin(currentUser);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedFlowType, setSelectedFlowType] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
@@ -536,6 +541,45 @@ export const FmsAuditLedgerView: React.FC<FmsAuditLedgerViewProps> = ({
                         </button>
                       )}
 
+                      {isSuperAdmin && (
+                        confirmDeleteId === flow.id ? (
+                          <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1">
+                            <span className="text-xs font-bold text-rose-700">Delete record?</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (onDeleteFlow) {
+                                  onDeleteFlow(flow.id);
+                                } else {
+                                  storageAdapter.deleteFmsFlow(flow.id, currentUser);
+                                }
+                                setConfirmDeleteId(null);
+                              }}
+                              className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-bold cursor-pointer"
+                            >
+                              Yes
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(null)}
+                              className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs font-medium cursor-pointer"
+                            >
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(flow.id)}
+                            className="px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                            title="Delete FMS Record (Super Admin)"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                            <span>Delete</span>
+                          </button>
+                        )
+                      )}
+
                       <button
                         type="button"
                         onClick={() => toggleExpandFlow(flow.id)}
@@ -553,7 +597,16 @@ export const FmsAuditLedgerView: React.FC<FmsAuditLedgerViewProps> = ({
                         <p className="text-xs text-slate-400 italic">No stages configured for this workflow.</p>
                       ) : (
                         flow.stages.map((stage, idx) => {
-                          const entries = Object.entries(stage.submittedData || {}).filter(([k]) => !k.startsWith('_'));
+                          const stageFields = stage.fields || [];
+                          const rawEntries = Object.entries(stage.submittedData || {}).filter(([k]) => !k.startsWith('_'));
+                          const entries = [...rawEntries].sort(([keyA], [keyB]) => {
+                            const idxA = stageFields.findIndex((f) => f.id === keyA);
+                            const idxB = stageFields.findIndex((f) => f.id === keyB);
+                            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                            if (idxA !== -1) return -1;
+                            if (idxB !== -1) return 1;
+                            return 0;
+                          });
                           const isDone = stage.status === 'Done' || stage.status === 'Skipped' || stage.status === 'Completed';
                           const delay = Math.max(stage.delayHours ?? 0, stage.timeDelayHours ?? 0, getStageDelayHours(stage));
                           const isOverdue = !isDone && delay > 0;

@@ -25,11 +25,11 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { NavTab } from './Sidebar';
-import { UserProfile, FmsInstance, isUserSuperAdmin, hasModulePermission } from '../../types';
+import { UserProfile, FmsInstance, isUserSuperAdmin, hasModulePermission, ChecklistItem, DelegationTask } from '../../types';
 import { USERS } from '../../data/initialData';
 import { ViewScope } from './Header';
 import { storageAdapter } from '../../services/storageAdapter';
-import { getFlowDepartmentKey, getDepartmentBranchLabel } from '../../services/stageAssignment';
+import { getFlowDepartmentKey, getDepartmentBranchLabel, matchItemDepartment, matchTaskDepartment } from '../../services/stageAssignment';
 import { UserAvatar } from '../common/UserAvatar';
 
 interface MobileDrawerProps {
@@ -52,8 +52,14 @@ interface MobileDrawerProps {
     lowStockCount: number;
   };
   flows: FmsInstance[];
+  checklistItems?: ChecklistItem[];
+  delegationTasks?: DelegationTask[];
   selectedDepartment?: string | null;
+  selectedWorkflowKey?: string | null;
   onSelectDepartmentFms?: (deptKey: string | null) => void;
+  onSelectWorkflowFms?: (deptKey: string, flowKeyOrTemplateId: string | null) => void;
+  onSelectDepartmentChecklist?: (deptKey: string) => void;
+  onSelectDepartmentDelegation?: (deptKey: string) => void;
   onOpenQuickAction?: () => void;
   onRefresh?: () => void;
   usersList?: UserProfile[];
@@ -72,14 +78,48 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
   onTogglePcDesk,
   badgeCounts,
   flows,
+  checklistItems = [],
+  delegationTasks = [],
   selectedDepartment,
+  selectedWorkflowKey,
   onSelectDepartmentFms,
+  onSelectWorkflowFms,
+  onSelectDepartmentChecklist,
+  onSelectDepartmentDelegation,
   onOpenQuickAction,
   onRefresh,
-  usersList,
+  usersList = [],
 }) => {
   const [collapsedDepts, setCollapsedDepts] = useState<Record<string, boolean>>({});
+  const [collapsedSubSections, setCollapsedSubSections] = useState<Record<string, boolean>>({});
+  const [isAllFmsExpanded, setIsAllFmsExpanded] = useState<boolean>(true);
+
+  const toggleSubSection = (subKey: string) => {
+    setCollapsedSubSections((prev) => ({ ...prev, [subKey]: !prev[subKey] }));
+  };
   const availableUsers = usersList && usersList.length > 0 ? usersList : USERS;
+
+  React.useEffect(() => {
+    if (isOpen) {
+      const orig = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+
+      // Lock underlying aside (Sidebar) and main scroll containers while drawer is open
+      const scrollContainers = document.querySelectorAll('aside, main');
+      const prevOverflows: string[] = [];
+      scrollContainers.forEach((el, idx) => {
+        prevOverflows[idx] = (el as HTMLElement).style.overflow;
+        (el as HTMLElement).style.overflow = 'hidden';
+      });
+
+      return () => {
+        document.body.style.overflow = orig;
+        scrollContainers.forEach((el, idx) => {
+          (el as HTMLElement).style.overflow = prevOverflows[idx] || '';
+        });
+      };
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -89,6 +129,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
 
   const configuredDepts = storageAdapter.getDepartments();
   const customTemplates = storageAdapter.getFmsTemplates();
+  const allMasterTemplates = storageAdapter.getAllMasterTemplates();
 
   const detectedDeptKeys = new Set<string>();
   const archivedKeys = new Set(configuredDepts.filter((d) => d.isArchived).map((d) => d.key.toUpperCase()));
@@ -106,12 +147,77 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
 
   const departmentList = Array.from(detectedDeptKeys).map((deptKey) => {
     const deptFlows = flows.filter((f) => getFlowDepartmentKey(f, customTemplates) === deptKey);
-    const activeCount = deptFlows.filter((f) => f.status === 'In Progress').length;
+    const activeFmsCount = deptFlows.filter((f) => f.status === 'In Progress').length;
+
+    // Checklists in this department
+    const deptChecklistItems = checklistItems.filter((chk) => matchItemDepartment(chk.department, deptKey));
+    const pendingChecklistCount = deptChecklistItems.filter((chk) => chk.status === 'Pending' || chk.status === 'Delayed').length;
+
+    // Delegations in this department
+    const deptDelegationTasks = delegationTasks.filter((del) => matchTaskDepartment(del, deptKey, usersList));
+    const pendingDelegationCount = deptDelegationTasks.filter((del) => del.status === 'Pending').length;
+
+    const totalActiveCount = activeFmsCount + pendingChecklistCount + pendingDelegationCount;
+
+    const workflowMap = new Map<string, { key: string; name: string; activeCount: number; totalCount: number }>();
+
+    allMasterTemplates.forEach((tpl) => {
+      let tplDept = 'OPERATIONS';
+      if (tpl.departmentHub) {
+        const hub = tpl.departmentHub.toUpperCase();
+        if (hub === 'PROCUREMENT') tplDept = 'PURCHASE';
+        else if (hub === 'SITE_LOGISTICS') tplDept = 'STORE';
+        else if (hub === 'FINANCE_ACCOUNTS') tplDept = 'ACCOUNTS';
+        else if (hub === 'HR_EQUIPMENT') tplDept = 'PLANT_OPS';
+        else tplDept = hub;
+      } else {
+        const dummyFlow = { flowType: tpl.templateKey || tpl.id } as FmsInstance;
+        tplDept = getFlowDepartmentKey(dummyFlow, customTemplates);
+      }
+
+      if (tplDept.toUpperCase() === deptKey.toUpperCase()) {
+        const flowKey = tpl.templateKey || tpl.id;
+        const matchingFlows = deptFlows.filter(
+          (f) => f.flowType === flowKey || f.customTemplateId === tpl.id || f.customTemplateId === flowKey
+        );
+        workflowMap.set(flowKey, {
+          key: flowKey,
+          name: tpl.name,
+          activeCount: matchingFlows.filter((f) => f.status === 'In Progress').length,
+          totalCount: matchingFlows.length,
+        });
+      }
+    });
+
+    deptFlows.forEach((f) => {
+      const flowKey = f.customTemplateId || f.flowType;
+      if (!workflowMap.has(flowKey)) {
+        const matchingFlows = deptFlows.filter(
+          (item) => item.flowType === f.flowType || (f.customTemplateId && item.customTemplateId === f.customTemplateId)
+        );
+        const formatName = f.flowType.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+        workflowMap.set(flowKey, {
+          key: flowKey,
+          name: formatName,
+          activeCount: matchingFlows.filter((item) => item.status === 'In Progress').length,
+          totalCount: matchingFlows.length,
+        });
+      }
+    });
+
     return {
       key: deptKey,
       label: getDepartmentBranchLabel(deptKey),
-      activeCount,
+      activeCount: totalActiveCount,
+      fmsActiveCount: activeFmsCount,
       totalCount: deptFlows.length,
+      workflows: Array.from(workflowMap.values()),
+      checklistCount: pendingChecklistCount,
+      checklistTotal: deptChecklistItems.length,
+      deptChecklists: deptChecklistItems,
+      delegationCount: pendingDelegationCount,
+      delegationTotal: deptDelegationTasks.length,
+      deptDelegations: deptDelegationTasks,
     };
   });
 
@@ -213,12 +319,15 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex bg-slate-900/60 backdrop-blur-xs md:hidden animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex bg-slate-900/60 backdrop-blur-xs md:hidden overscroll-contain animate-in fade-in duration-200"
       onClick={onClose}
+      onWheel={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
     >
       <div 
-        className="w-[84%] max-w-[320px] bg-white h-full shadow-2xl flex flex-col justify-between overflow-y-auto animate-in slide-in-from-left duration-200"
+        className="w-[84%] max-w-[320px] bg-white h-full shadow-2xl flex flex-col justify-between overflow-y-auto overscroll-contain animate-in slide-in-from-left duration-200"
         onClick={(e) => e.stopPropagation()}
+        onWheel={(e) => e.stopPropagation()}
       >
         {/* Top Header */}
         <div className="p-4 border-b border-slate-100 bg-slate-50/80">
@@ -342,7 +451,167 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
             <div className="space-y-1">
               {filteredNavItems.map((item) => {
                 const Icon = item.icon;
-                const isItemActive = activeTab === item.id && (item.id !== 'fms' || selectedDepartment === null);
+                const isItemActive = activeTab === item.id && (item.id !== 'fms' || (selectedDepartment === null && selectedWorkflowKey === null));
+
+                if (item.id === 'fms') {
+                  return (
+                    <div key={item.id} className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <button
+                          onClick={() => {
+                            handleNavigate('fms');
+                            onSelectDepartmentFms?.(null);
+                          }}
+                          className={`flex-1 flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all ${
+                            isItemActive
+                              ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                              : 'text-slate-700 hover:bg-slate-100 font-semibold'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0 py-0.5">
+                            <Icon className={`w-4 h-4 shrink-0 ${isItemActive ? 'text-white' : 'text-slate-500'}`} />
+                            <span className="text-xs truncate">{item.label}</span>
+                          </div>
+                          {item.badge && (
+                            <span
+                              className={`text-[10px] font-mono shrink-0 font-bold px-2 py-0.5 rounded-full ${
+                                isItemActive 
+                                  ? 'bg-white/20 text-white' 
+                                  : item.badgeColor || 'bg-slate-100 text-slate-700'
+                              }`}
+                            >
+                              {item.badge}
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsAllFmsExpanded(!isAllFmsExpanded)}
+                          className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 ml-1 cursor-pointer transition-colors"
+                          title="Toggle All FMS department workflows sub-tree"
+                        >
+                          {isAllFmsExpanded ? (
+                            <ChevronDown className="w-4 h-4" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Department Sub-Branches & Individual FMS Workflow Sub-Tree */}
+                      {isAllFmsExpanded && (
+                        <div className="pl-3 pr-1 space-y-1.5 border-l-2 border-indigo-100 ml-3 my-1">
+                          {departmentList.map((dept) => {
+                            const isDeptActive = activeTab === 'fms' && selectedDepartment === dept.key && !selectedWorkflowKey;
+                            const isDeptCollapsed = !!collapsedSubSections[`mob-fms-${dept.key}`];
+
+                            return (
+                              <div key={`mob-dept-${dept.key}`} className="space-y-1">
+                                {/* Department Sub-Branch Header */}
+                                <div className="flex items-center justify-between">
+                                  <button
+                                    onClick={() => {
+                                      if (onSelectWorkflowFms) {
+                                        onSelectWorkflowFms(dept.key, null);
+                                      } else {
+                                        onSelectDepartmentFms?.(dept.key);
+                                      }
+                                      handleNavigate('fms');
+                                    }}
+                                    className={`flex-1 flex items-center justify-between px-2 py-1 rounded-md text-left transition-all ${
+                                      isDeptActive
+                                        ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                                        : 'text-slate-700 hover:bg-slate-100 font-bold'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      {getDeptIcon(dept.key)}
+                                      <span className="text-[11px] truncate uppercase tracking-wider">{dept.label}</span>
+                                    </div>
+                                    {dept.fmsActiveCount > 0 && (
+                                      <span
+                                        className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded-full ${
+                                          isDeptActive ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                                        }`}
+                                      >
+                                        {dept.fmsActiveCount}
+                                      </span>
+                                    )}
+                                  </button>
+                                  {dept.workflows && dept.workflows.length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleSubSection(`mob-fms-${dept.key}`)}
+                                      className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 ml-0.5 cursor-pointer"
+                                      title="Toggle workflows"
+                                    >
+                                      {isDeptCollapsed ? (
+                                        <ChevronRight className="w-3 h-3" />
+                                      ) : (
+                                        <ChevronDown className="w-3 h-3" />
+                                      )}
+                                    </button>
+                                  )}
+                                </div>
+
+                                {/* Individual Workflow Sub-Tree */}
+                                {!isDeptCollapsed && dept.workflows && dept.workflows.length > 0 && (
+                                  <div className="pl-2 space-y-0.5 border-l border-indigo-100 ml-2">
+                                    {dept.workflows.map((wf) => {
+                                      const isWfActive = activeTab === 'fms' && selectedDepartment === dept.key && selectedWorkflowKey === wf.key;
+                                      return (
+                                        <button
+                                          key={`mob-wf-${dept.key}-${wf.key}`}
+                                          onClick={() => {
+                                            if (onSelectWorkflowFms) {
+                                              onSelectWorkflowFms(dept.key, wf.key);
+                                            } else {
+                                              onSelectDepartmentFms?.(dept.key);
+                                            }
+                                            handleNavigate('fms');
+                                          }}
+                                          title={`${wf.name} (${wf.activeCount} active, ${wf.totalCount} total)`}
+                                          className={`w-full flex items-center justify-between px-2 py-1 rounded text-left transition-all group cursor-pointer ${
+                                            isWfActive
+                                              ? 'bg-indigo-50 border border-indigo-300 text-indigo-900 font-bold shadow-2xs'
+                                              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-1.5 min-w-0">
+                                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                              isWfActive ? 'bg-indigo-600 ring-2 ring-indigo-300' : 'bg-slate-300 group-hover:bg-slate-400'
+                                            }`} />
+                                            <span className={`text-[11px] truncate ${isWfActive ? 'text-indigo-900 font-bold' : 'font-medium'}`}>
+                                              {wf.name}
+                                            </span>
+                                          </div>
+                                          {wf.activeCount > 0 ? (
+                                            <span
+                                              className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded shrink-0 ${
+                                                isWfActive ? 'bg-indigo-200 text-indigo-950' : 'bg-amber-100 text-amber-800'
+                                              }`}
+                                            >
+                                              {wf.activeCount}
+                                            </span>
+                                          ) : (
+                                            <span className="text-[9px] font-mono text-slate-400 shrink-0">
+                                              {wf.totalCount}
+                                            </span>
+                                          )}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
                 return (
                   <button
                     key={item.id}
@@ -409,32 +678,191 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                       </button>
 
                       {!isCollapsed && (
-                        <div className="pl-3.5 pr-1 space-y-1 border-l-2 border-slate-200 ml-3 my-0.5">
-                          <button
-                            onClick={() => {
-                              onSelectDepartmentFms?.(dept.key);
-                              onClose();
-                            }}
-                            className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-left transition-all ${
-                              isDeptFmsActive
-                                ? 'bg-indigo-600 text-white font-bold shadow-xs'
-                                : 'text-slate-600 hover:bg-slate-100'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <GitBranch className={`w-3.5 h-3.5 shrink-0 ${isDeptFmsActive ? 'text-white' : 'text-slate-400'}`} />
-                              <span className="text-xs font-semibold truncate">View FMS Flows</span>
-                            </div>
-                            {dept.activeCount > 0 && (
-                              <span
-                                className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full ${
-                                  isDeptFmsActive ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                        <div className="pl-3 pr-1 space-y-1.5 border-l-2 border-slate-200 ml-3 my-1">
+                          {/* 1. FMS Workflows Sub-Branch */}
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <button
+                                onClick={() => {
+                                  if (onSelectWorkflowFms) {
+                                    onSelectWorkflowFms(dept.key, null);
+                                  } else {
+                                    onSelectDepartmentFms?.(dept.key);
+                                  }
+                                  onClose();
+                                }}
+                                className={`flex-1 flex items-center justify-between px-2 py-1.5 rounded-lg text-left transition-all ${
+                                  isDeptFmsActive && !selectedWorkflowKey
+                                    ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                                    : 'text-slate-700 hover:bg-slate-100 font-semibold'
                                 }`}
                               >
-                                {dept.activeCount}
-                              </span>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <GitBranch className={`w-3.5 h-3.5 shrink-0 ${isDeptFmsActive && !selectedWorkflowKey ? 'text-white' : 'text-indigo-600'}`} />
+                                  <span className="text-xs truncate">FMS Workflows</span>
+                                </div>
+                                {dept.fmsActiveCount > 0 && (
+                                  <span
+                                    className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full ${
+                                      isDeptFmsActive && !selectedWorkflowKey ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                                    }`}
+                                  >
+                                    {dept.fmsActiveCount}
+                                  </span>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => toggleSubSection(`mob-${dept.key}-fms`)}
+                                className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 ml-0.5"
+                                title="Toggle FMS workflows list"
+                              >
+                                {collapsedSubSections[`mob-${dept.key}-fms`] ? (
+                                  <ChevronRight className="w-3.5 h-3.5" />
+                                ) : (
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+
+                            {!collapsedSubSections[`mob-${dept.key}-fms`] && (
+                              <div className="pl-2 space-y-0.5 border-l border-indigo-100 ml-2">
+                                <button
+                                  onClick={() => {
+                                    if (onSelectWorkflowFms) {
+                                      onSelectWorkflowFms(dept.key, null);
+                                    } else {
+                                      onSelectDepartmentFms?.(dept.key);
+                                    }
+                                    onClose();
+                                  }}
+                                  className={`w-full flex items-center justify-between px-2 py-1 rounded text-left transition-all ${
+                                    isDeptFmsActive && !selectedWorkflowKey
+                                      ? 'bg-indigo-100 text-indigo-900 font-bold'
+                                      : 'text-slate-600 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <span className="text-[11px] truncate">All {dept.label} FMS</span>
+                                  {dept.fmsActiveCount > 0 && (
+                                    <span className="text-[9px] font-mono font-bold text-amber-700">
+                                      {dept.fmsActiveCount}
+                                    </span>
+                                  )}
+                                </button>
+
+                                {dept.workflows && dept.workflows.map((wf) => {
+                                  const isWfActive = activeTab === 'fms' && selectedDepartment === dept.key && selectedWorkflowKey === wf.key;
+                                  return (
+                                    <button
+                                      key={`mob-${dept.key}-${wf.key}`}
+                                      onClick={() => {
+                                        if (onSelectWorkflowFms) {
+                                          onSelectWorkflowFms(dept.key, wf.key);
+                                        } else {
+                                          onSelectDepartmentFms?.(dept.key);
+                                        }
+                                        onClose();
+                                      }}
+                                      title={`${wf.name} (${wf.activeCount} active)`}
+                                      className={`w-full flex items-center justify-between px-2 py-1 rounded text-left transition-all ${
+                                        isWfActive
+                                          ? 'bg-indigo-50 border border-indigo-300 text-indigo-900 font-bold shadow-2xs'
+                                          : 'text-slate-600 hover:bg-slate-100'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-1.5 min-w-0">
+                                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                          isWfActive ? 'bg-indigo-600 ring-2 ring-indigo-300' : 'bg-slate-300'
+                                        }`} />
+                                        <span className={`text-[11px] truncate ${isWfActive ? 'text-indigo-900 font-bold' : 'font-medium'}`}>
+                                          {wf.name}
+                                        </span>
+                                      </div>
+                                      {wf.activeCount > 0 ? (
+                                        <span
+                                          className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded shrink-0 ${
+                                            isWfActive ? 'bg-indigo-200 text-indigo-950' : 'bg-amber-100 text-amber-800'
+                                          }`}
+                                        >
+                                          {wf.activeCount}
+                                        </span>
+                                      ) : (
+                                        <span className="text-[9px] font-mono text-slate-400 shrink-0">
+                                          {wf.totalCount}
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
                             )}
-                          </button>
+                          </div>
+
+                          {/* 2. Checklists Sub-Branch */}
+                          <div>
+                            <button
+                              onClick={() => {
+                                if (onSelectDepartmentChecklist) {
+                                  onSelectDepartmentChecklist(dept.key);
+                                } else {
+                                  onTabChange('checklist');
+                                }
+                                onClose();
+                              }}
+                              className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-left transition-all ${
+                                activeTab === 'checklist' && selectedDepartment === dept.key
+                                  ? 'bg-blue-600 text-white font-bold shadow-xs'
+                                  : 'text-slate-700 hover:bg-slate-100 font-semibold'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <CheckSquare className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'checklist' && selectedDepartment === dept.key ? 'text-white' : 'text-blue-600'}`} />
+                                <span className="text-xs truncate">Checklists</span>
+                              </div>
+                              {dept.checklistCount > 0 && (
+                                <span
+                                  className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full ${
+                                    activeTab === 'checklist' && selectedDepartment === dept.key ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'
+                                  }`}
+                                >
+                                  {dept.checklistCount}
+                                </span>
+                              )}
+                            </button>
+                          </div>
+
+                          {/* 3. Delegations Sub-Branch */}
+                          <div>
+                            <button
+                              onClick={() => {
+                                if (onSelectDepartmentDelegation) {
+                                  onSelectDepartmentDelegation(dept.key);
+                                } else {
+                                  onTabChange('delegation');
+                                }
+                                onClose();
+                              }}
+                              className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-left transition-all ${
+                                activeTab === 'delegation' && selectedDepartment === dept.key
+                                  ? 'bg-rose-600 text-white font-bold shadow-xs'
+                                  : 'text-slate-700 hover:bg-slate-100 font-semibold'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <ListTodo className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'delegation' && selectedDepartment === dept.key ? 'text-white' : 'text-rose-600'}`} />
+                                <span className="text-xs truncate">Delegations</span>
+                              </div>
+                              {dept.delegationCount > 0 && (
+                                <span
+                                  className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full ${
+                                    activeTab === 'delegation' && selectedDepartment === dept.key ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-800'
+                                  }`}
+                                >
+                                  {dept.delegationCount}
+                                </span>
+                              )}
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>

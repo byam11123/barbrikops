@@ -22,6 +22,7 @@ import {
   X,
   UserCheck,
   Eye,
+  EyeOff,
   Info,
   FileText,
   Zap,
@@ -47,7 +48,8 @@ import {
   FMS_HR_ATTENDANCE_PAYMENT_STAGES,
   FMS_BREAKDOWN_REPORTING_STAGES,
   FMS_EQUIPMENT_PART_REPAIR_STAGES,
-  FMS_DPR_REPORTING_STAGES 
+  FMS_DPR_REPORTING_STAGES,
+  FMS_BENEFICIARY_APPROVAL_STAGES
 } from '../../data/initialData';
 import { isUserResponsibleForStage } from '../../services/stageAssignment';
 
@@ -231,6 +233,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
 
   // View Format Toggle: Standard Cards vs Enterprise Matrix (1000+ Scale Grid)
   const [viewFormat, setViewFormat] = useState<'CARD' | 'MATRIX'>('MATRIX');
+  const [showStatCards, setShowStatCards] = useState<boolean>(true);
   const [pageSize, setPageSize] = useState<number>(25);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
@@ -430,6 +433,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         }))
       : flow.flowType === 'CHECK_STOCK'
       ? FMS_CHECK_STOCK_STAGES
+      : flow.flowType === 'BENEFICIARY_APPROVAL'
+      ? FMS_BENEFICIARY_APPROVAL_STAGES
       : flow.flowType === 'PO_TO_PAYMENT'
       ? FMS_PO_PAYMENT_STAGES
       : flow.flowType === 'PURCHASE_TO_STORE_DISPATCH'
@@ -475,6 +480,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
 
       if (isRelevantForPc) {
         const isCompleted = stage.status === 'Done' || stage.status === 'Skipped';
+        const isCurrentActiveStage = !isCompleted && flow.status === 'In Progress' && idx === flow.currentStageIndex;
         const plannedDateTimeStr = stage.plannedDateTime
           || (flow.indentDate ? `${flow.indentDate} 11:00 AM` : undefined)
           || (flow.poDate ? `${flow.poDate} 11:00 AM` : undefined)
@@ -487,8 +493,12 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
 
         if (dateObj) {
           dateObj.setHours(0, 0, 0, 0);
-          isDueToday = dateObj.getTime() === today.getTime();
+          const diffDays = Math.round((dateObj.getTime() - today.getTime()) / 86400000);
+          // Due today if target date is today, OR if it's the current active stage awaiting action within 24h
+          isDueToday = diffDays === 0 || (isCurrentActiveStage && diffDays <= 1);
           isOverdue = !isCompleted && dateObj.getTime() < today.getTime();
+        } else if (isCurrentActiveStage) {
+          isDueToday = true;
         }
 
         const refCode = flow.flowType === 'CHECK_STOCK'
@@ -760,16 +770,31 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         stageExec?.how === 'IN-APP FORM' ||
         stageExec?.how === 'IN APP FORM'
       );
+      const hasApprovalField = stageExec?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval')) ||
+        stageDef?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval'));
 
-      // When stage has configured form fields, Fill Form is the single primary action
+      // When stage has configured form fields, Fill Form / Approve is the single primary action
       if (onOpenStageAction && hasFormFields) {
         return (
           <button
             type="button"
             onClick={() => onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex)}
-            className={`${isMobile ? 'px-3.5 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded flex items-center gap-1 transition-colors cursor-pointer border border-indigo-200 shadow-2xs`}
+            className={`${isMobile ? 'px-3.5 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} ${
+              hasApprovalField
+                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+            } font-bold rounded flex items-center gap-1.5 transition-colors cursor-pointer border shadow-2xs`}
+            title={hasApprovalField ? 'Review & Take Approval Decision' : 'Fill Form'}
           >
-            <FileText className="w-3.5 h-3.5" /> <span>Fill Form</span>
+            {hasApprovalField ? (
+              <>
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> <span>Approve / Reject</span>
+              </>
+            ) : (
+              <>
+                <FileText className="w-3.5 h-3.5" /> <span>Fill Form</span>
+              </>
+            )}
           </button>
         );
       }
@@ -834,29 +859,30 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   };
 
   return (
-    <div className="space-y-6">
-      {/* 4 Core Stat Cards (Clicking any card updates the condition) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+    <div className="space-y-3 sm:space-y-4">
+      {/* 4 Core Stat Cards (Toggleable - Hide for maximum table focus) */}
+      {showStatCards && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5 animate-in fade-in duration-150">
         {/* Due Today Card */}
         <div
           onClick={() => setSelectedCondition('DUE_TODAY')}
-          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all ${
+          className={`px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl border cursor-pointer transition-all ${
             selectedCondition === 'DUE_TODAY'
               ? 'bg-amber-500 text-white shadow-md ring-2 ring-amber-400/50 scale-[1.01]'
               : 'bg-white border-slate-200 hover:border-amber-300 hover:shadow-xs text-slate-900'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className={`text-[11px] sm:text-xs font-bold uppercase tracking-wider ${selectedCondition === 'DUE_TODAY' ? 'text-white' : 'text-amber-600'}`}>
+            <span className={`text-[10px] sm:text-[11px] font-bold uppercase tracking-wider ${selectedCondition === 'DUE_TODAY' ? 'text-white' : 'text-amber-600'}`}>
               Due Today
             </span>
-            <Calendar className={`w-4 h-4 sm:w-5 sm:h-5 ${selectedCondition === 'DUE_TODAY' ? 'text-white' : 'text-amber-500'}`} />
+            <Calendar className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${selectedCondition === 'DUE_TODAY' ? 'text-white' : 'text-amber-500'}`} />
           </div>
-          <div className="mt-2 sm:mt-3 flex items-baseline justify-between">
-            <span className={`text-2xl sm:text-4xl font-black ${selectedCondition === 'DUE_TODAY' ? 'text-white' : 'text-slate-900'}`}>
+          <div className="mt-1 sm:mt-1.5 flex items-baseline justify-between">
+            <span className={`text-xl sm:text-2xl font-black ${selectedCondition === 'DUE_TODAY' ? 'text-white' : 'text-slate-900'}`}>
               {dueTodayItems.length}
             </span>
-            <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full ${
+            <span className={`text-[9px] sm:text-[10px] font-semibold px-1.5 py-0.5 sm:px-2 sm:py-0.5 rounded-full ${
               selectedCondition === 'DUE_TODAY'
                 ? 'bg-white/25 text-white'
                 : 'bg-amber-50 text-amber-700 border border-amber-100'
@@ -869,23 +895,23 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         {/* Overdue Card */}
         <div
           onClick={() => setSelectedCondition('OVERDUE')}
-          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all ${
+          className={`px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl border cursor-pointer transition-all ${
             selectedCondition === 'OVERDUE'
               ? 'bg-rose-600 text-white shadow-md ring-2 ring-rose-400/50 scale-[1.01]'
               : 'bg-white border-slate-200 hover:border-rose-300 hover:shadow-xs text-slate-900'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className={`text-[11px] sm:text-xs font-bold uppercase tracking-wider ${selectedCondition === 'OVERDUE' ? 'text-white' : 'text-rose-600'}`}>
+            <span className={`text-[10px] sm:text-[11px] font-bold uppercase tracking-wider ${selectedCondition === 'OVERDUE' ? 'text-white' : 'text-rose-600'}`}>
               Overdue
             </span>
-            <AlertTriangle className={`w-4 h-4 sm:w-5 sm:h-5 ${selectedCondition === 'OVERDUE' ? 'text-white' : 'text-rose-500'}`} />
+            <AlertTriangle className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${selectedCondition === 'OVERDUE' ? 'text-white' : 'text-rose-500'}`} />
           </div>
-          <div className="mt-2 sm:mt-3 flex items-baseline justify-between">
-            <span className={`text-2xl sm:text-4xl font-black ${selectedCondition === 'OVERDUE' ? 'text-white' : 'text-slate-900'}`}>
+          <div className="mt-1 sm:mt-1.5 flex items-baseline justify-between">
+            <span className={`text-xl sm:text-2xl font-black ${selectedCondition === 'OVERDUE' ? 'text-white' : 'text-slate-900'}`}>
               {overdueItems.length}
             </span>
-            <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full ${
+            <span className={`text-[9px] sm:text-[10px] font-semibold px-1.5 py-0.5 sm:px-2 sm:py-0.5 rounded-full ${
               selectedCondition === 'OVERDUE'
                 ? 'bg-white/25 text-white'
                 : 'bg-rose-50 text-rose-700 border border-rose-100'
@@ -898,23 +924,23 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         {/* Pending Card */}
         <div
           onClick={() => setSelectedCondition('PENDING')}
-          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all ${
+          className={`px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl border cursor-pointer transition-all ${
             selectedCondition === 'PENDING'
               ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-400/50 scale-[1.01]'
               : 'bg-white border-slate-200 hover:border-indigo-300 hover:shadow-xs text-slate-900'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className={`text-[11px] sm:text-xs font-bold uppercase tracking-wider ${selectedCondition === 'PENDING' ? 'text-white' : 'text-indigo-600'}`}>
+            <span className={`text-[10px] sm:text-[11px] font-bold uppercase tracking-wider ${selectedCondition === 'PENDING' ? 'text-white' : 'text-indigo-600'}`}>
               Pending
             </span>
-            <Clock className={`w-4 h-4 sm:w-5 sm:h-5 ${selectedCondition === 'PENDING' ? 'text-white' : 'text-indigo-500'}`} />
+            <Clock className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${selectedCondition === 'PENDING' ? 'text-white' : 'text-indigo-500'}`} />
           </div>
-          <div className="mt-2 sm:mt-3 flex items-baseline justify-between">
-            <span className={`text-2xl sm:text-4xl font-black ${selectedCondition === 'PENDING' ? 'text-white' : 'text-slate-900'}`}>
+          <div className="mt-1 sm:mt-1.5 flex items-baseline justify-between">
+            <span className={`text-xl sm:text-2xl font-black ${selectedCondition === 'PENDING' ? 'text-white' : 'text-slate-900'}`}>
               {pendingItems.length}
             </span>
-            <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full ${
+            <span className={`text-[9px] sm:text-[10px] font-semibold px-1.5 py-0.5 sm:px-2 sm:py-0.5 rounded-full ${
               selectedCondition === 'PENDING'
                 ? 'bg-white/25 text-white'
                 : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
@@ -927,23 +953,23 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         {/* Completed Card */}
         <div
           onClick={() => setSelectedCondition('COMPLETED')}
-          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all ${
+          className={`px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl border cursor-pointer transition-all ${
             selectedCondition === 'COMPLETED'
               ? 'bg-emerald-600 text-white shadow-md ring-2 ring-emerald-400/50 scale-[1.01]'
               : 'bg-white border-slate-200 hover:border-emerald-300 hover:shadow-xs text-slate-900'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className={`text-[11px] sm:text-xs font-bold uppercase tracking-wider ${selectedCondition === 'COMPLETED' ? 'text-white' : 'text-emerald-600'}`}>
+            <span className={`text-[10px] sm:text-[11px] font-bold uppercase tracking-wider ${selectedCondition === 'COMPLETED' ? 'text-white' : 'text-emerald-600'}`}>
               Completed
             </span>
-            <CheckCircle2 className={`w-4 h-4 sm:w-5 sm:h-5 ${selectedCondition === 'COMPLETED' ? 'text-white' : 'text-emerald-500'}`} />
+            <CheckCircle2 className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${selectedCondition === 'COMPLETED' ? 'text-white' : 'text-emerald-500'}`} />
           </div>
-          <div className="mt-2 sm:mt-3 flex items-baseline justify-between">
-            <span className={`text-2xl sm:text-4xl font-black ${selectedCondition === 'COMPLETED' ? 'text-white' : 'text-slate-900'}`}>
+          <div className="mt-1 sm:mt-1.5 flex items-baseline justify-between">
+            <span className={`text-xl sm:text-2xl font-black ${selectedCondition === 'COMPLETED' ? 'text-white' : 'text-slate-900'}`}>
               {completedItems.length}
             </span>
-            <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full ${
+            <span className={`text-[9px] sm:text-[10px] font-semibold px-1.5 py-0.5 sm:px-2 sm:py-0.5 rounded-full ${
               selectedCondition === 'COMPLETED'
                 ? 'bg-white/25 text-white'
                 : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
@@ -953,9 +979,10 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           </div>
         </div>
       </div>
+      )}
 
-      {/* Control & Filter Bar (Compact space-efficient bar) */}
-      <div className="bg-white px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border border-slate-200 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-1.5 sm:gap-2">
+      {/* Control & Filter Bar (Sticky top bar for easy filtering at all times) */}
+      <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-xs px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-1.5 sm:gap-2">
         {/* Search on Left */}
         <div className="relative flex-1 min-w-0 md:max-w-xs">
           <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" />
@@ -1027,28 +1054,33 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
             </button>
           </div>
 
-          {/* Export Filtered Data CSV Button */}
+          {/* Toggle Stat Cards Visibility Button (Icon only) */}
+          <button
+            type="button"
+            onClick={() => setShowStatCards((prev) => !prev)}
+            className={`flex items-center justify-center w-8 h-8 rounded-lg transition-colors shrink-0 border cursor-pointer ${
+              showStatCards
+                ? 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300'
+                : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-300 shadow-2xs'
+            }`}
+            title={showStatCards ? 'Hide Stat Cards' : 'Show Stat Cards'}
+          >
+            {showStatCards ? (
+              <EyeOff className="w-3.5 h-3.5 text-slate-500" />
+            ) : (
+              <Eye className="w-3.5 h-3.5 text-indigo-600" />
+            )}
+          </button>
+
+          {/* Export Filtered Data CSV Button (Icon only) */}
           <button
             type="button"
             onClick={handleExportFilteredCsv}
-            title="Export currently filtered table data to CSV/Excel"
-            className="flex items-center justify-center gap-1 px-2.5 h-8 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-lg text-xs transition-colors shrink-0 border border-slate-300 cursor-pointer whitespace-nowrap"
+            title={`Export CSV (${displayedItems.length} items)`}
+            className="flex items-center justify-center w-8 h-8 bg-white hover:bg-slate-50 text-slate-700 rounded-lg transition-colors shrink-0 border border-slate-300 cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 text-slate-600" />
-            <span>Export CSV ({displayedItems.length})</span>
           </button>
-
-          {/* New FMS Workflow Action Button - Super Admin Only */}
-          {isSuperAdmin && onCreateFmsFlow && (
-            <button
-              type="button"
-              onClick={onCreateFmsFlow}
-              className="flex items-center gap-1 px-2.5 h-8 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg text-xs font-bold shadow-2xs transition-all cursor-pointer shrink-0 whitespace-nowrap"
-            >
-              <GitBranch className="w-3.5 h-3.5 text-white" />
-              <span>+ New FMS Workflow</span>
-            </button>
-          )}
         </div>
       </div>
 
@@ -1281,7 +1313,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         )}
       </div>
 
-      {/* 2. Desktop View (hidden md:block) — completely untouched for desktop users */}
+      {/* 2. Desktop View (hidden md:block) */}
       <div className="hidden md:block">
       {viewFormat === 'CARD' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -1470,12 +1502,12 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           )}
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-visible flex flex-col">
+          <div className="overflow-x-auto min-h-[300px]">
             <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-white text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+            <thead className="sticky top-0 z-10 bg-slate-100/95 backdrop-blur-xs text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px] shadow-2xs">
               <tr>
-                <th className="py-2.5 px-3 w-8 text-center">
+                <th className="py-2.5 px-2 w-8 text-center">
                   <input
                     type="checkbox"
                     checked={selectedBatchIds.length === paginatedItems.length && paginatedItems.length > 0}
@@ -1484,29 +1516,29 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                     title="Select all on this page for batch action"
                   />
                 </th>
-                <th className="py-2.5 px-3">Module</th>
-                <th className="py-2.5 px-3">Reference</th>
-                <th className="py-2.5 px-4">Task / Stage Description</th>
-                <th className="py-2.5 px-3">Status</th>
-                <th className="py-2.5 px-3">
+                <th className="py-2.5 px-2 whitespace-nowrap">Module</th>
+                <th className="py-2.5 px-2 whitespace-nowrap">Reference</th>
+                <th className="py-2.5 px-3">Task / Stage Description</th>
+                <th className="py-2.5 px-2 text-center whitespace-nowrap">Status</th>
+                <th className="py-2.5 px-2 whitespace-nowrap">
                   <span className="flex items-center gap-1">
                     <Calendar className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Planned Date/Time</span>
+                    <span>Planned</span>
                   </span>
                 </th>
-                <th className="py-2.5 px-3">
+                <th className="py-2.5 px-2 whitespace-nowrap">
                   <span className="flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Actual Date/Time</span>
+                    <span>Actual</span>
                   </span>
                 </th>
-                <th className="py-2.5 px-3">
+                <th className="py-2.5 px-2 whitespace-nowrap">
                   <span className="flex items-center gap-1">
                     <AlertTriangle className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Delay Variance</span>
+                    <span>Delay</span>
                   </span>
                 </th>
-                <th className="py-2.5 px-4 text-right">Quick Action</th>
+                <th className="py-2.5 px-3 text-right whitespace-nowrap">Quick Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -1516,7 +1548,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                   return (
                     <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${isChecked ? 'bg-indigo-50/50' : ''}`}>
                       {/* Checkbox for Batch Select */}
-                      <td className="py-2.5 px-3 text-center">
+                      <td className="py-2.5 px-2 text-center">
                         <input
                           type="checkbox"
                           disabled={!isItemActionable(item)}
@@ -1527,7 +1559,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                       </td>
 
                       {/* Module Badge */}
-                      <td className="py-3 px-3 whitespace-nowrap">
+                      <td className="py-2.5 px-2 whitespace-nowrap">
                         <span
                           className={`px-2 py-0.5 rounded font-bold text-[10px] flex items-center gap-1 w-max ${
                             item.sourceModule === 'FMS'
@@ -1545,12 +1577,12 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                       </td>
 
                       {/* Reference Code */}
-                      <td className="py-3 px-3 font-mono font-bold text-slate-800 whitespace-nowrap">
+                      <td className="py-2.5 px-2 font-mono font-bold text-slate-800 whitespace-nowrap">
                         {item.referenceCode}
                       </td>
 
                       {/* Title & Subtitle + Process Coordinator Remarks */}
-                      <td className="py-3 px-4 min-w-[300px]">
+                      <td className="py-2.5 px-3 min-w-0">
                         <div className={`font-semibold text-slate-900 ${item.isCompleted ? 'line-through text-slate-400' : ''}`}>
                           {item.title}
                         </div>
@@ -1583,7 +1615,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                       </td>
 
                       {/* Status Column Badge */}
-                      <td className="py-2.5 px-3 whitespace-nowrap">
+                      <td className="py-2.5 px-2 text-center whitespace-nowrap">
                         {item.isCompleted ? (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
                             Completed
@@ -1604,12 +1636,12 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                       </td>
 
                       {/* Planned Date/Time */}
-                      <td className="py-2.5 px-3 font-mono text-slate-800 whitespace-nowrap">
+                      <td className="py-2.5 px-2 font-mono text-slate-800 whitespace-nowrap">
                         {item.plannedDateTimeStr || item.targetDateStr}
                       </td>
 
                       {/* Actual Date/Time - styled normally */}
-                      <td className="py-2.5 px-3 font-mono text-slate-700 whitespace-nowrap">
+                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap">
                         {item.actualDateTimeStr || '—'}
                       </td>
 
@@ -1620,7 +1652,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                         const delayText = formatDelayVariance(delayHrs);
 
                         return (
-                          <td className={`py-2.5 px-3 font-mono whitespace-nowrap text-xs font-bold ${
+                          <td className={`py-2.5 px-2 font-mono whitespace-nowrap text-xs font-bold ${
                             isDelayActive
                               ? item.isCompleted
                                 ? 'bg-red-100 text-red-800 border border-red-200 rounded'
@@ -1633,7 +1665,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                       })()}
 
                       {/* Quick Action Button */}
-                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                      <td className="py-2.5 px-3 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
                           {/* CHECKLIST: Mark Done / Reopen only for assigned user, and Mark Done visible ONLY for Due Today or Overdue */}
                           {item.sourceModule === 'CHECKLIST' && item.isMine && (
@@ -1732,16 +1764,31 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                                   stageExec?.how === 'IN-APP FORM' ||
                                   stageExec?.how === 'IN APP FORM'
                                 );
+                                const hasApprovalField = stageExec?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval')) ||
+                                  stageDef?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval'));
 
-                                // When stage has configured form fields, Fill Form is the single primary action
+                                // When stage has configured form fields, Fill Form / Approve is the single primary action
                                 if (onOpenStageAction && hasFormFields) {
                                   return (
                                     <button
                                       type="button"
                                       onClick={() => onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex)}
-                                      className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded text-[11px] flex items-center gap-1 transition-colors cursor-pointer border border-indigo-200 shadow-2xs"
+                                      className={`px-2.5 py-1 font-bold rounded text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer border shadow-2xs ${
+                                        hasApprovalField
+                                          ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                                          : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                                      }`}
+                                      title={hasApprovalField ? 'Review & Take Approval Decision' : 'Fill Form'}
                                     >
-                                      <FileText className="w-3.5 h-3.5" /> Fill Form
+                                      {hasApprovalField ? (
+                                        <>
+                                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> <span>Approve / Reject</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <FileText className="w-3.5 h-3.5" /> <span>Fill Form</span>
+                                        </>
+                                      )}
                                     </button>
                                   );
                                 }
@@ -1878,7 +1925,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         </div>
 
         {/* Pagination Bar for 1000+ Requisitions - pr-24 prevents FAB overlap */}
-        <div className="p-3 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600 sm:pr-24">
+        <div className="shrink-0 p-3 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600 sm:pr-24">
           <div className="flex items-center gap-4">
             {/* Relocated Rows dropdown */}
             <div className="flex items-center gap-1.5">

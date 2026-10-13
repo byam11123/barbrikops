@@ -1,9 +1,20 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: 'Exo 2', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
 @layer base {
   body {
     @apply antialiased bg-white text-slate-900;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: 'Exo 2', system-ui, sans-serif;
+  }
+
+  h1, h2, h3, .score-number {
+    font-family: 'Exo 2', sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.01em;
   }
 
   /* Customized Base Select/Dropdown Styling with SVG Chevron Arrow */

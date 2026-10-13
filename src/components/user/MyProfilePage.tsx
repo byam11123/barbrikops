@@ -24,7 +24,8 @@ import {
   FmsInstance, 
   DelegationTask, 
   ChecklistItem, 
-  AuditLogEntry 
+  AuditLogEntry,
+  isUserSuperAdmin 
 } from '../../types';
 import { UserAvatar } from '../common/UserAvatar';
 
@@ -378,9 +379,9 @@ export const MyProfilePage: React.FC<MyProfilePageProps> = ({
                 <span className="text-[11px] font-extrabold bg-indigo-500/30 text-indigo-200 border border-indigo-400/40 px-2.5 py-0.5 rounded-full uppercase tracking-wide">
                   {currentUser.role || 'Staff Member'}
                 </span>
-                {currentUser.systemRole === 'SUPER_ADMIN' && (
+                {isUserSuperAdmin(currentUser) && (
                   <span className="text-[11px] font-extrabold bg-amber-500 text-slate-950 px-2.5 py-0.5 rounded-full uppercase flex items-center gap-1 shadow-xs">
-                    <ShieldCheck className="w-3.5 h-3.5" /> SUPER ADMIN
+                    <ShieldCheck className="w-3.5 h-3.5" /> {currentUser.systemRole === 'SUPER_ADMIN' ? 'SUPER ADMIN' : 'ADMINISTRATOR'}
                   </span>
                 )}
               </div>

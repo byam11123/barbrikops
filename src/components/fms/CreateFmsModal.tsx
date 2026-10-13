@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { X, GitBranch, AlertCircle, Plus, Check, CreditCard, ShoppingCart, Boxes, Truck, PackageCheck, FileText, UserCheck, Wrench, Cog, FileSpreadsheet, Sparkles, Link2 } from 'lucide-react';
-import { FmsInstance, Priority, UserProfile, FmsTemplateDefinition } from '../../types';
+import React, { useState, useEffect } from 'react';
+import { X, GitBranch, AlertCircle, Plus, Check, CreditCard, ShoppingCart, Boxes, Truck, PackageCheck, FileText, UserCheck, Wrench, Cog, FileSpreadsheet, Sparkles, Link2, RotateCcw, Trash2, Lock } from 'lucide-react';
+import { FmsInstance, Priority, UserProfile, FmsTemplateDefinition, FmsStageTemplate, isUserSuperAdmin } from '../../types';
+import { generateCounterTrackingId, generateUniqueCounterTrackingId, getWorkflowIdTitle } from '../../utils/fmsUtils';
 import { 
   FMS_CHECK_STOCK_STAGES, 
   FMS_STANDARD_PURCHASE_STAGES, 
@@ -16,7 +17,9 @@ import {
   FMS_DPR_REPORTING_STAGES 
 } from '../../data/initialData';
 import { FmsCreateInputSchema, storageAdapter } from '../../services/storageAdapter';
+import { addWorkingSlaHours, formatToStandardDateTime, DEFAULT_WORK_SHIFT_CONFIG } from '../../services/workShiftService';
 import { FileUploadField } from '../common/FileUploadField';
+import { FmsStagePreviewAccordion } from './FmsStagePreviewAccordion';
 
 interface CreateFmsModalProps {
   isOpen: boolean;
@@ -64,6 +67,74 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
   const [remarks, setRemarks] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
+  // Dynamic Master Registries (Sites, Vendors, Priorities) & Quick Add State
+  const [sitesList, setSitesList] = useState<string[]>(() => storageAdapter.getMasterSites());
+  const [vendorsList, setVendorsList] = useState<string[]>(() => storageAdapter.getMasterVendors());
+  const [prioritiesList, setPrioritiesList] = useState<string[]>(() => storageAdapter.getMasterPriorities());
+
+  const [quickAddModal, setQuickAddModal] = useState<{
+    isOpen: boolean;
+    type: 'SITE' | 'VENDOR' | 'PRIORITY' | 'CUSTOM_SELECT';
+    fieldId?: string;
+    fieldLabel?: string;
+    templateId?: string;
+    stageId?: string;
+  } | null>(null);
+  const [quickAddValue, setQuickAddValue] = useState<string>('');
+
+  const refreshMasterRegistries = () => {
+    setSitesList(storageAdapter.getMasterSites());
+    setVendorsList(storageAdapter.getMasterVendors());
+    setPrioritiesList(storageAdapter.getMasterPriorities());
+  };
+
+  const handleQuickAddSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickAddModal || !quickAddValue.trim()) return;
+
+    const val = quickAddValue.trim();
+    if (quickAddModal.type === 'SITE') {
+      storageAdapter.addMasterSite(val);
+      refreshMasterRegistries();
+      setSiteName(val.toUpperCase());
+      if (quickAddModal.fieldId) {
+        handleCustomFieldChange(quickAddModal.fieldId, val.toUpperCase());
+      }
+    } else if (quickAddModal.type === 'VENDOR') {
+      storageAdapter.addMasterVendor(val);
+      refreshMasterRegistries();
+      setVendorName(val);
+      if (quickAddModal.fieldId) {
+        handleCustomFieldChange(quickAddModal.fieldId, val);
+      }
+    } else if (quickAddModal.type === 'PRIORITY') {
+      storageAdapter.addMasterPriority(val);
+      refreshMasterRegistries();
+      setPriority(val as Priority);
+      if (quickAddModal.fieldId) {
+        handleCustomFieldChange(quickAddModal.fieldId, val);
+      }
+    } else if (quickAddModal.type === 'CUSTOM_SELECT') {
+      if (quickAddModal.templateId && quickAddModal.stageId && quickAddModal.fieldId) {
+        storageAdapter.addFieldOptionToTemplateStage(
+          quickAddModal.templateId,
+          quickAddModal.stageId,
+          quickAddModal.fieldId,
+          val
+        );
+      }
+      if (quickAddModal.fieldId) {
+        handleCustomFieldChange(quickAddModal.fieldId, val);
+      }
+    }
+
+    setQuickAddModal(null);
+    setQuickAddValue('');
+  };
+
+  const allExistingFlows = storageAdapter.getFmsFlows();
+  const isSuperAdmin = isUserSuperAdmin(currentUser);
+
   const handleSelectCustomTemplate = (tplId: string) => {
     setSelectedCustomTemplateId(tplId);
     const tpl = customTemplates.find((t) => t.id === tplId);
@@ -78,6 +149,10 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
         }
       });
       setCustomFormData(initialData);
+
+      // Auto-generate counter series tracking ID (e.g. BPL/BEN/20261010-001)
+      const autoCode = generateCounterTrackingId(tpl.referenceLabel, tpl.name, allExistingFlows);
+      setIndentNo(autoCode);
     }
   };
 
@@ -86,6 +161,221 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
       ...prev,
       [fieldId]: value,
     }));
+  };
+
+  const getStagesForCurrentWorkflow = () => {
+    if (selectedCustomTemplateId) {
+      const tpl = customTemplates.find((t) => t.id === selectedCustomTemplateId);
+      return tpl ? tpl.stages.map((s) => s.stageName) : [];
+    }
+    const customizedBuiltin = customTemplates.find((t) => t.templateKey === flowType);
+    if (customizedBuiltin) {
+      return customizedBuiltin.stages.map((s) => s.stageName);
+    }
+    switch (flowType) {
+      case 'CHECK_STOCK':
+        return FMS_CHECK_STOCK_STAGES.map((s) => s.name);
+      case 'INDENT_PURCHASE':
+        return FMS_STANDARD_PURCHASE_STAGES.map((s) => s.name);
+      case 'PO_TO_PAYMENT':
+        return FMS_PO_PAYMENT_STAGES.map((s) => s.name);
+      case 'PURCHASE_TO_STORE_DISPATCH':
+        return FMS_PURCHASE_TO_STORE_DISPATCH_STAGES.map((s) => s.name);
+      case 'STORE_TO_SITE_DISPATCH':
+        return FMS_STORE_TO_SITE_DISPATCH_STAGES.map((s) => s.name);
+      case 'PAYMENT_TO_DISPATCH':
+        return FMS_PAYMENT_TO_DISPATCH_STAGES.map((s) => s.name);
+      case 'SITE_RECEIVE':
+        return FMS_SITE_RECEIVE_STAGES.map((s) => s.name);
+      case 'ACCOUNTS_INVOICE_COLLECTION':
+        return FMS_ACCOUNTS_INVOICE_COLLECTION_STAGES.map((s) => s.name);
+      case 'HR_ATTENDANCE_PAYMENT':
+        return FMS_HR_ATTENDANCE_PAYMENT_STAGES.map((s) => s.name);
+      case 'BREAKDOWN_REPORTING':
+        return FMS_BREAKDOWN_REPORTING_STAGES.map((s) => s.name);
+      case 'EQUIPMENT_PART_REPAIR':
+        return FMS_EQUIPMENT_PART_REPAIR_STAGES.map((s) => s.name);
+      case 'DPR_REPORTING':
+        return FMS_DPR_REPORTING_STAGES.map((s) => s.name);
+      default:
+        return [];
+    }
+  };
+
+  const getFullTemplateStagesForCurrentWorkflow = (): FmsStageTemplate[] => {
+    if (selectedCustomTemplateId) {
+      const tpl = customTemplates.find((t) => t.id === selectedCustomTemplateId);
+      return tpl ? tpl.stages : [];
+    }
+    const customizedBuiltin = customTemplates.find((t) => t.templateKey === flowType);
+    if (customizedBuiltin && customizedBuiltin.stages && customizedBuiltin.stages.length > 0) {
+      return customizedBuiltin.stages;
+    }
+
+    const masterTemplates = storageAdapter.getAllMasterTemplates();
+    const masterTpl = masterTemplates.find((t) => t.templateKey === flowType);
+    if (masterTpl && masterTpl.stages && masterTpl.stages.length > 0) {
+      return masterTpl.stages;
+    }
+
+    switch (flowType) {
+      case 'CHECK_STOCK':
+        return FMS_CHECK_STOCK_STAGES.map((s) => ({
+          stageId: s.stageId,
+          stageName: s.name,
+          whoRole: s.whoRole,
+          whoDefaultAssignee: s.whoDefaultAssignee,
+          slaHours: s.slaHours || 4,
+          fields: s.fields,
+          checkpoints: (s as any).checkpoints,
+        }));
+      case 'INDENT_PURCHASE':
+        return FMS_STANDARD_PURCHASE_STAGES.map((s) => ({
+          stageId: s.stageId,
+          stageName: s.name,
+          whoRole: s.whoRole,
+          whoDefaultAssignee: s.whoDefaultAssignee,
+          slaHours: s.slaHours || 2,
+          fields: s.fields,
+          checkpoints: (s as any).checkpoints,
+        }));
+      case 'PO_TO_PAYMENT':
+        return FMS_PO_PAYMENT_STAGES.map((s) => ({
+          stageId: s.stageId,
+          stageName: s.name,
+          whoRole: s.whoRole,
+          whoDefaultAssignee: s.whoDefaultAssignee,
+          slaHours: s.slaHours || 1,
+          fields: s.fields,
+          logic: (s as any).logic,
+          checkpoints: (s as any).checkpoints,
+        }));
+      case 'PURCHASE_TO_STORE_DISPATCH':
+        return FMS_PURCHASE_TO_STORE_DISPATCH_STAGES.map((s) => ({
+          stageId: s.stageId,
+          stageName: s.name,
+          whoRole: s.whoRole,
+          whoDefaultAssignee: s.whoDefaultAssignee,
+          slaHours: s.slaHours || 3,
+          fields: s.fields,
+          checkpoints: (s as any).checkpoints,
+        }));
+      case 'STORE_TO_SITE_DISPATCH':
+        return FMS_STORE_TO_SITE_DISPATCH_STAGES.map((s) => ({
+          stageId: s.stageId,
+          stageName: s.name,
+          whoRole: s.whoRole,
+          whoDefaultAssignee: s.whoDefaultAssignee,
+          slaHours: s.slaHours || 3,
+          fields: s.fields,
+          checkpoints: (s as any).checkpoints,
+        }));
+      case 'PAYMENT_TO_DISPATCH':
+        return FMS_PAYMENT_TO_DISPATCH_STAGES.map((s) => ({
+          stageId: s.stageId,
+          stageName: s.name,
+          whoRole: s.whoRole,
+          whoDefaultAssignee: s.whoDefaultAssignee,
+          slaHours: s.slaHours || 4,
+          fields: s.fields,
+          checkpoints: (s as any).checkpoints,
+        }));
+      case 'SITE_RECEIVE':
+        return FMS_SITE_RECEIVE_STAGES.map((s) => ({
+          stageId: s.stageId,
+          stageName: s.name,
+          whoRole: s.whoRole,
+          whoDefaultAssignee: s.whoDefaultAssignee,
+          slaHours: s.slaHours || 3,
+          fields: s.fields,
+          checkpoints: (s as any).checkpoints,
+        }));
+      case 'ACCOUNTS_INVOICE_COLLECTION':
+        return FMS_ACCOUNTS_INVOICE_COLLECTION_STAGES.map((s) => ({
+          stageId: s.stageId,
+          stageName: s.name,
+          whoRole: s.whoRole,
+          whoDefaultAssignee: s.whoDefaultAssignee,
+          slaHours: s.slaHours || 4,
+          fields: s.fields,
+          checkpoints: (s as any).checkpoints,
+        }));
+      case 'HR_ATTENDANCE_PAYMENT':
+        return FMS_HR_ATTENDANCE_PAYMENT_STAGES.map((s) => ({
+          stageId: s.stageId,
+          stageName: s.name,
+          whoRole: s.whoRole,
+          whoDefaultAssignee: s.whoDefaultAssignee,
+          slaHours: s.slaHours || 2,
+          fields: s.fields,
+          checkpoints: (s as any).checkpoints,
+        }));
+      case 'BREAKDOWN_REPORTING':
+        return FMS_BREAKDOWN_REPORTING_STAGES.map((s) => ({
+          stageId: s.stageId,
+          stageName: s.name,
+          whoRole: s.whoRole,
+          whoDefaultAssignee: s.whoDefaultAssignee,
+          slaHours: s.slaHours || 2,
+          fields: s.fields,
+          checkpoints: (s as any).checkpoints,
+        }));
+      case 'EQUIPMENT_PART_REPAIR':
+        return FMS_EQUIPMENT_PART_REPAIR_STAGES.map((s) => ({
+          stageId: s.stageId,
+          stageName: s.name,
+          whoRole: s.whoRole,
+          whoDefaultAssignee: s.whoDefaultAssignee,
+          slaHours: s.slaHours || 2,
+          fields: s.fields,
+          checkpoints: (s as any).checkpoints,
+        }));
+      case 'DPR_REPORTING':
+        return FMS_DPR_REPORTING_STAGES.map((s) => ({
+          stageId: s.stageId,
+          stageName: s.name,
+          whoRole: s.whoRole,
+          whoDefaultAssignee: s.whoDefaultAssignee,
+          slaHours: s.slaHours || 3,
+          fields: s.fields,
+          checkpoints: (s as any).checkpoints,
+        }));
+      default:
+        return [];
+    }
+  };
+
+  const handleResetForm = () => {
+    setCustomFormData({});
+    setRemarks('');
+    setPoNumber('');
+    setVendorName('');
+    setPoAmount('');
+    setSiteName('SILADEHI');
+    setPriority('Normal');
+    setTotalLabourPresent('40');
+    setTotalOtHours('');
+    setAttendanceDate('');
+    setMachineName('');
+    setMachineIdNo('');
+    setMachineMakeModel('');
+    setAttendingMechanic('');
+    setMechanicMobileNo('');
+    setPartSerialNo('');
+    setPartEquipmentName('');
+    setVehiclePlantMachineName('');
+    setError(null);
+
+    // Re-generate auto counter tracking ID
+    if (selectedCustomTemplateId) {
+      const tpl = customTemplates.find((t) => t.id === selectedCustomTemplateId);
+      if (tpl) {
+        setIndentNo(generateCounterTrackingId(tpl.referenceLabel, tpl.name, allExistingFlows));
+      }
+    } else {
+      const tpl = customTemplates.find((t) => t.templateKey === flowType);
+      setIndentNo(generateCounterTrackingId(tpl?.referenceLabel, flowType, allExistingFlows));
+    }
   };
 
   if (!isOpen) return null;
@@ -113,7 +403,16 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
         }
       }
 
-      const effectiveIndentNo = indentNo.trim() || customFormData['requisitionNumber'] || customFormData['poNumber'] || customFormData['indentNo'] || customFormData['voucherNo'] || `REF-${Date.now().toString().slice(-4)}`;
+      // Concurrency check: Re-fetch latest storage flows at submission time to prevent dual-user collisions
+      const freshFlowsAtSubmit = storageAdapter.getFmsFlows();
+      const rawProposedId = indentNo.trim() || customFormData['requisitionNumber'] || customFormData['poNumber'] || customFormData['indentNo'] || customFormData['voucherNo'];
+      const effectiveIndentNo = generateUniqueCounterTrackingId(
+        template.referenceLabel,
+        template.name,
+        freshFlowsAtSubmit,
+        rawProposedId
+      );
+
       if (!effectiveIndentNo) {
         setError(`${template.referenceLabel || 'Reference / Indent Number'} is required`);
         return;
@@ -141,9 +440,28 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
 
       const flowId = `FLOW-${template.templateKey.slice(0, 10)}-${effectiveIndentNo.replace(/[^a-zA-Z0-9]/g, '-')}`;
       const hasMoreStages = template.stages.length > 1;
+
+      // Ensure Stage 1 submitted data keys are ordered in the exact serial order of defined fields
+      const orderedStage1Data: Record<string, any> = {};
+      const stage1DefFields = template.stages[0]?.fields || [];
+      stage1DefFields.forEach((f) => {
+        if (customFormData[f.id] !== undefined) {
+          orderedStage1Data[f.id] = customFormData[f.id];
+        }
+      });
+      // Append any remaining keys (e.g. site, priority)
+      Object.keys(customFormData).forEach((k) => {
+        if (orderedStage1Data[k] === undefined) {
+          orderedStage1Data[k] = customFormData[k];
+        }
+      });
+
+      const workShiftConfig = storageAdapter.getRegistryConfig().workShiftConfig || DEFAULT_WORK_SHIFT_CONFIG;
+
       const initialStages = template.stages.map((stg, idx) => {
         const sla = stg.slaHours || 4;
-        const plannedTime = new Date(now.getTime() + (idx === 0 ? sla : (idx + 1) * sla) * 3600000);
+        const cumulativeSla = idx === 0 ? sla : (idx + 1) * sla;
+        const plannedTime = addWorkingSlaHours(now, cumulativeSla, workShiftConfig);
         return {
           stageId: stg.stageId,
           stageName: stg.stageName,
@@ -154,12 +472,12 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
             : idx === 1 
             ? ('In Progress' as const) 
             : ('Pending' as const),
-          plannedDateTime: plannedTime.toLocaleString('en-GB'),
-          actualDateTime: idx === 0 ? now.toLocaleString('en-GB') : undefined,
-          fields: stg.fields,
+          plannedDateTime: formatToStandardDateTime(plannedTime),
+          actualDateTime: idx === 0 ? formatToStandardDateTime(now) : undefined,
+          fields: stg.fields || [],
           logic: stg.logic,
-          checkpoints: stg.checkpoints,
-          submittedData: idx === 0 ? customFormData : undefined,
+          checkpoints: stg.checkpoints || [],
+          submittedData: idx === 0 ? orderedStage1Data : undefined,
         };
       });
 
@@ -199,18 +517,21 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
 
       const flowId = `FLOW-STK-${indentNo.trim().replace(/[^a-zA-Z0-9]/g, '-')}`;
       const customizedTpl = customTemplates.find((t) => t.templateKey === 'CHECK_STOCK' || t.id === 'builtin_CHECK_STOCK');
+      const workShiftConfig = storageAdapter.getRegistryConfig().workShiftConfig || DEFAULT_WORK_SHIFT_CONFIG;
+
       const initialStages = customizedTpl
         ? customizedTpl.stages.map((stg, idx) => {
             const sla = stg.slaHours || 4;
-            const plannedTime = new Date(now.getTime() + (idx === 0 ? sla : (idx + 1) * sla) * 3600000);
+            const cumulativeSla = idx === 0 ? sla : (idx + 1) * sla;
+            const plannedTime = addWorkingSlaHours(now, cumulativeSla, workShiftConfig);
             return {
               stageId: stg.stageId,
               stageName: stg.stageName,
               assignee: stg.whoDefaultAssignee,
               how: stg.howChannel || 'IN-APP FORM',
               status: idx === 0 ? ('Done' as const) : idx === 1 ? ('In Progress' as const) : ('Pending' as const),
-              plannedDateTime: plannedTime.toLocaleString('en-GB'),
-              actualDateTime: idx === 0 ? now.toLocaleString('en-GB') : undefined,
+              plannedDateTime: formatToStandardDateTime(plannedTime),
+              actualDateTime: idx === 0 ? formatToStandardDateTime(now) : undefined,
               fields: stg.fields,
               logic: stg.logic,
               checkpoints: stg.checkpoints,
@@ -218,16 +539,17 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
             };
           })
         : FMS_CHECK_STOCK_STAGES.map((def, idx) => {
-            const plannedTime = new Date(now.getTime() + (idx === 0 ? 4 : (idx + 1) * 4) * 3600000);
+            const sla = def.slaHours || 4;
+            const cumulativeSla = idx === 0 ? sla : (idx + 1) * sla;
+            const plannedTime = addWorkingSlaHours(now, cumulativeSla, workShiftConfig);
             return {
               stageId: def.stageId,
               stageName: def.name,
               assignee: def.whoDefaultAssignee,
-              how: def.howChannel,
+              how: 'IN-APP FORM',
               status: idx === 0 ? ('Done' as const) : idx === 1 ? ('In Progress' as const) : ('Pending' as const),
-              plannedDateTime: plannedTime.toLocaleString('en-GB'),
-              actualDateTime: idx === 0 ? now.toLocaleString('en-GB') : undefined,
-              formResponseRef: def.formUrl,
+              plannedDateTime: formatToStandardDateTime(plannedTime),
+              actualDateTime: idx === 0 ? formatToStandardDateTime(now) : undefined,
               submittedData: idx === 0 ? { requisitionNumber: indentNo.trim(), site: siteName, priority, remarks } : undefined,
             };
           });
@@ -849,10 +1171,10 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm sm:text-base font-bold text-slate-900 leading-tight">
-                Initialize Organization Workflow
+                New Entry
               </h3>
               <p className="text-[11px] text-slate-500">
-                Launch a tracked department operation or custom workflow
+                Submit a new entry or operation record
               </p>
             </div>
           </div>
@@ -872,23 +1194,11 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
             </div>
           )}
 
-          {/* Department Flow Type Selector */}
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="block text-xs font-bold text-slate-800">
-                Workflow Process Template <span className="text-rose-500">*</span>
-              </label>
-              {onOpenTemplateStudio && (
-                <button
-                  type="button"
-                  onClick={onOpenTemplateStudio}
-                  className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Build New Template</span>
-                </button>
-              )}
-            </div>
+          {/* Form Selector */}
+          <div className="space-y-1">
+            <label className="block text-xs font-bold text-slate-800">
+              Select Form <span className="text-rose-500">*</span>
+            </label>
 
             <select
               value={selectedCustomTemplateId ? `CUSTOM_${selectedCustomTemplateId}` : flowType}
@@ -937,65 +1247,28 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
               const stage1Fields = tpl.stages[0]?.fields || [];
 
               return (
-                <div className="space-y-4 p-4 bg-slate-50/80 rounded-xl border border-slate-200">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900 text-xs">Custom Workflow: {tpl.name}</span>
-                        <span className="text-[10px] bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded">
-                          {tpl.stages.length} Stages
-                        </span>
-                      </div>
-                      {tpl.description && <p className="text-[11px] text-slate-500 mt-0.5">{tpl.description}</p>}
-                    </div>
-                  </div>
-
-                  {/* Primary Workflow Identifier (Reference / Voucher No.) */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-semibold text-slate-700">
-                        {tpl.referenceLabel && !tpl.referenceLabel.toUpperCase().includes('UPI')
-                          ? tpl.referenceLabel
-                          : 'Tracking Reference / Serial Code'}{' '}
-                        <span className="text-rose-500">*</span>
+                <div className="space-y-4">
+                  {/* Primary Workflow Identifier (Auto-Generated Immutable Code - Visible only to Super Admin) */}
+                  {isSuperAdmin && (
+                    <div className="bg-slate-50/80 p-3 rounded-xl border border-indigo-200/90 shadow-2xs space-y-1.5">
+                      <label className="block text-xs font-bold text-indigo-950 uppercase tracking-wide">
+                        {getWorkflowIdTitle(tpl.name, tpl.referenceLabel)}
                       </label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const prefix = (tpl.name || 'REF')
-                            .replace(/[^A-Za-z0-9]/g, '')
-                            .slice(0, 3)
-                            .toUpperCase() || 'REF';
-                          setIndentNo(`${prefix}-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`);
-                        }}
-                        className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer flex items-center gap-1"
-                      >
-                        <Sparkles className="w-3 h-3" />
-                        <span>Auto-Generate ID</span>
-                      </button>
+                      <input
+                        type="text"
+                        readOnly
+                        value={indentNo || generateCounterTrackingId(tpl.referenceLabel, tpl.name, allExistingFlows)}
+                        className="w-full text-xs px-3 py-2.5 border border-slate-300 rounded-lg bg-slate-100 font-bold text-slate-800 font-mono cursor-not-allowed select-none focus:outline-none"
+                      />
                     </div>
-                    <input
-                      type="text"
-                      required
-                      placeholder={`e.g. ${tpl.referenceLabel || 'REF-2026-001'}`}
-                      value={indentNo}
-                      onChange={(e) => setIndentNo(e.target.value)}
-                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white font-medium text-slate-900"
-                    />
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      Unique tracking number or voucher code for this entry.
-                    </p>
-                  </div>
+                  )}
 
                   {/* Stage #1 Form Fields Defined in Template Studio */}
                   {stage1Fields.length > 0 && (
                     <div className="space-y-3 pt-2 border-t border-slate-200">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
                         <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-                          Stage #1 Form Fields: {tpl.stages[0]?.stageName || 'Initiation Requisition'}
-                        </span>
-                        <span className="text-[10px] bg-white text-indigo-700 font-semibold px-2 py-0.5 rounded border border-indigo-200">
-                          Assignee: {tpl.stages[0]?.whoDefaultAssignee || tpl.stages[0]?.whoRole || 'Requester'}
+                          {tpl.stages[0]?.stageName || 'Initiation Requisition'}
                         </span>
                       </div>
 
@@ -1009,34 +1282,61 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                               </label>
 
                               {field.type === 'SELECT' ? (
-                                <select
-                                  required={field.required}
-                                  value={customFormData[field.id] ?? ''}
-                                  onChange={(e) => {
-                                    handleCustomFieldChange(field.id, e.target.value);
-                                    if (field.label.toLowerCase().includes('site')) {
-                                      setSiteName(e.target.value);
-                                    }
-                                    if (field.label.toLowerCase().includes('priority')) {
-                                      setPriority(e.target.value as Priority);
-                                    }
-                                  }}
-                                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white font-medium text-slate-800"
-                                >
-                                  <option value="">-- Select {field.label} --</option>
-                                  {(field.options && field.options.length > 0
-                                    ? field.options
-                                    : field.label.toLowerCase().includes('site')
-                                    ? ['SILADEHI', 'BIJETALA', 'RAIPUR', 'CENTRAL STORE']
-                                    : field.label.toLowerCase().includes('priority')
-                                    ? ['Normal', 'Urgent', 'Low']
-                                    : ['Option 1', 'Option 2']
-                                  ).map((opt) => (
-                                    <option key={opt} value={opt}>
-                                      {opt}
-                                    </option>
-                                  ))}
-                                </select>
+                                <div className="flex items-center gap-1.5">
+                                  <select
+                                    required={field.required}
+                                    value={customFormData[field.id] ?? ''}
+                                    onChange={(e) => {
+                                      handleCustomFieldChange(field.id, e.target.value);
+                                      if (field.label.toLowerCase().includes('site')) {
+                                        setSiteName(e.target.value);
+                                      }
+                                      if (field.label.toLowerCase().includes('priority')) {
+                                        setPriority(e.target.value as Priority);
+                                      }
+                                      if (field.label.toLowerCase().includes('vendor')) {
+                                        setVendorName(e.target.value);
+                                      }
+                                    }}
+                                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white font-medium text-slate-800"
+                                  >
+                                    <option value="">-- Select {field.label} --</option>
+                                    {(field.options && field.options.length > 0
+                                      ? field.options
+                                      : field.label.toLowerCase().includes('site')
+                                      ? sitesList
+                                      : field.label.toLowerCase().includes('priority')
+                                      ? prioritiesList
+                                      : field.label.toLowerCase().includes('vendor')
+                                      ? vendorsList
+                                      : ['Option 1', 'Option 2']
+                                    ).map((opt) => (
+                                      <option key={opt} value={opt}>
+                                        {opt}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const isSite = field.label.toLowerCase().includes('site');
+                                      const isVendor = field.label.toLowerCase().includes('vendor');
+                                      const isPriority = field.label.toLowerCase().includes('priority');
+                                      setQuickAddModal({
+                                        isOpen: true,
+                                        type: isSite ? 'SITE' : isVendor ? 'VENDOR' : isPriority ? 'PRIORITY' : 'CUSTOM_SELECT',
+                                        fieldId: field.id,
+                                        fieldLabel: field.label,
+                                        templateId: selectedCustomTemplateId || undefined,
+                                        stageId: tpl?.stages[0]?.stageId,
+                                      });
+                                    }}
+                                    className="p-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer"
+                                    title={`Add new ${field.label} option to Master Registry`}
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               ) : field.type === 'NUMBER' ? (
                                 <input
                                   type="number"
@@ -1100,25 +1400,6 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                       </div>
                     </div>
                   )}
-
-                  <div className="pt-1">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                      Pipeline Stages Progression
-                    </span>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {tpl.stages.map((s, idx) => (
-                        <div key={s.stageId} className="flex items-center gap-1">
-                          <span className="text-[11px] font-medium bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-700">
-                            <span className="font-bold text-indigo-600 mr-1">{idx + 1}.</span>
-                            {s.stageName}
-                          </span>
-                          {idx < tpl.stages.length - 1 && (
-                            <span className="text-slate-400 text-xs">→</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
                 </div>
               );
             })()
@@ -1667,16 +1948,33 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
                           Site Name <span className="text-rose-500">*</span>
                         </label>
-                        <select
-                          value={siteName}
-                          onChange={(e) => setSiteName(e.target.value)}
-                          className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white font-medium text-slate-800"
-                        >
-                          <option value="SILADEHI">SILADEHI</option>
-                          <option value="BIJETALA">BIJETALA</option>
-                          <option value="RAIPUR">RAIPUR OFFICE</option>
-                          <option value="CENTRAL STORE">CENTRAL STORE</option>
-                        </select>
+                        <div className="flex items-center gap-1.5">
+                          <select
+                            value={siteName}
+                            onChange={(e) => setSiteName(e.target.value)}
+                            className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white font-medium text-slate-800"
+                          >
+                            {sitesList.map((st) => (
+                              <option key={st} value={st}>
+                                {st}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setQuickAddModal({
+                                isOpen: true,
+                                type: 'SITE',
+                                fieldLabel: 'Site Name',
+                              })
+                            }
+                            className="p-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer"
+                            title="Add new Site to Master Registry"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     )}
 
@@ -1685,15 +1983,33 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
                           Priority
                         </label>
-                        <select
-                          value={priority}
-                          onChange={(e) => setPriority(e.target.value as Priority)}
-                          className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white font-medium text-slate-800"
-                        >
-                          <option value="Normal">Normal</option>
-                          <option value="Urgent">Urgent</option>
-                          <option value="Low">Low</option>
-                        </select>
+                        <div className="flex items-center gap-1.5">
+                          <select
+                            value={priority}
+                            onChange={(e) => setPriority(e.target.value as Priority)}
+                            className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white font-medium text-slate-800"
+                          >
+                            {prioritiesList.map((pr) => (
+                              <option key={pr} value={pr}>
+                                {pr}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setQuickAddModal({
+                                isOpen: true,
+                                type: 'PRIORITY',
+                                fieldLabel: 'Priority',
+                              })
+                            }
+                            className="p-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer"
+                            title="Add new Priority Level to Master Registry"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1717,78 +2033,152 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
             );
           })()}
 
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1.5">
-            <div className="font-bold text-slate-900 flex items-center justify-between">
-              <span>
-                {selectedCustomTemplateId ? (
-                  (() => {
-                    const tpl = customTemplates.find((t) => t.id === selectedCustomTemplateId);
-                    return tpl ? `${tpl.name} (${tpl.stages.length}-Stage Pipeline)` : 'Custom Workflow Pipeline';
-                  })()
-                ) : flowType === 'CHECK_STOCK' 
-                  ? 'Store 6-Stage Check Stock Pipeline' 
-                  : flowType === 'STORE_TO_SITE_DISPATCH'
-                  ? 'Store to Site 9-Stage Dispatch Pipeline (Stock Available)'
-                  : flowType === 'INDENT_PURCHASE' 
-                  ? 'Purchase 12-Stage Indent Pipeline' 
-                  : flowType === 'PO_TO_PAYMENT'
-                  ? 'Accounts 15-Stage Payment Pipeline'
-                  : flowType === 'PURCHASE_TO_STORE_DISPATCH'
-                  ? 'Store 10-Stage Dispatch Pipeline'
-                  : flowType === 'PAYMENT_TO_DISPATCH'
-                  ? 'Vendor 7-Stage QC & Dispatch Pipeline'
-                  : flowType === 'SITE_RECEIVE'
-                  ? 'Site 10-Stage Receiving & Inward Pipeline'
-                  : 'Accounts 7-Stage Invoice Collection & ERP Pipeline'}
-              </span>
-              <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
-                Tracked FMS
-              </span>
-            </div>
-            <div className="text-[11px] text-slate-500 leading-relaxed">
-              {selectedCustomTemplateId ? (
-                (() => {
-                  const tpl = customTemplates.find((t) => t.id === selectedCustomTemplateId);
-                  return tpl
-                    ? tpl.stages.map((s, sIdx) => `${sIdx + 1}. ${s.stageName} (${s.whoRole || s.whoDefaultAssignee || 'Assignee'})`).join(' → ')
-                    : '';
-                })()
-              ) : flowType === 'CHECK_STOCK'
-                ? 'Stage 1 (Receive Requisition) → Stage 2 (Check Stock) → Stage 3 (Purchase Required?) → Stage 4 (Send Indent) → Stage 5 (Partial Purchase?) → Stage 6 (Dispatch Material).'
-                : flowType === 'STORE_TO_SITE_DISPATCH'
-                ? 'Collect Items Available → Arrange Vehicle → Stock Transfer Note / Challan → E-Way Bill Checkpoint → Load Material → Dispatch → Site Receiving Form.'
-                : flowType === 'INDENT_PURCHASE'
-                ? 'Indent Receive → Degraded Material Check → ... → Advance Payment Decision → Material Collection PO.'
-                : flowType === 'PO_TO_PAYMENT'
-                ? 'Payment from Account Checkpoint (Yes: Bank NEFT / No: UPI QR) → Account Check → Payment Approval Form → Disbursement.'
-                : flowType === 'PURCHASE_TO_STORE_DISPATCH'
-                ? 'Store Material Receive → Physical Check → Challan Ready → Vehicle Arrangement → E-Way Bill Checkpoint → Inward Form.'
-                : flowType === 'PAYMENT_TO_DISPATCH'
-                ? 'Vendor Material Receive → Inspection → Quality Acceptable Checkpoint → Debit/Replacement Note → Dispatch Form.'
-                : flowType === 'SITE_RECEIVE'
-                ? 'Site Material Receive → Physical Inspection → Discrepancy Checkpoint → Site Engineer Verification → Google Form Inward Entry.'
-                : 'Receive Vendor Invoice → Line Item & Tax Calculation Check → Purchase Manager Acceptability Checkpoint → EA Approval → ERP Voucher Upload → Original Invoice Archiving.'}
-            </div>
-          </div>
+          {/* Visual Roadmap Preview of Future Sequential & Conditional Stages (Super Admin Only) */}
+          {(() => {
+            if (!isSuperAdmin) return null;
+            const fullTemplateStages = getFullTemplateStagesForCurrentWorkflow();
+            if (!fullTemplateStages || fullTemplateStages.length <= 1) return null;
 
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
+            return (
+              <FmsStagePreviewAccordion
+                stages={fullTemplateStages}
+                startIndex={1}
+                title="Workflow Roadmap & Future Stage Fields"
+                subtitle="Preview of downstream sequential and conditional stage fields required downstream."
+              />
+            );
+          })()}
+
+          {/* Pipeline Stages Progression relocated below Site Name and Priority at last of every workflow */}
+          {(() => {
+            const currentStageList = getStagesForCurrentWorkflow();
+            if (currentStageList.length === 0) return null;
+
+            return (
+              <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                  Pipeline Stages Progression
+                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {currentStageList.map((stageName, idx) => (
+                    <div key={`${stageName}-${idx}`} className="flex items-center gap-1">
+                      <span className="text-[11px] font-medium bg-slate-50 px-2 py-0.5 rounded border border-slate-200 text-slate-700">
+                        <span className="font-bold text-indigo-600 mr-1">{idx + 1}.</span>
+                        {stageName}
+                      </span>
+                      {idx < currentStageList.length - 1 && (
+                        <span className="text-slate-400 text-xs">→</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          <div className="flex items-center justify-between gap-3 pt-4 border-t border-slate-200">
             <button
               type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              onClick={handleResetForm}
+              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200/90 rounded-xl transition-colors cursor-pointer"
+              title="Reset all form input fields to blank"
             >
-              Cancel
+              <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+              <span>Clear / Reset Form</span>
             </button>
-            <button
-              type="submit"
-              className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
-            >
-              <Check className="w-4 h-4" />
-              <span>Register &amp; Initialize Flow</span>
-            </button>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>Submit</span>
+              </button>
+            </div>
           </div>
         </form>
       </div>
+
+      {/* Quick Add Option Overlay Modal */}
+      {quickAddModal && quickAddModal.isOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="flex items-center justify-between p-4 bg-slate-900 text-white">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400">
+                  <Plus className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-xs">
+                    Quick Add to Master Registry
+                  </h4>
+                  <p className="text-[10px] text-slate-300">
+                    Add new option for {quickAddModal.fieldLabel || quickAddModal.type}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickAddModal(null);
+                  setQuickAddValue('');
+                }}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickAddSubmit} className="p-4 space-y-4 text-xs">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  New {quickAddModal.fieldLabel || quickAddModal.type} Value <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  placeholder={`Enter new ${quickAddModal.fieldLabel || 'option'} name...`}
+                  value={quickAddValue}
+                  onChange={(e) => setQuickAddValue(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white font-medium text-slate-800"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  This new value will be saved into the FMS Master Registry and automatically selected.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuickAddModal(null);
+                    setQuickAddValue('');
+                  }}
+                  className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add &amp; Select</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

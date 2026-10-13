@@ -16,12 +16,15 @@ import {
   Layers,
   ArrowRight,
   Link2,
-  Paperclip
+  Paperclip,
+  Lock,
+  Plus
 } from 'lucide-react';
-import { FmsInstance, FmsStageExecution, FmsStageFieldConfig, UserProfile } from '../../types';
+import { FmsInstance, FmsStageExecution, FmsStageFieldConfig, UserProfile, FmsStageTemplate, isUserSuperAdmin } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { FileUploadField } from '../common/FileUploadField';
 import { FilePreviewModal } from '../common/FilePreviewModal';
+import { FmsStagePreviewAccordion } from './FmsStagePreviewAccordion';
 
 interface StageActionModalProps {
   isOpen: boolean;
@@ -48,7 +51,41 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [error, setError] = useState<string | null>(null);
 
+  // Quick add option state for select fields
+  const [quickAddSelectModal, setQuickAddSelectModal] = useState<{
+    isOpen: boolean;
+    fieldId: string;
+    fieldLabel: string;
+    options: string[];
+  } | null>(null);
+  const [quickAddOptionValue, setQuickAddOptionValue] = useState<string>('');
+
   const stage: FmsStageExecution | undefined = flow?.stages[stageIndex];
+
+  const handleAddSelectOption = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickAddSelectModal || !quickAddOptionValue.trim()) return;
+    const clean = quickAddOptionValue.trim();
+
+    if (quickAddSelectModal.fieldLabel.toLowerCase().includes('site')) {
+      storageAdapter.addMasterSite(clean);
+    } else if (quickAddSelectModal.fieldLabel.toLowerCase().includes('vendor')) {
+      storageAdapter.addMasterVendor(clean);
+    } else if (quickAddSelectModal.fieldLabel.toLowerCase().includes('priority')) {
+      storageAdapter.addMasterPriority(clean);
+    }
+
+    if (flow && stage) {
+      const templateKey = flow.customTemplateId || flow.flowType;
+      if (templateKey) {
+        storageAdapter.addFieldOptionToTemplateStage(templateKey, stage.stageId, quickAddSelectModal.fieldId, clean);
+      }
+    }
+
+    handleFieldChange(quickAddSelectModal.fieldId, clean);
+    setQuickAddSelectModal(null);
+    setQuickAddOptionValue('');
+  };
 
   // Derive dynamic or fallback fields for this stage
   const getStageFields = (): FmsStageFieldConfig[] => {
@@ -57,6 +94,23 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
     // If explicit fields are defined on the stage execution
     if (stage.fields && stage.fields.length > 0) {
       return stage.fields;
+    }
+
+    // Look up template definition (custom template or master studio)
+    try {
+      const masterTemplates = storageAdapter.getAllMasterTemplates();
+      const tpl = flow.customTemplateId
+        ? masterTemplates.find((t) => t.id === flow.customTemplateId || t.templateKey === flow.flowType)
+        : masterTemplates.find((t) => t.templateKey === flow.flowType);
+
+      if (tpl) {
+        const tplStage = tpl.stages[stageIndex] || tpl.stages.find((s) => s.stageId === stage.stageId);
+        if (tplStage?.fields && tplStage.fields.length > 0) {
+          return tplStage.fields;
+        }
+      }
+    } catch {
+      // Ignore template lookup error
     }
 
     // Default intelligent presets for standard baseline flows (like PO to Payment from user's sheet)
@@ -146,10 +200,31 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
   // Derive verification checkpoint checklist for this stage
   const getStageCheckpoints = (): string[] => {
     if (!flow || !stage) return [];
-    if (stage.checkpoints && stage.checkpoints.length > 0) {
-      return stage.checkpoints;
+
+    // 1. If explicit checkpoints array is defined on the stage execution
+    if (Array.isArray(stage.checkpoints)) {
+      return stage.checkpoints.filter((cp) => Boolean(cp && typeof cp === 'string' && cp.trim()));
     }
 
+    // 2. Look up template definition (custom or master)
+    try {
+      const masterTemplates = storageAdapter.getAllMasterTemplates();
+      const tpl = flow.customTemplateId
+        ? masterTemplates.find((t) => t.id === flow.customTemplateId || t.templateKey === flow.flowType)
+        : masterTemplates.find((t) => t.templateKey === flow.flowType);
+
+      if (tpl) {
+        const tplStage = tpl.stages[stageIndex] || tpl.stages.find((s) => s.stageId === stage.stageId);
+        if (tplStage && Array.isArray(tplStage.checkpoints)) {
+          return tplStage.checkpoints.filter((cp) => Boolean(cp && typeof cp === 'string' && cp.trim()));
+        }
+        return [];
+      }
+    } catch {
+      // Ignore template lookup error
+    }
+
+    // 3. Built-in workflow stage-specific default checkpoints only where formally defined
     if (flow.flowType === 'PO_TO_PAYMENT') {
       if (stage.stageId === 'STG-PAY-07' || stageIndex === 6) {
         return [
@@ -198,11 +273,8 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
       ];
     }
 
-    return [
-      'Supporting physical/digital documentation verified',
-      'Operational guidelines and quality standards confirmed',
-      'Task completed and ready for handover to next stage'
-    ];
+    // Never fabricate checkpoints for stages without configured checkpoints
+    return [];
   };
 
   const checkpoints = getStageCheckpoints();
@@ -225,6 +297,35 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
 
   if (!isOpen || !flow || !stage) return null;
 
+  const getFullTemplateStagesForFlow = (): FmsStageTemplate[] => {
+    if (!flow) return [];
+
+    try {
+      const allTemplates = storageAdapter.getAllMasterTemplates();
+      const tpl = allTemplates.find((t) => t.id === flow.customTemplateId || t.templateKey === flow.flowType);
+      if (tpl && tpl.stages && tpl.stages.length > 0) {
+        return tpl.stages;
+      }
+    } catch {
+      // Fallback
+    }
+
+    return flow.stages.map((stg) => ({
+      stageId: stg.stageId,
+      stageName: stg.stageName,
+      whoRole: stg.assignee,
+      whoDefaultAssignee: stg.assignee,
+      slaHours: stg.timeDelayHours || 4,
+      fields: stg.fields,
+      logic: stg.logic,
+      checkpoints: stg.checkpoints,
+    }));
+  };
+
+  const approvalFieldInModal = fields.find((f) => f.type === 'APPROVAL' || f.id === 'status' || f.label.toLowerCase().includes('approval'));
+  const currentApprovalValInModal = approvalFieldInModal ? formData[approvalFieldInModal.id] : formData.status;
+  const currentActiveDecision: 'Yes' | 'No' | '' = currentApprovalValInModal === 'APPROVED' ? 'Yes' : currentApprovalValInModal === 'REJECTED' ? 'No' : '';
+
   const handleFieldChange = (id: string, value: any) => {
     setFormData((prev) => ({ ...prev, [id]: value }));
   };
@@ -246,8 +347,10 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
 
     // Determine decision if approval stage
     let decision: 'Yes' | 'No' | undefined = undefined;
-    if (formData.status === 'APPROVED') decision = 'Yes';
-    else if (formData.status === 'REJECTED') decision = 'No';
+    const approvalField = fields.find((f) => f.type === 'APPROVAL' || f.id === 'status' || f.label.toLowerCase().includes('approval'));
+    const approvalVal = approvalField ? formData[approvalField.id] : formData.status;
+    if (approvalVal === 'APPROVED') decision = 'Yes';
+    else if (approvalVal === 'REJECTED') decision = 'No';
 
     const submissionPayload = {
       ...formData,
@@ -385,9 +488,6 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                 <h3 className="font-bold text-sm sm:text-base leading-tight">
                   {stage.stageName}
                 </h3>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-indigo-500/30 text-indigo-200 border border-indigo-400/20">
-                  {flow.flowType.replace(/_/g, ' ')}
-                </span>
               </div>
               <p className="text-[11px] text-indigo-200 mt-0.5">
                 Ref: <strong className="text-white font-mono">{flow.requisitionNumber || flow.indentNo || flow.flowId}</strong> • Assignee: <strong className="text-white">{stage.assignee}</strong>
@@ -405,6 +505,19 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-5 text-xs">
           
+          {(flow.isClosed || flow.status === 'CLOSED') && (
+            <div className="p-3.5 bg-slate-900 text-white rounded-xl border border-slate-800 text-xs flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <Lock className="w-4 h-4 text-emerald-400 shrink-0" />
+                <div>
+                  <span className="font-bold text-emerald-400">Workflow Verified & Closed: </span>
+                  <span className="text-slate-300">This FMS is locked. All stage actions and form edits are disabled.</span>
+                </div>
+              </div>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">CLOSED</span>
+            </div>
+          )}
+
           {error && (
             <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2 font-medium">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -416,9 +529,31 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
           {priorStages.length > 0 && (
             <div className="space-y-3">
               {priorStages.map((prior, pIdx) => {
-                const submittedEntries = prior.submittedData
+                const priorStageFields = (prior.fields && prior.fields.length > 0)
+                  ? prior.fields
+                  : (() => {
+                      try {
+                        const allTemplates = storageAdapter.getAllMasterTemplates();
+                        const tpl = allTemplates.find((t) => t.id === flow?.customTemplateId || t.templateKey === flow?.flowType);
+                        const stageTpl = tpl?.stages.find((s, idx) => s.stageId === prior.stageId || idx === pIdx);
+                        return stageTpl?.fields || [];
+                      } catch {
+                        return [];
+                      }
+                    })();
+
+                const rawEntries = prior.submittedData
                   ? Object.entries(prior.submittedData).filter(([k]) => !k.startsWith('_'))
                   : [];
+
+                const submittedEntries = [...rawEntries].sort(([keyA], [keyB]) => {
+                  const idxA = priorStageFields.findIndex((f) => f.id === keyA);
+                  const idxB = priorStageFields.findIndex((f) => f.id === keyB);
+                  if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                  if (idxA !== -1) return -1;
+                  if (idxB !== -1) return 1;
+                  return 0;
+                });
 
                 return (
                   <div key={prior.stageId || pIdx} className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
@@ -426,10 +561,7 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
                           <History className="w-3.5 h-3.5 text-indigo-600" />
-                          Stage #{pIdx + 1}: {prior.stageName}
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                          Completed Dossier
+                          {prior.stageName}
                         </span>
                       </div>
                       <span className="text-[10px] font-mono text-slate-500">
@@ -507,7 +639,7 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <span className="font-bold text-indigo-950 text-xs uppercase tracking-wider flex items-center gap-1.5">
                   <FileText className="w-4 h-4 text-indigo-600" />
-                  Stage #{stageIndex + 1}: {stage.stageName}
+                  {stage.stageName}
                 </span>
                 <span className="text-[10px] font-semibold text-slate-500">
                   Planned SLA: <strong className="text-slate-800 font-mono">{stage.plannedDateTime || '—'}</strong>
@@ -558,9 +690,11 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                     const options = (field.options && field.options.length > 0)
                       ? field.options
                       : field.label.toLowerCase().includes('site')
-                      ? ['SILADEHI', 'BIJETALA', 'RAIPUR', 'CENTRAL STORE']
+                      ? storageAdapter.getMasterSites()
                       : field.label.toLowerCase().includes('priority')
-                      ? ['Normal', 'Urgent', 'Low']
+                      ? storageAdapter.getMasterPriorities()
+                      : field.label.toLowerCase().includes('vendor')
+                      ? storageAdapter.getMasterVendors()
                       : ['Option 1', 'Option 2'];
 
                     return (
@@ -568,18 +702,35 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                         <label className="block text-xs font-semibold text-slate-700">
                           {field.label} {field.required && <span className="text-rose-500">*</span>}
                         </label>
-                        <select
-                          value={val}
-                          onChange={(e) => handleFieldChange(field.id, e.target.value)}
-                          className="w-full text-xs bg-white border border-slate-300 rounded-lg p-2 font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                        >
-                          <option value="">Select option...</option>
-                          {options.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="flex items-center gap-1.5">
+                          <select
+                            value={val}
+                            onChange={(e) => handleFieldChange(field.id, e.target.value)}
+                            className="w-full text-xs bg-white border border-slate-300 rounded-lg p-2 font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                          >
+                            <option value="">Select option...</option>
+                            {options.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setQuickAddSelectModal({
+                                isOpen: true,
+                                fieldId: field.id,
+                                fieldLabel: field.label,
+                                options,
+                              })
+                            }
+                            className="p-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer"
+                            title={`Add option to ${field.label}`}
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     );
                   }
@@ -757,6 +908,25 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
               </div>
             )}
 
+            {/* Upcoming Downstream Stage & Conditional Branch Preview Accordion (Super Admin Only) */}
+            {(() => {
+              const isSuperAdmin = isUserSuperAdmin(currentUser);
+              if (!isSuperAdmin) return null;
+              const fullTemplateStages = getFullTemplateStagesForFlow();
+              if (!fullTemplateStages || fullTemplateStages.length <= stageIndex + 1) return null;
+
+              return (
+                <FmsStagePreviewAccordion
+                  stages={fullTemplateStages}
+                  startIndex={stageIndex + 1}
+                  title="Upcoming Workflow & Conditional Branches"
+                  subtitle="Preview downstream stage fields that will unlock upon completing this stage."
+                  activeDecision={currentActiveDecision}
+                  compact={true}
+                />
+              );
+            })()}
+
             {/* Rolling SLA Notice */}
             <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl flex items-center justify-between text-xs text-indigo-900">
               <div className="flex items-center gap-2">
@@ -782,10 +952,15 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
           <button
             type="submit"
             form="stage-action-form"
-            className="px-5 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-bold rounded-lg text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+            disabled={flow.isClosed || flow.status === 'CLOSED'}
+            className={`px-5 py-2 font-bold rounded-lg text-xs shadow-sm transition-all flex items-center gap-1.5 ${
+              flow.isClosed || flow.status === 'CLOSED'
+                ? 'bg-slate-300 text-slate-500 cursor-not-allowed border border-slate-300'
+                : 'bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white cursor-pointer'
+            }`}
           >
-            <CheckCircle2 className="w-4 h-4 text-white" />
-            <span>Submit &amp; Advance Stage</span>
+            <CheckCircle2 className="w-4 h-4" />
+            <span>{flow.isClosed || flow.status === 'CLOSED' ? 'Workflow Closed (Locked)' : 'Submit & Advance Stage'}</span>
           </button>
         </div>
 
@@ -797,6 +972,79 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
             fileName={previewFile.name}
             onClose={() => setPreviewFile(null)}
           />
+        )}
+
+        {/* Quick Add Select Option Overlay */}
+        {quickAddSelectModal && quickAddSelectModal.isOpen && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+              <div className="flex items-center justify-between p-4 bg-slate-900 text-white">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400">
+                    <Plus className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-xs">
+                      Quick Add Option
+                    </h4>
+                    <p className="text-[10px] text-slate-300">
+                      Add new choice for {quickAddSelectModal.fieldLabel}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuickAddSelectModal(null);
+                    setQuickAddOptionValue('');
+                  }}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddSelectOption} className="p-4 space-y-4 text-xs">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    New Option Label for {quickAddSelectModal.fieldLabel} <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    placeholder={`Enter new option for ${quickAddSelectModal.fieldLabel}...`}
+                    value={quickAddOptionValue}
+                    onChange={(e) => setQuickAddOptionValue(e.target.value)}
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white font-medium text-slate-800"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Saves this option instantly to the Master Registry / Field config and selects it.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuickAddSelectModal(null);
+                      setQuickAddOptionValue('');
+                    }}
+                    className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add &amp; Select</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         )}
 
       </div>

@@ -25,6 +25,7 @@ import {
 import { downloadCsv } from '../../utils/csvExporter';
 import { DelegationTask, UserProfile, ProcessRemark, isUserSuperAdmin, hasModulePermission } from '../../types';
 import { ViewScope } from '../layout/Header';
+import { matchTaskDepartment, getDepartmentBranchLabel } from '../../services/stageAssignment';
 
 interface DelegationBoardProps {
   tasks: DelegationTask[];
@@ -41,6 +42,9 @@ interface DelegationBoardProps {
     remarkText: string,
     stageIndex?: number
   ) => void;
+  selectedDepartmentFilter?: string | null;
+  onClearDepartmentFilter?: () => void;
+  usersList?: UserProfile[];
 }
 
 export const DelegationBoard: React.FC<DelegationBoardProps> = ({
@@ -52,6 +56,9 @@ export const DelegationBoard: React.FC<DelegationBoardProps> = ({
   onNewTask,
   onReviseTask,
   onAddProcessRemark,
+  selectedDepartmentFilter = null,
+  onClearDepartmentFilter,
+  usersList = [],
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -86,6 +93,11 @@ export const DelegationBoard: React.FC<DelegationBoardProps> = ({
   const filteredTasks = tasks.filter((task) => {
     // 1. User Scope Filtering - non-superadmin only sees own tasks
     if (effectiveScope === 'USER_ONLY' && !isMyTask(task)) {
+      return false;
+    }
+
+    // 1b. Department Filter from Sidebar
+    if (selectedDepartmentFilter && !matchTaskDepartment(task, selectedDepartmentFilter, usersList)) {
       return false;
     }
 
@@ -210,6 +222,29 @@ export const DelegationBoard: React.FC<DelegationBoardProps> = ({
 
   return (
     <div className="space-y-5">
+      {/* Department Filter Indicator from Sidebar */}
+      {selectedDepartmentFilter && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 px-3.5 py-2.5 bg-rose-50/90 border border-rose-200 rounded-xl text-xs shadow-2xs">
+          <div className="flex items-center gap-2 text-rose-950 font-semibold">
+            <ListTodo className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>
+              Department: <strong className="text-rose-700">{getDepartmentBranchLabel(selectedDepartmentFilter)}</strong>
+            </span>
+            <span className="text-slate-400">·</span>
+            <span className="text-slate-600 font-normal">{filteredTasks.length} delegated tasks</span>
+          </div>
+          {onClearDepartmentFilter && (
+            <button
+              type="button"
+              onClick={onClearDepartmentFilter}
+              className="px-2.5 py-1 bg-rose-200 hover:bg-rose-300 text-rose-900 rounded-md font-bold text-[11px] transition-colors cursor-pointer"
+            >
+              Clear Filter ✕
+            </button>
+          )}
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         {/* Total Delegated Card */}

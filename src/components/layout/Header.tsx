@@ -15,10 +15,11 @@ import {
   ShieldAlert,
   Crown
 } from 'lucide-react';
-import { UserProfile, CentralRegistryConfig, isUserSuperAdmin } from '../../types';
+import { UserProfile, CentralRegistryConfig, isUserSuperAdmin, AppNotification } from '../../types';
 import { USERS } from '../../data/initialData';
 import { UserAvatar } from '../common/UserAvatar';
 import { CustomSelect } from '../common/CustomSelect';
+import { NotificationCenter } from './NotificationCenter';
 
 export type ViewScope = 'USER_ONLY' | 'ALL_ORG';
 
@@ -40,6 +41,13 @@ interface HeaderProps {
   onLogout?: () => void;
   onOpenGlobalSearch?: () => void;
   usersList?: UserProfile[];
+  notifications?: AppNotification[];
+  onMarkNotificationRead?: (id: string) => void;
+  onMarkAllNotificationsRead?: () => void;
+  onClearAllNotifications?: () => void;
+  onSelectNotification?: (notif: AppNotification) => void;
+  desktopPermission?: NotificationPermission;
+  onRequestDesktopPermission?: () => void;
 }
 
 export function getDynamicGreetingHeader(name: string): string {
@@ -71,9 +79,18 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
   onOpenGlobalSearch,
   usersList,
+  notifications = [],
+  onMarkNotificationRead,
+  onMarkAllNotificationsRead,
+  onClearAllNotifications,
+  onSelectNotification,
+  desktopPermission = 'default',
+  onRequestDesktopPermission,
 }) => {
+  const [isNotificationOpen, setIsNotificationOpen] = React.useState(false);
   const isSuperAdmin = isUserSuperAdmin(currentUser);
   const availableUsers = usersList && usersList.length > 0 ? usersList : USERS;
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
     <header className="h-16 border-b border-slate-200 bg-white sticky top-0 z-30 flex items-center justify-between px-3 sm:px-6 shadow-xs">
@@ -208,6 +225,21 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
+        {/* Mobile Notification Bell */}
+        <button
+          type="button"
+          onClick={() => setIsNotificationOpen((prev) => !prev)}
+          className="p-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 transition-colors relative cursor-pointer"
+          title="Notifications"
+        >
+          <Bell className="w-4 h-4 text-slate-700" />
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-0.5 bg-rose-500 text-white rounded-full text-[9px] font-black flex items-center justify-center animate-pulse">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
+        </button>
+
         {/* Mobile User Profile: Switcher for SuperAdmin, Identity badge for normal users */}
         <div className="flex items-center gap-1.5">
           <UserAvatar
@@ -241,6 +273,21 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right User & Actions (Desktop View) */}
       <div className="hidden md:flex items-center gap-2">
+        {/* Desktop Notification Bell */}
+        <button
+          type="button"
+          onClick={() => setIsNotificationOpen((prev) => !prev)}
+          className="p-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 transition-all relative cursor-pointer group shadow-2xs hover:border-slate-300"
+          title="Notifications"
+        >
+          <Bell className="w-4 h-4 text-slate-600 group-hover:text-indigo-600 transition-colors" />
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 bg-rose-500 text-white rounded-full text-[9px] font-black flex items-center justify-center shadow-xs animate-pulse">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
+        </button>
+
         {/* Super Admin Control Center Button */}
         {isSuperAdmin && onOpenSuperAdmin && (
           <button
@@ -303,6 +350,27 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
       </div>
+
+      {/* Unified Single Mount Notification Popover */}
+      {isNotificationOpen && (
+        <div className="absolute right-2 sm:right-6 top-14 z-50">
+          <NotificationCenter
+            isOpen={isNotificationOpen}
+            onClose={() => setIsNotificationOpen(false)}
+            currentUser={currentUser}
+            notifications={notifications}
+            onMarkRead={(id) => onMarkNotificationRead?.(id)}
+            onMarkAllRead={() => onMarkAllNotificationsRead?.()}
+            onClearAll={() => onClearAllNotifications?.()}
+            onSelectNotification={(notif) => {
+              setIsNotificationOpen(false);
+              onSelectNotification?.(notif);
+            }}
+            desktopPermission={desktopPermission}
+            onRequestDesktopPermission={() => onRequestDesktopPermission?.()}
+          />
+        </div>
+      )}
     </header>
   );
 };

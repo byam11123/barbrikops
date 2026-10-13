@@ -27,11 +27,20 @@ import {
   FileCheck,
   ShieldCheck,
   Building2,
-  Hash
+  Hash,
+  Trash2,
+  Download,
+  ChevronDown,
+  ChevronUp,
+  Layers,
+  Search,
+  Lock
 } from 'lucide-react';
-import { FmsInstance, UserProfile, Priority, FmsStageFieldConfig } from '../../types';
+import { FmsInstance, UserProfile, Priority, FmsStageFieldConfig, isUserSuperAdmin } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
+import { downloadCsv } from '../../utils/csvExporter';
 import { FilePreviewModal } from '../common/FilePreviewModal';
+import { CloseFmsModal } from './CloseFmsModal';
 import { 
   FMS_CHECK_STOCK_STAGES, 
   FMS_STANDARD_PURCHASE_STAGES, 
@@ -55,11 +64,26 @@ interface FmsDetailModalProps {
   currentUser: UserProfile;
   onClose: () => void;
   onUpdateFlow?: (flow: FmsInstance) => void;
+  onDeleteFlow?: (flowId: string) => void;
+  allFlows?: FmsInstance[];
+  onSelectFlow?: (flow: FmsInstance) => void;
 }
 
-export const FmsDetailModal: React.FC<FmsDetailModalProps> = ({ flow, currentUser, onClose, onUpdateFlow }) => {
-  const [modalStageFilter, setModalStageFilter] = useState<'MY_STAGES' | 'ALL_STAGES'>('MY_STAGES');
+export const FmsDetailModal: React.FC<FmsDetailModalProps> = ({ 
+  flow, 
+  currentUser, 
+  onClose, 
+  onUpdateFlow, 
+  onDeleteFlow,
+  allFlows,
+  onSelectFlow 
+}) => {
+  const isSuperAdmin = isUserSuperAdmin(currentUser);
+  const [modalStageFilter, setModalStageFilter] = useState<'MY_STAGES' | 'ALL_STAGES'>('ALL_STAGES');
   const [isEditing, setIsEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [expandedStageId, setExpandedStageId] = useState<string | null>(null);
+  const [stageSearchQuery, setStageSearchQuery] = useState('');
   const [editSiteName, setEditSiteName] = useState(flow?.siteName || '');
   const [editPriority, setEditPriority] = useState<Priority>(flow?.priority || 'Normal');
   const [editRequisition, setEditRequisition] = useState(flow?.requisitionNumber || flow?.indentNo || '');
@@ -68,6 +92,7 @@ export const FmsDetailModal: React.FC<FmsDetailModalProps> = ({ flow, currentUse
   const [editRemarks, setEditRemarks] = useState(flow?.remarks || '');
   const [editActiveAssignee, setEditActiveAssignee] = useState(flow ? flow.stages[flow.currentStageIndex]?.assignee || '' : '');
   const [previewFile, setPreviewFile] = useState<{ url: string; name: string } | null>(null);
+  const [showCloseModal, setShowCloseModal] = useState(false);
 
   useEffect(() => {
     if (flow) {
@@ -112,7 +137,41 @@ export const FmsDetailModal: React.FC<FmsDetailModalProps> = ({ flow, currentUse
 
   if (!flow) return null;
 
-  const activeStageDefs = flow.flowType === 'CHECK_STOCK'
+  const customTemplateForFlow = flow.customTemplateId
+    ? storageAdapter.getAllMasterTemplates().find((t) => t.id === flow.customTemplateId || t.templateKey === flow.flowType)
+    : storageAdapter.getAllMasterTemplates().find((t) => t.templateKey === flow.flowType);
+
+  const activeStageDefs = customTemplateForFlow
+    ? customTemplateForFlow.stages.map((stg, sIdx) => ({
+        stageId: stg.stageId,
+        stageNumber: sIdx + 1,
+        name: stg.stageName,
+        what: stg.stageName,
+        whoRole: stg.whoRole || 'ASSIGNED_ROLE',
+        whoDefaultAssignee: stg.whoDefaultAssignee || 'Assignee',
+        howChannel: stg.howChannel || 'IN-APP FORM',
+        formUrl: stg.howChannel?.startsWith('http') ? stg.howChannel : undefined,
+        slaHours: stg.slaHours || 4,
+        isCheckpoint: stg.logic?.gatewayType === 'CONDITIONAL_JUMP',
+        hasYesNoDecision: stg.logic?.gatewayType === 'CONDITIONAL_JUMP',
+        fields: stg.fields,
+      }))
+    : flow.stages && flow.stages.length > 0 && !['CHECK_STOCK', 'PO_TO_PAYMENT', 'PURCHASE_TO_STORE_DISPATCH', 'STORE_TO_SITE_DISPATCH', 'PAYMENT_TO_DISPATCH', 'SITE_RECEIVE', 'ACCOUNTS_INVOICE_COLLECTION', 'HR_ATTENDANCE_PAYMENT', 'BREAKDOWN_REPORTING', 'EQUIPMENT_PART_REPAIR', 'DPR_REPORTING', 'INDENT_PURCHASE'].includes(flow.flowType)
+    ? flow.stages.map((stg, sIdx) => ({
+        stageId: stg.stageId,
+        stageNumber: sIdx + 1,
+        name: stg.stageName,
+        what: stg.stageName,
+        whoRole: 'ASSIGNED_ROLE',
+        whoDefaultAssignee: stg.assignee || 'Assignee',
+        howChannel: stg.how || 'IN-APP FORM',
+        formUrl: stg.how?.startsWith('http') ? stg.how : undefined,
+        slaHours: 4,
+        isCheckpoint: stg.logic?.gatewayType === 'CONDITIONAL_JUMP',
+        hasYesNoDecision: stg.logic?.gatewayType === 'CONDITIONAL_JUMP',
+        fields: stg.fields,
+      }))
+    : flow.flowType === 'CHECK_STOCK'
     ? FMS_CHECK_STOCK_STAGES
     : flow.flowType === 'PO_TO_PAYMENT'
     ? FMS_PO_PAYMENT_STAGES
@@ -152,6 +211,73 @@ export const FmsDetailModal: React.FC<FmsDetailModalProps> = ({ flow, currentUse
       }
       return true;
     });
+
+  const filteredDisplayedStages = displayedStages.filter(({ stage }) => {
+    if (!stageSearchQuery.trim()) return true;
+    const q = stageSearchQuery.toLowerCase();
+    const matchesName = stage.stageName.toLowerCase().includes(q);
+    const matchesAssignee = stage.assignee?.toLowerCase().includes(q);
+    const matchesStatus = stage.status.toLowerCase().includes(q);
+    const matchesData = stage.submittedData ? JSON.stringify(stage.submittedData).toLowerCase().includes(q) : false;
+    return matchesName || matchesAssignee || matchesStatus || matchesData;
+  });
+
+  const handleExportStageReport = () => {
+    if (!flow) return;
+    const headers = [
+      'Flow ID',
+      'Ref Identifier',
+      'Site Name',
+      'Vendor Name',
+      'PO Amount',
+      'Stage Number',
+      'Stage Name',
+      'Assignee',
+      'Status',
+      'Planned Date/Time',
+      'Actual Date/Time',
+      'Delay Variance',
+      'Decision Value',
+      'Submitted Data'
+    ];
+
+    const rows = flow.stages.map((stage, idx) => {
+      const stgDelayHrs = (typeof stage.timeDelayHours === 'number' && stage.timeDelayHours > 0)
+        ? stage.timeDelayHours
+        : (typeof stage.delayHours === 'number' && stage.delayHours > 0)
+        ? stage.delayHours
+        : getStageDelayHours(stage, stage.plannedDateTime || flow.indentDate);
+
+      const delayStr = stgDelayHrs > 0 ? formatDelayVariance(stgDelayHrs) : 'On Time';
+
+      const submittedStr = stage.submittedData
+        ? Object.entries(stage.submittedData)
+            .filter(([k]) => !k.startsWith('_'))
+            .map(([k, v]) => `${k}: ${v}`)
+            .join(' | ')
+        : 'None';
+
+      return [
+        flow.flowId,
+        flow.requisitionNumber || flow.indentNo || '—',
+        flow.siteName || '—',
+        flow.vendorName || '—',
+        flow.poAmount !== undefined ? `₹${flow.poAmount}` : '—',
+        idx + 1,
+        stage.stageName,
+        stage.assignee || 'Unassigned',
+        stage.status,
+        stage.plannedDateTime || '—',
+        stage.actualDateTime || '—',
+        delayStr,
+        stage.decisionValue || '—',
+        submittedStr
+      ];
+    });
+
+    const safeFilename = `fms_stage_report_${flow.flowId.replace(/[^a-zA-Z0-9_-]/g, '_')}_${new Date().toISOString().slice(0, 10)}.csv`;
+    downloadCsv(safeFilename, headers, rows);
+  };
 
   const totalFlowDelayHrs = getFlowTotalDelay(flow);
   const isFlowDelayed = totalFlowDelayHrs > 0;
@@ -275,13 +401,15 @@ export const FmsDetailModal: React.FC<FmsDetailModalProps> = ({ flow, currentUse
                   Detailed Audit Trail
                 </span>
                 <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-                  flow.status === 'Completed'
+                  flow.isClosed || flow.status === 'CLOSED'
+                    ? 'bg-slate-900 text-emerald-400 border-slate-800'
+                    : flow.status === 'Completed'
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                     : flow.status === 'In Progress'
                     ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
                     : 'bg-slate-100 text-slate-700 border-slate-200'
                 }`}>
-                  {flow.status}
+                  {flow.isClosed || flow.status === 'CLOSED' ? 'CLOSED 🔒' : flow.status}
                 </span>
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                   flow.priority === 'Urgent'
@@ -310,7 +438,49 @@ export const FmsDetailModal: React.FC<FmsDetailModalProps> = ({ flow, currentUse
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {allFlows && allFlows.length > 1 && onSelectFlow && (
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-lg border border-slate-200">
+                <span className="text-[11px] font-semibold text-slate-500 pl-1 hidden sm:inline">Switch FMS:</span>
+                <select
+                  value={flow.id}
+                  onChange={(e) => {
+                    const target = allFlows.find((f) => f.id === e.target.value);
+                    if (target) onSelectFlow(target);
+                  }}
+                  className="bg-white text-xs font-semibold text-slate-800 border border-slate-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer max-w-[180px] truncate"
+                >
+                  {allFlows.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.flowId} - {f.siteName} ({f.status})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleExportStageReport}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs transition-colors cursor-pointer"
+              title="Download stage records for this FMS in Excel/CSV format"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-700" />
+              <span>Export Stage Excel</span>
+            </button>
+
+            {isSuperAdmin && !flow.isClosed && flow.status !== 'CLOSED' && (
+              <button
+                type="button"
+                onClick={() => setShowCloseModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-slate-800 shadow-2xs transition-colors cursor-pointer"
+                title="Close this FMS with formal verification remark (SuperAdmin only)"
+              >
+                <Lock className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Close FMS</span>
+              </button>
+            )}
+
             {onUpdateFlow && (
               <button
                 type="button"
@@ -326,6 +496,44 @@ export const FmsDetailModal: React.FC<FmsDetailModalProps> = ({ flow, currentUse
                 <span>{isEditing ? 'Cancel Edit' : 'Edit Flow Details'}</span>
               </button>
             )}
+            {isSuperAdmin && (
+              confirmDelete ? (
+                <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1">
+                  <span className="text-xs font-bold text-rose-700">Delete record?</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onDeleteFlow) {
+                        onDeleteFlow(flow.id);
+                      } else {
+                        storageAdapter.deleteFmsFlow(flow.id, currentUser);
+                      }
+                      onClose();
+                    }}
+                    className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-bold cursor-pointer"
+                  >
+                    Yes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs font-medium cursor-pointer"
+                  >
+                    No
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 shadow-2xs transition-colors cursor-pointer"
+                  title="Delete FMS Record (Super Admin)"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Delete Record</span>
+                </button>
+              )
+            )}
             <button
               onClick={onClose}
               className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
@@ -337,6 +545,29 @@ export const FmsDetailModal: React.FC<FmsDetailModalProps> = ({ flow, currentUse
 
         {/* Content */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-5 bg-slate-50/40">
+          {/* Closure Audit Sign-Off Banner */}
+          {(flow.isClosed || flow.status === 'CLOSED') && (
+            <div className="p-4 bg-slate-900 text-white rounded-xl border border-slate-800 shadow-sm flex items-start gap-3.5">
+              <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg shrink-0 border border-emerald-500/30">
+                <Lock className="w-5 h-5" />
+              </div>
+              <div className="space-y-1 text-xs w-full">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="font-bold text-sm text-emerald-400">Workflow Verified & Closed</span>
+                  <span className="px-2.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">CLOSED</span>
+                </div>
+                <p className="text-slate-300">
+                  Closed By: <span className="font-semibold text-white">{flow.closedBy || 'Super Administrator'}</span> on <span className="font-mono text-slate-200">{flow.closedAt}</span>
+                </p>
+                {flow.closureRemark && (
+                  <div className="mt-2 pt-2 border-t border-slate-800 text-slate-300">
+                    <span className="font-semibold text-slate-200">Closure Verification Remark: </span>
+                    <span className="italic text-emerald-200">"{flow.closureRemark}"</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           {/* Live Instance Editing Form */}
           {isEditing && (
             <form onSubmit={handleSaveEdit} className="p-4 bg-white border border-indigo-200 rounded-xl space-y-3.5 shadow-xs animate-in fade-in duration-150">
@@ -529,51 +760,31 @@ export const FmsDetailModal: React.FC<FmsDetailModalProps> = ({ flow, currentUse
             </div>
           )}
 
-          {flow.remarks && (
-            <div className="p-3.5 bg-amber-50/70 border-l-4 border-amber-500 border-y border-r border-amber-200 rounded-r-xl flex items-start gap-3 shadow-2xs">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div className="text-xs">
-                <span className="font-bold text-amber-950 mr-1.5">Operational Notes &amp; Justification:</span>
-                <span className="text-amber-900 leading-relaxed">{flow.remarks}</span>
-              </div>
-            </div>
-          )}
-
           {/* Audit Trail Dossier — Completed Stage Records */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-            <div className="px-4 py-3 bg-slate-50/90 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
-                  <FileSpreadsheet className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                    Consolidated Stage Form Responses &amp; Master Records
-                  </h4>
-                  <p className="text-[11px] text-slate-500">
-                    Archived operational parameters, decisions, and uploaded verification attachments
-                  </p>
-                </div>
-              </div>
-              <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-full">
-                {stagesWithSubmittedData.length} Completed Stage Form(s) Recorded
-              </span>
-            </div>
-
-            <div className="p-4">
-              {stagesWithSubmittedData.length === 0 ? (
-                <div className="text-center py-8 px-4 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
-                  <FileText className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                  <p className="text-xs font-semibold text-slate-700">No stage form responses recorded yet</p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    Field entries and uploaded documents will be logged here as each workflow stage is executed.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3.5">
+          {stagesWithSubmittedData.length > 0 && (
+            <div className="space-y-3.5">
                   {stagesWithSubmittedData.map(({ stage, idx }) => {
-                    const stageFields = stage.fields || [];
-                    const entries = Object.entries(stage.submittedData || {}).filter(([k]) => !k.startsWith('_'));
+                    let stageFields = stage.fields || [];
+                    if (stageFields.length === 0) {
+                      try {
+                        const allTemplates = storageAdapter.getAllMasterTemplates();
+                        const tpl = allTemplates.find((t) => t.id === flow?.customTemplateId || t.templateKey === flow?.flowType);
+                        const stageTpl = tpl?.stages.find((s, sIdx) => s.stageId === stage.stageId || sIdx === idx);
+                        if (stageTpl?.fields) {
+                          stageFields = stageTpl.fields;
+                        }
+                      } catch {}
+                    }
+
+                    const rawEntries = Object.entries(stage.submittedData || {}).filter(([k]) => !k.startsWith('_'));
+                    const entries = [...rawEntries].sort(([keyA], [keyB]) => {
+                      const idxA = stageFields.findIndex((f) => f.id === keyA);
+                      const idxB = stageFields.findIndex((f) => f.id === keyB);
+                      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                      if (idxA !== -1) return -1;
+                      if (idxB !== -1) return 1;
+                      return 0;
+                    });
 
                     return (
                       <div key={stage.stageId || idx} className="rounded-xl border border-slate-200 overflow-hidden shadow-2xs bg-white">
@@ -750,17 +961,27 @@ export const FmsDetailModal: React.FC<FmsDetailModalProps> = ({ flow, currentUse
                       </div>
                     );
                   })}
-                </div>
-              )}
             </div>
-          </div>
+          )}
 
-          {/* Table Header with Toggle */}
+          {/* Table Header with Toggle & Search */}
           <div>
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Stage Breakdown ({getFlowTypeDisplayName(flow.flowType)})
-              </h4>
+            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Stage Breakdown ({getFlowTypeDisplayName(flow.flowType)})
+                </h4>
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Filter stage, assignee, fields..."
+                    value={stageSearchQuery}
+                    onChange={(e) => setStageSearchQuery(e.target.value)}
+                    className="pl-8 pr-3 py-1 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
               <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
                 <button
                   onClick={() => setModalStageFilter('MY_STAGES')}
@@ -788,22 +1009,23 @@ export const FmsDetailModal: React.FC<FmsDetailModalProps> = ({ flow, currentUse
             </div>
 
             <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-2xs touch-pan-x overscroll-x-contain [scrollbar-width:thin] [scrollbar-color:#94a3b8_#f1f5f9] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-slate-100 [&::-webkit-scrollbar-thumb]:bg-slate-300 [&::-webkit-scrollbar-thumb]:rounded-full">
-              <table className="w-full min-w-[720px] text-left text-xs border-collapse">
+              <table className="w-full min-w-[780px] text-left text-xs border-collapse">
                 <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
                   <tr>
-                    <th className="py-2.5 px-3">Stage #</th>
+                    <th className="py-2.5 px-3 w-10">#</th>
                     <th className="py-2.5 px-3">Stage Name</th>
-                    <th className="py-2.5 px-3">Assignee</th>
-                    <th className="py-2.5 px-3">Planned</th>
-                    <th className="py-2.5 px-3">Actual</th>
+                    <th className="py-2.5 px-3">Assignee / Department</th>
+                    <th className="py-2.5 px-3">Planned Date</th>
+                    <th className="py-2.5 px-3">Actual Date</th>
                     <th className="py-2.5 px-3">Delay / Variance</th>
                     <th className="py-2.5 px-3">Decision</th>
                     <th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3 text-center">Stage Fields</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {displayedStages.length > 0 ? (
-                    displayedStages.map(({ stage, idx }) => {
+                  {filteredDisplayedStages.length > 0 ? (
+                    filteredDisplayedStages.map(({ stage, idx }) => {
                       const isStageDone = stage.status === 'Done' || stage.status === 'Skipped';
                       const stgDelayHrs = (typeof stage.timeDelayHours === 'number' && stage.timeDelayHours > 0)
                         ? stage.timeDelayHours
@@ -813,85 +1035,201 @@ export const FmsDetailModal: React.FC<FmsDetailModalProps> = ({ flow, currentUse
 
                       const isStgDelayed = stgDelayHrs > 0;
                       const formattedDelay = formatDelayVariance(stgDelayHrs);
+                      const stageKey = stage.stageId || `stg-${idx}`;
+                      const isExpanded = expandedStageId === stageKey;
+
+                      // Find stage fields definitions
+                      let stageFieldDefs = stage.fields || [];
+                      if (!stageFieldDefs || stageFieldDefs.length === 0) {
+                        try {
+                          const allTemplates = storageAdapter.getAllMasterTemplates();
+                          const tpl = allTemplates.find((t) => t.id === flow?.customTemplateId || t.templateKey === flow?.flowType);
+                          const stageTpl = tpl?.stages.find((s, sIdx) => s.stageId === stage.stageId || sIdx === idx);
+                          if (stageTpl?.fields) {
+                            stageFieldDefs = stageTpl.fields;
+                          }
+                        } catch {}
+                      }
+
+                      const hasSubmittedData = stage.submittedData && Object.keys(stage.submittedData).filter((k) => !k.startsWith('_')).length > 0;
 
                       return (
-                        <tr key={stage.stageId || idx} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="py-2.5 px-3 font-semibold text-slate-500">{idx + 1}</td>
-                          <td className="py-2.5 px-3 font-medium text-slate-900">
-                            <div className="flex items-center gap-1.5">
-                              {stage.stageName}
-                              {isMyStage(idx, stage) && (
-                                <span className="text-[9px] px-1 py-0.2 rounded bg-indigo-100 text-indigo-700 font-bold">
-                                  You
+                        <React.Fragment key={stageKey}>
+                          <tr className={`hover:bg-slate-50/80 transition-colors ${isExpanded ? 'bg-indigo-50/40' : ''}`}>
+                            <td className="py-2.5 px-3 font-semibold text-slate-500">{idx + 1}</td>
+                            <td className="py-2.5 px-3 font-medium text-slate-900">
+                              <div className="flex items-center gap-1.5">
+                                {stage.stageName}
+                                {isMyStage(idx, stage) && (
+                                  <span className="text-[9px] px-1 py-0.2 rounded bg-indigo-100 text-indigo-700 font-bold">
+                                    You
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-600 font-medium">{stage.assignee || 'Unassigned'}</td>
+                            <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px] whitespace-nowrap">
+                              {stage.plannedDateTime || '—'}
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-700 font-mono text-[11px] whitespace-nowrap">
+                              {stage.actualDateTime || '—'}
+                            </td>
+                            <td className="py-2.5 px-3 font-mono text-[11px] whitespace-nowrap">
+                              {isStgDelayed ? (
+                                <span
+                                  className={`inline-block px-2 py-0.5 rounded font-bold ${
+                                    isStageDone
+                                      ? 'bg-red-100 text-red-800 border border-red-200'
+                                      : 'bg-yellow-100 text-yellow-800 border border-yellow-300 animate-pulse'
+                                  }`}
+                                >
+                                  {formattedDelay}
                                 </span>
+                              ) : (
+                                <span className="text-emerald-700 font-medium">On Time</span>
                               )}
-                            </div>
-                          </td>
-                          <td className="py-2.5 px-3 text-slate-600">{stage.assignee}</td>
-                          <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px] whitespace-nowrap">
-                            {stage.plannedDateTime || '—'}
-                          </td>
-                          <td className="py-2.5 px-3 text-slate-700 font-mono text-[11px] whitespace-nowrap">
-                            {stage.actualDateTime || '—'}
-                          </td>
-                          {/* Delay / Variance column with highlight badges */}
-                          <td className="py-2.5 px-3 font-mono text-[11px] whitespace-nowrap">
-                            {isStgDelayed ? (
+                            </td>
+                            <td className="py-2.5 px-3 font-semibold whitespace-nowrap">
+                              {stage.decisionValue ? (
+                                <span
+                                  className={`px-2 py-0.5 rounded text-[10px] ${
+                                    stage.decisionValue === 'Yes'
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : 'bg-slate-200 text-slate-700'
+                                  }`}
+                                >
+                                  {stage.decisionValue}
+                                </span>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 whitespace-nowrap">
                               <span
-                                className={`inline-block px-2 py-0.5 rounded font-bold ${
-                                  isStageDone
-                                    ? 'bg-red-100 text-red-800 border border-red-200'
-                                    : 'bg-yellow-100 text-yellow-800 border border-yellow-300 animate-pulse'
-                                }`}
-                              >
-                                {formattedDelay}
-                              </span>
-                            ) : (
-                              <span className="text-slate-400">—</span>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 font-semibold whitespace-nowrap">
-                            {stage.decisionValue ? (
-                              <span
-                                className={`px-2 py-0.5 rounded text-[10px] ${
-                                  stage.decisionValue === 'Yes'
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                  stage.status === 'Done'
                                     ? 'bg-emerald-100 text-emerald-800'
-                                    : 'bg-slate-200 text-slate-700'
+                                    : stage.status === 'In Progress'
+                                    ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                                    : stage.status === 'Skipped'
+                                    ? 'bg-slate-100 text-slate-500'
+                                    : 'bg-slate-100 text-slate-600'
                                 }`}
                               >
-                                {stage.decisionValue}
+                                {stage.status}
                               </span>
-                            ) : (
-                              '—'
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 whitespace-nowrap">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                stage.status === 'Done'
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : stage.status === 'In Progress'
-                                  ? 'bg-indigo-100 text-indigo-800'
-                                  : stage.status === 'Skipped'
-                                  ? 'bg-slate-100 text-slate-500'
-                                  : 'bg-slate-100 text-slate-600'
-                              }`}
-                            >
-                              {stage.status}
-                            </span>
-                          </td>
-                        </tr>
+                            </td>
+                            <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => setExpandedStageId(isExpanded ? null : stageKey)}
+                                className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-bold transition-colors cursor-pointer ${
+                                  isExpanded
+                                    ? 'bg-indigo-600 text-white'
+                                    : 'bg-slate-100 hover:bg-slate-200 text-indigo-700 border border-slate-200'
+                                }`}
+                              >
+                                <span>{isExpanded ? 'Hide Fields' : 'View Fields'}</span>
+                                {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                              </button>
+                            </td>
+                          </tr>
+
+                          {/* Expanded Stage Fields Dossier Row */}
+                          {isExpanded && (
+                            <tr className="bg-slate-50/90 border-b border-indigo-100">
+                              <td colSpan={9} className="p-3.5">
+                                <div className="space-y-2 bg-white p-3.5 rounded-xl border border-indigo-100 shadow-2xs">
+                                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 flex-wrap gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-xs text-slate-900">
+                                        Stage #{idx + 1} Fields &amp; Form Responses
+                                      </span>
+                                      <span className="text-[10px] text-slate-500">
+                                        Assignee: <strong className="text-slate-800">{stage.assignee || 'Unassigned'}</strong>
+                                      </span>
+                                    </div>
+                                    <div className="text-[11px] font-mono text-slate-600 flex items-center gap-2">
+                                      <span>Planned: <strong>{stage.plannedDateTime || 'SLA Standard'}</strong></span>
+                                      <span>•</span>
+                                      <span>Actual: <strong>{stage.actualDateTime || 'Pending Completion'}</strong></span>
+                                    </div>
+                                  </div>
+
+                                  {/* Submitted Values or Field Schema */}
+                                  {hasSubmittedData ? (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+                                      {Object.entries(stage.submittedData || {})
+                                        .filter(([k]) => !k.startsWith('_'))
+                                        .map(([key, val]) => {
+                                          const matchedField = stageFieldDefs.find((f) => f.id === key);
+                                          const label = matchedField?.label || key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1');
+                                          const strVal = String(val ?? '');
+                                          const isFile = strVal.startsWith('data:') || strVal.startsWith('[File: ');
+
+                                          return (
+                                            <div key={key} className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 space-y-1">
+                                              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                                {label}
+                                              </div>
+                                              <div className="text-xs font-semibold text-slate-900 break-words">
+                                                {isFile ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setPreviewFile({ url: strVal, name: `${label} Attachment` })}
+                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-md border border-indigo-200 text-xs font-semibold cursor-pointer"
+                                                  >
+                                                    <Paperclip className="w-3.5 h-3.5 text-indigo-600" />
+                                                    <span>View Attachment</span>
+                                                  </button>
+                                                ) : (
+                                                  strVal || '—'
+                                                )}
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                    </div>
+                                  ) : stageFieldDefs.length > 0 ? (
+                                    <div className="space-y-1.5 pt-1">
+                                      <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                                        Configured Stage Input Requirements ({stageFieldDefs.length} Fields)
+                                      </div>
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                        {stageFieldDefs.map((f) => (
+                                          <div key={f.id} className="p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs flex items-center justify-between">
+                                            <span className="font-semibold text-slate-800">{f.label}</span>
+                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 uppercase">
+                                              {f.type} {f.required ? '*' : ''}
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <p className="text-xs text-slate-500 italic pt-1">
+                                      Standard form stage. No custom fields configured for this stage.
+                                    </p>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       );
                     })
                   ) : (
                     <tr>
-                      <td colSpan={8} className="py-8 text-center text-slate-500">
-                        No stages belong to {currentUser.name} in this procurement flow.
+                      <td colSpan={9} className="py-8 text-center text-slate-500">
+                        No stages found matching filter "{stageSearchQuery}".
                         <button
-                          onClick={() => setModalStageFilter('ALL_STAGES')}
+                          onClick={() => {
+                            setStageSearchQuery('');
+                            setModalStageFilter('ALL_STAGES');
+                          }}
                           className="block mx-auto mt-2 text-indigo-600 font-semibold hover:underline cursor-pointer"
                         >
-                          View all {flow.totalStages} stages →
+                          Reset filters &amp; view all {flow.totalStages} stages →
                         </button>
                       </td>
                     </tr>
@@ -911,6 +1249,20 @@ export const FmsDetailModal: React.FC<FmsDetailModalProps> = ({ flow, currentUse
             Close Details
           </button>
         </div>
+
+        {/* Close Fms Modal */}
+        <CloseFmsModal
+          isOpen={showCloseModal}
+          flow={flow}
+          currentUser={currentUser}
+          onClose={() => setShowCloseModal(false)}
+          onSuccess={() => {
+            if (onUpdateFlow && flow) {
+              const updated = storageAdapter.getFmsFlows().find((f) => f.id === flow.id || f.flowId === flow.flowId);
+              if (updated) onUpdateFlow(updated);
+            }
+          }}
+        />
 
         {/* File Preview Dialog */}
         {previewFile && (

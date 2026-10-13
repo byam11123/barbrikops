@@ -32,10 +32,17 @@ import {
   FileSpreadsheet,
   Table,
   ClipboardList,
-  Download
+  Download,
+  Coffee,
+  CalendarDays,
+  Timer,
+  Trash2,
+  Lock
 } from 'lucide-react';
 import { downloadCsv } from '../../utils/csvExporter';
+import { downloadFmsHorizontalMatrixExcel, downloadFmsExcelTemplate } from '../../services/fmsExcelService';
 import { FmsMasterCatalogView } from './FmsMasterCatalogView';
+import { FmsStageMatrixTableView } from './FmsStageMatrixTableView';
 import { FmsInstance, FmsStageExecution, FmsStageDefinition, Priority, UserProfile, isUserSuperAdmin } from '../../types';
 import { 
   FMS_CHECK_STOCK_STAGES, 
@@ -53,6 +60,14 @@ import {
 } from '../../data/initialData';
 import { isUserResponsibleForStage, isFlowAwaitingUserAction, getFmsDomainCategory, getFlowDepartmentKey, getDepartmentBranchLabel } from '../../services/stageAssignment';
 import { storageAdapter } from '../../services/storageAdapter';
+import { 
+  calculateWorkingHoursDelay, 
+  addWorkingSlaHours, 
+  formatToStandardDateTime, 
+  formatDelayHms,
+  DEFAULT_WORK_SHIFT_CONFIG, 
+  WorkShiftConfig 
+} from '../../services/workShiftService';
 import { ViewScope } from '../layout/Header';
 
 interface FmsPipelineProps {
@@ -61,12 +76,15 @@ interface FmsPipelineProps {
   viewScope: ViewScope;
   onToggleScope: (scope: ViewScope) => void;
   onUpdateFlow: (flow: FmsInstance) => void;
+  onDeleteFlow?: (flowId: string) => void;
   onCreateFlow?: () => void;
   onSelectFlow: (flow: FmsInstance) => void;
   onOpenTemplateStudio?: (templateKey?: string) => void;
   onOpenStageAction?: (flow: FmsInstance, stageIndex: number) => void;
   selectedDepartmentFilter?: string | null;
   onClearDepartmentFilter?: () => void;
+  selectedWorkflowFilter?: string | null;
+  onClearWorkflowFilter?: () => void;
 }
 
 export function parseDateTimeStr(str: string | undefined): Date | null {
@@ -112,7 +130,7 @@ export function parseDateTimeStr(str: string | undefined): Date | null {
   return null;
 }
 
-export function getStageDelayHours(stage?: FmsStageExecution, fallbackPlanned?: string): number {
+export function getStageDelayHours(stage?: FmsStageExecution, fallbackPlanned?: string, config?: WorkShiftConfig): number {
   if (!stage) return 0;
   if (typeof stage.timeDelayHours === 'number' && stage.timeDelayHours > 0) {
     return stage.timeDelayHours;
@@ -120,31 +138,20 @@ export function getStageDelayHours(stage?: FmsStageExecution, fallbackPlanned?: 
   if (typeof stage.delayHours === 'number' && stage.delayHours > 0) {
     return stage.delayHours;
   }
-  const plannedDate = parseDateTimeStr(stage.plannedDateTime || fallbackPlanned);
-  if (!plannedDate) return 0;
+  const plannedStr = stage.plannedDateTime || fallbackPlanned;
+  if (!plannedStr) return 0;
 
-  if (stage.actualDateTime && stage.actualDateTime !== '—') {
-    const actualDate = parseDateTimeStr(stage.actualDateTime);
-    if (actualDate) {
-      const diffMs = actualDate.getTime() - plannedDate.getTime();
-      if (diffMs > 0) return diffMs / (1000 * 60 * 60);
-    }
-  } else if (stage.status === 'Delayed') {
-    const diffMs = Date.now() - plannedDate.getTime();
-    return Math.max(diffMs > 0 ? diffMs / (1000 * 60 * 60) : 0, 1);
-  } else if (stage.status === 'In Progress' || stage.status === 'Pending') {
-    const diffMs = Date.now() - plannedDate.getTime();
-    if (diffMs > 0) return diffMs / (1000 * 60 * 60);
-  }
-  return 0;
+  const activeConfig = config || storageAdapter.getRegistryConfig().workShiftConfig || DEFAULT_WORK_SHIFT_CONFIG;
+  const result = calculateWorkingHoursDelay(plannedStr, stage.actualDateTime, activeConfig);
+  return result.delayHours;
 }
 
-export function getFlowTotalDelay(flow: FmsInstance): number {
+export function getFlowTotalDelay(flow: FmsInstance, config?: WorkShiftConfig): number {
   const explicit = flow.totalDelayHours || 0;
   let stagesSum = 0;
   if (flow.stages && flow.stages.length > 0) {
     flow.stages.forEach((s) => {
-      stagesSum += getStageDelayHours(s);
+      stagesSum += getStageDelayHours(s, undefined, config);
     });
   }
   if (stagesSum > 0) return Math.max(explicit, stagesSum);
@@ -153,34 +160,21 @@ export function getFlowTotalDelay(flow: FmsInstance): number {
   return 0;
 }
 
-export function getDelayHours(plannedStr: string | undefined, actualStr: string | undefined, isCompleted: boolean): number {
-  const plannedDate = parseDateTimeStr(plannedStr);
-  if (!plannedDate) return 0;
-  let actualDate = parseDateTimeStr(actualStr);
-  if (!actualDate) {
-    if (isCompleted) return 0;
-    actualDate = new Date();
-  }
-  const diffMs = actualDate.getTime() - plannedDate.getTime();
-  if (diffMs <= 0) return 0;
-  return diffMs / (1000 * 60 * 60);
+export function getDelayHours(plannedStr: string | undefined, actualStr: string | undefined, isCompleted: boolean, config?: WorkShiftConfig): number {
+  if (!plannedStr) return 0;
+  const activeConfig = config || storageAdapter.getRegistryConfig().workShiftConfig || DEFAULT_WORK_SHIFT_CONFIG;
+  const result = calculateWorkingHoursDelay(plannedStr, isCompleted ? actualStr : (actualStr || new Date().toISOString()), activeConfig);
+  return result.delayHours;
 }
 
 export function formatDelayVariance(delayHours: number): string {
-  if (!delayHours || delayHours <= 0) return '—';
+  if (!delayHours || delayHours <= 0) return '00:00:00';
   const totalSeconds = Math.round(delayHours * 3600);
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
-  const hStr = h.toString().padStart(2, '0');
-  const mStr = m.toString().padStart(2, '0');
-  const sStr = s.toString().padStart(2, '0');
-  const baseTime = `${hStr}:${mStr}:${sStr}`;
-  if (h >= 24) {
-    const days = (delayHours / 24).toFixed(1);
-    return `${baseTime} (${days} D)`;
-  }
-  return baseTime;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `- ${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
 export const FmsPipeline: React.FC<FmsPipelineProps> = ({
@@ -189,12 +183,15 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
   viewScope,
   onToggleScope,
   onUpdateFlow,
+  onDeleteFlow,
   onCreateFlow,
   onSelectFlow,
   onOpenTemplateStudio,
   onOpenStageAction,
   selectedDepartmentFilter = null,
   onClearDepartmentFilter,
+  selectedWorkflowFilter = null,
+  onClearWorkflowFilter,
 }) => {
   const [domainFilter, setDomainFilter] = useState<'ALL' | 'PROCUREMENT' | 'FINANCE_ACCOUNTS' | 'SITE_LOGISTICS' | 'HR_EQUIPMENT'>('ALL');
   const [pipelineTypeFilter, setPipelineTypeFilter] = useState<string>('ALL');
@@ -202,14 +199,25 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
   const [filterPriority, setFilterPriority] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedFlowId, setSelectedFlowId] = useState<string>(flows[0]?.id || '');
-  const [viewMode, setViewMode] = useState<'FOCUS_FEED' | 'KANBAN' | 'TIMELINE' | 'MATRIX'>('MATRIX');
+  const [viewMode, setViewMode] = useState<'FOCUS_FEED' | 'KANBAN' | 'TIMELINE' | 'MATRIX' | 'STAGE_MATRIX'>('STAGE_MATRIX');
   const [matrixPage, setMatrixPage] = useState<number>(1);
   const [matrixPageSize, setMatrixPageSize] = useState<number>(25);
   const [matrixSelectedIds, setMatrixSelectedIds] = useState<string[]>([]);
   const [cardFilter, setCardFilter] = useState<'ALL' | 'PENDING' | 'COMPLETED' | 'DELAYED' | 'AWAITING_ME'>('ALL');
-  const [viewModeTab, setViewModeTab] = useState<'RUNNING_PIPELINE' | 'MASTER_CATALOG'>('RUNNING_PIPELINE');
+  const [viewModeTab, setViewModeTab] = useState<'RUNNING_PIPELINE' | 'MASTER_CATALOG' | 'ARCHIVED'>('RUNNING_PIPELINE');
+  const [matrixStyle, setMatrixStyle] = useState<'HORIZONTAL_SPREADSHEET' | 'COMPACT_TABLE'>('HORIZONTAL_SPREADSHEET');
+  const [confirmDeleteRecordId, setConfirmDeleteRecordId] = useState<string | null>(null);
 
   const isSuperAdmin = isUserSuperAdmin(currentUser);
+
+  const handleDeleteRecord = (flowId: string) => {
+    if (onDeleteFlow) {
+      onDeleteFlow(flowId);
+    } else {
+      storageAdapter.deleteFmsFlow(flowId, currentUser);
+    }
+    setConfirmDeleteRecordId(null);
+  };
 
   // Stage display filter: User should see only his stage by default!
   const [stageFilterMode, setStageFilterMode] = useState<'MY_STAGES' | 'ALL_STAGES'>('MY_STAGES');
@@ -234,14 +242,28 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
   };
 
   const myFlowsCount = flows.filter(isMyFlowAction).length;
+  const closedFlowsCount = flows.filter((f) => f.isClosed || f.status === 'CLOSED').length;
 
   const customTemplates = storageAdapter.getFmsTemplates();
 
   const filteredFlows = flows.filter((f) => {
+    // 0. Closed vs Active View Tab
+    if (viewModeTab === 'ARCHIVED') {
+      if (!f.isClosed && f.status !== 'CLOSED') return false;
+    } else {
+      if (f.isClosed || f.status === 'CLOSED') return false;
+    }
+
     // Department Filter from Sidebar
     if (selectedDepartmentFilter) {
       const flowDept = getFlowDepartmentKey(f, customTemplates);
       if (flowDept !== selectedDepartmentFilter) return false;
+    }
+    // Individual Workflow Filter from Sidebar Sub-Branch
+    if (selectedWorkflowFilter) {
+      const matchesFlowType = f.flowType === selectedWorkflowFilter;
+      const matchesCustomTemplate = f.customTemplateId === selectedWorkflowFilter;
+      if (!matchesFlowType && !matchesCustomTemplate) return false;
     }
     // 0. Domain Filter
     if (domainFilter !== 'ALL') {
@@ -281,7 +303,7 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
     return true;
   });
 
-  const activeFlow = flows.find((f) => f.id === selectedFlowId) || filteredFlows[0] || flows[0];
+  const activeFlow = filteredFlows.find((f) => f.id === selectedFlowId) || filteredFlows[0] || flows.find((f) => f.id === selectedFlowId) || flows[0];
 
   const customTemplateForActiveFlow = activeFlow?.customTemplateId
     ? storageAdapter.getAllMasterTemplates().find((t) => t.id === activeFlow.customTemplateId || t.templateKey === activeFlow.flowType)
@@ -298,6 +320,21 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
         howChannel: stg.howChannel || 'IN-APP FORM',
         formUrl: stg.howChannel?.startsWith('http') ? stg.howChannel : undefined,
         slaHours: stg.slaHours || 4,
+        isCheckpoint: stg.logic?.gatewayType === 'CONDITIONAL_JUMP',
+        hasYesNoDecision: stg.logic?.gatewayType === 'CONDITIONAL_JUMP',
+        fields: stg.fields,
+      }))
+    : activeFlow?.stages && activeFlow.stages.length > 0 && !['CHECK_STOCK', 'PO_TO_PAYMENT', 'PURCHASE_TO_STORE_DISPATCH', 'STORE_TO_SITE_DISPATCH', 'PAYMENT_TO_DISPATCH', 'SITE_RECEIVE', 'ACCOUNTS_INVOICE_COLLECTION', 'HR_ATTENDANCE_PAYMENT', 'BREAKDOWN_REPORTING', 'EQUIPMENT_PART_REPAIR', 'DPR_REPORTING', 'INDENT_PURCHASE'].includes(activeFlow.flowType)
+    ? activeFlow.stages.map((stg, sIdx) => ({
+        stageId: stg.stageId,
+        stageNumber: sIdx + 1,
+        name: stg.stageName,
+        what: stg.stageName,
+        whoRole: 'ASSIGNED_ROLE',
+        whoDefaultAssignee: stg.assignee || 'Assignee',
+        howChannel: stg.how || 'IN-APP FORM',
+        formUrl: stg.how?.startsWith('http') ? stg.how : undefined,
+        slaHours: 4,
         isCheckpoint: stg.logic?.gatewayType === 'CONDITIONAL_JUMP',
         hasYesNoDecision: stg.logic?.gatewayType === 'CONDITIONAL_JUMP',
         fields: stg.fields,
@@ -693,9 +730,9 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
       if (!updatedStages[nextIndex].plannedDateTime) {
         const def = activeStageDefs.find((s) => s.stageId === updatedStages[nextIndex].stageId);
         const sla = def?.slaHours || 2;
-        const targetDate = new Date();
-        targetDate.setHours(targetDate.getHours() + sla);
-        updatedStages[nextIndex].plannedDateTime = targetDate.toLocaleString('en-GB');
+        const workShiftConfig = storageAdapter.getRegistryConfig().workShiftConfig || DEFAULT_WORK_SHIFT_CONFIG;
+        const targetDate = addWorkingSlaHours(new Date(), sla, workShiftConfig);
+        updatedStages[nextIndex].plannedDateTime = formatToStandardDateTime(targetDate);
       }
     }
 
@@ -716,11 +753,29 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
     ? isMyStage(currentStageDef, activeFlow.stages[activeFlow.currentStageIndex])
     : false;
 
-  // KPI Calculations
-  const statsPending = flows.filter(f => f.status === 'In Progress').length;
-  const statsCompleted = flows.filter(f => f.status === 'Completed').length;
-  const statsDelayed = flows.filter(f => getFlowTotalDelay(f) > 0 || f.stages.some(s => getStageDelayHours(s) > 0 || s.status === 'Delayed')).length;
-  const statsAwaitingMe = flows.filter(isMyFlowAction).length;
+  // KPI Calculations (scoped to selected workflow / department if selected, so each individual page gets instant stats)
+  const scopedFlowsForStats = flows.filter((f) => {
+    if (viewModeTab === 'ARCHIVED') {
+      if (!f.isClosed && f.status !== 'CLOSED') return false;
+    } else {
+      if (f.isClosed || f.status === 'CLOSED') return false;
+    }
+    if (selectedDepartmentFilter) {
+      const flowDept = getFlowDepartmentKey(f, customTemplates);
+      if (flowDept !== selectedDepartmentFilter) return false;
+    }
+    if (selectedWorkflowFilter) {
+      const matchesFlowType = f.flowType === selectedWorkflowFilter;
+      const matchesCustomTemplate = f.customTemplateId === selectedWorkflowFilter;
+      if (!matchesFlowType && !matchesCustomTemplate) return false;
+    }
+    return true;
+  });
+
+  const statsPending = scopedFlowsForStats.filter(f => f.status === 'In Progress').length;
+  const statsCompleted = scopedFlowsForStats.filter(f => f.status === 'Completed').length;
+  const statsDelayed = scopedFlowsForStats.filter(f => getFlowTotalDelay(f) > 0 || f.stages.some(s => getStageDelayHours(s) > 0 || s.status === 'Delayed')).length;
+  const statsAwaitingMe = scopedFlowsForStats.filter(isMyFlowAction).length;
 
   // Export CSV handler for currently filtered table data
   const handleExportFilteredCsv = () => {
@@ -759,22 +814,36 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Mode Switcher Banner: Active Running FMS vs FMS Master Directory - Super Admin Only */}
-      {isSuperAdmin && (
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-lg">
-            <button
-              type="button"
-              onClick={() => setViewModeTab('RUNNING_PIPELINE')}
-              className={`px-3.5 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
-                viewModeTab === 'RUNNING_PIPELINE'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 font-semibold'
-              }`}
-            >
-              <GitBranch className="w-3.5 h-3.5" />
-              <span>Active Running Workflows ({filteredFlows.length})</span>
-            </button>
+      {/* Mode Switcher Banner: Active Running FMS vs Archived / Closed FMS vs FMS Master Directory */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-lg flex-wrap">
+          <button
+            type="button"
+            onClick={() => setViewModeTab('RUNNING_PIPELINE')}
+            className={`px-3.5 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+              viewModeTab === 'RUNNING_PIPELINE'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 font-semibold'
+            }`}
+          >
+            <GitBranch className="w-3.5 h-3.5" />
+            <span>Active Workflows ({flows.filter((f) => !f.isClosed && f.status !== 'CLOSED').length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setViewModeTab('ARCHIVED')}
+            className={`px-3.5 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+              viewModeTab === 'ARCHIVED'
+                ? 'bg-slate-900 text-emerald-400 shadow-xs border border-slate-800'
+                : 'text-slate-600 hover:text-slate-900 font-semibold'
+            }`}
+          >
+            <Lock className="w-3.5 h-3.5 text-emerald-500" />
+            <span>Archived / Closed FMS ({closedFlowsCount})</span>
+          </button>
+
+          {isSuperAdmin && (
             <button
               type="button"
               onClick={() => setViewModeTab('MASTER_CATALOG')}
@@ -787,24 +856,25 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
               <Layers className="w-3.5 h-3.5" />
               <span>FMS Workflow Master Directory</span>
             </button>
-          </div>
-
-          {viewModeTab === 'RUNNING_PIPELINE' && onCreateFlow && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => onCreateFlow()}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>New FMS Workflow</span>
-              </button>
-            </div>
           )}
         </div>
-      )}
+
+        {viewModeTab === 'RUNNING_PIPELINE' && onCreateFlow && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onCreateFlow()}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New FMS Workflow</span>
+            </button>
+          </div>
+        )}
+      </div>
 
       {isSuperAdmin && viewModeTab === 'MASTER_CATALOG' ? (
         <FmsMasterCatalogView
+          currentUser={currentUser}
           onOpenTemplateStudio={onOpenTemplateStudio}
           onCreateFlow={onCreateFlow}
         />
@@ -935,20 +1005,54 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
 
       {/* Top action & filter bar */}
       <div className="space-y-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-        {selectedDepartmentFilter && (
-          <div className="flex items-center justify-between px-3.5 py-2 bg-indigo-50/80 border border-indigo-200/80 rounded-lg text-xs">
-            <div className="flex items-center gap-2 text-indigo-950 font-semibold">
-              <GitBranch className="w-4 h-4 text-indigo-600" />
-              <span>Department Branch: <strong className="text-indigo-700">{getDepartmentBranchLabel(selectedDepartmentFilter)} FMS</strong> ({filteredFlows.length} active workflows)</span>
+        {(selectedDepartmentFilter || selectedWorkflowFilter) && (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 px-3.5 py-2.5 bg-indigo-50/80 border border-indigo-200/80 rounded-xl text-xs">
+            <div className="flex items-center gap-2 text-indigo-950 font-semibold flex-wrap">
+              <GitBranch className="w-4 h-4 text-indigo-600 shrink-0" />
+              {selectedDepartmentFilter && (
+                <span>
+                  Department: <strong className="text-indigo-700">{getDepartmentBranchLabel(selectedDepartmentFilter)}</strong>
+                </span>
+              )}
+              {selectedDepartmentFilter && selectedWorkflowFilter && (
+                <span className="text-slate-400">›</span>
+              )}
+              {selectedWorkflowFilter && (() => {
+                const matchedTpl = storageAdapter.getAllMasterTemplates().find(
+                  (t) => t.templateKey === selectedWorkflowFilter || t.id === selectedWorkflowFilter
+                );
+                const wfName = matchedTpl?.name || selectedWorkflowFilter.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+                return (
+                  <span className="bg-indigo-600 text-white font-bold px-2 py-0.5 rounded-md shadow-2xs">
+                    {wfName} Workflow
+                  </span>
+                );
+              })()}
+              <span className="text-slate-500 font-normal">
+                ({filteredFlows.length} Requisitions in this workflow)
+              </span>
             </div>
-            {onClearDepartmentFilter && (
-              <button
-                onClick={onClearDepartmentFilter}
-                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 underline cursor-pointer"
-              >
-                View All Departments
-              </button>
-            )}
+
+            <div className="flex items-center gap-3 shrink-0">
+              {selectedWorkflowFilter && onClearWorkflowFilter && (
+                <button
+                  type="button"
+                  onClick={onClearWorkflowFilter}
+                  className="text-xs font-bold text-indigo-700 hover:text-indigo-900 bg-white px-2 py-1 rounded border border-indigo-200 cursor-pointer shadow-2xs"
+                >
+                  All {selectedDepartmentFilter ? getDepartmentBranchLabel(selectedDepartmentFilter) : ''} Workflows
+                </button>
+              )}
+              {selectedDepartmentFilter && onClearDepartmentFilter && (
+                <button
+                  type="button"
+                  onClick={onClearDepartmentFilter}
+                  className="text-xs font-bold text-slate-600 hover:text-slate-900 underline cursor-pointer"
+                >
+                  All Departments
+                </button>
+              )}
+            </div>
           </div>
         )}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
@@ -1006,12 +1110,36 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
           {/* Right side: View toggles & Relocated Action button */}
           <div className="flex items-center justify-between sm:justify-end gap-3">
             {/* View Mode Toggle Buttons */}
-            <div className="flex items-center bg-white p-0.5 rounded-lg border border-slate-200 shadow-2xs">
+            <div className="flex items-center bg-white p-0.5 rounded-lg border border-slate-200 shadow-2xs gap-0.5">
+              <button
+                onClick={() => setViewMode('STAGE_MATRIX')}
+                className={`px-3 py-1 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+                  viewMode === 'STAGE_MATRIX'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+                title="Master Stage Matrix View (Stage-by-Stage Field Table)"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Master Stage Matrix</span>
+              </button>
+              <button
+                onClick={() => setViewMode('MATRIX')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1 cursor-pointer ${
+                  viewMode === 'MATRIX'
+                    ? 'bg-slate-800 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+                title="Horizontal Summary Matrix (1000+)"
+              >
+                <Table className="w-3.5 h-3.5" />
+                <span>Summary Matrix</span>
+              </button>
               <button
                 onClick={() => setViewMode('FOCUS_FEED')}
-                className={`p-1.5 rounded transition-all ${
+                className={`p-1.5 rounded-md transition-all ${
                   viewMode === 'FOCUS_FEED'
-                    ? 'bg-slate-100 text-indigo-700 shadow-xs'
+                    ? 'bg-slate-800 text-white shadow-xs'
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
                 title="Standard Cards"
@@ -1019,21 +1147,10 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                 <Zap className="w-4 h-4" />
               </button>
               <button
-                onClick={() => setViewMode('MATRIX')}
-                className={`p-1.5 rounded transition-all ${
-                  viewMode === 'MATRIX'
-                    ? 'bg-slate-100 text-indigo-700 shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-                title="Enterprise Matrix (1000+)"
-              >
-                <Table className="w-4 h-4" />
-              </button>
-              <button
                 onClick={() => setViewMode('KANBAN')}
-                className={`p-1.5 rounded transition-all ${
+                className={`p-1.5 rounded-md transition-all ${
                   viewMode === 'KANBAN'
-                    ? 'bg-slate-100 text-slate-900 shadow-xs'
+                    ? 'bg-slate-800 text-white shadow-xs'
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
                 title="Operations Kanban"
@@ -1042,14 +1159,43 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
               </button>
             </div>
 
+            {/* Download Shared Spreadsheet (.xlsx) Button */}
+            <button
+              onClick={() => {
+                const title = pipelineTypeFilter === 'INDENT_PURCHASE'
+                  ? 'INDENT TO PO (PURCHASE DEPARTMENT FMS)'
+                  : pipelineTypeFilter === 'PO_TO_PAYMENT'
+                  ? 'PO TO PAYMENT (ACCOUNTS DEPARTMENT FMS)'
+                  : pipelineTypeFilter === 'CHECK_STOCK'
+                  ? 'CHECK STOCK (STORE DEPARTMENT FMS)'
+                  : 'FMS HORIZONTAL MULTI-STAGE TRACKER';
+                downloadFmsHorizontalMatrixExcel(filteredFlows, title);
+              }}
+              title="Download exact horizontal multi-stage spreadsheet with WHAT, WHO, HOW, WHEN: Planned, Actual, Status & - hh:mm:ss Delay"
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs shadow-2xs transition-colors shrink-0 cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-200" />
+              <span>Download Shared Spreadsheet (.xlsx)</span>
+            </button>
+
+            {/* FMS Creation Template (.xlsx) Button */}
+            <button
+              onClick={() => downloadFmsExcelTemplate()}
+              title="Download Excel template to define new workflows with stages & custom fields"
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-lg text-xs transition-colors shrink-0 border border-indigo-200 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5 text-indigo-600" />
+              <span>FMS Creation Template (.xlsx)</span>
+            </button>
+
             {/* Export Filtered Data CSV Button */}
             <button
               onClick={handleExportFilteredCsv}
-              title="Export currently filtered FMS table data to CSV/Excel"
+              title="Export currently filtered FMS table data to CSV"
               className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-lg text-xs transition-colors shrink-0 border border-slate-300 cursor-pointer"
             >
               <Download className="w-3.5 h-3.5 text-slate-600" />
-              <span>Export CSV ({filteredFlows.length})</span>
+              <span>Export CSV</span>
             </button>
 
             {/* Template Studio Button */}
@@ -1076,7 +1222,21 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
         </div>
       </div>
 
-      {/* ENTERPRISE MATRIX VIEW (1,000+ Scale Paginated High-Density Grid) */}
+      {/* DEDICATED MASTER STAGE MATRIX TABLE VIEW */}
+      {viewMode === 'STAGE_MATRIX' && (
+        <FmsStageMatrixTableView
+          flows={flows}
+          currentUser={currentUser}
+          onSelectFlow={onSelectFlow}
+          onUpdateFlow={onUpdateFlow}
+          onDeleteFlow={onDeleteFlow}
+          selectedDepartmentFilter={selectedDepartmentFilter}
+          selectedWorkflowFilter={selectedWorkflowFilter}
+          onOpenStageAction={onOpenStageAction}
+        />
+      )}
+
+      {/* ENTERPRISE MATRIX / HORIZONTAL SPREADSHEET VIEW */}
       {viewMode === 'MATRIX' && (() => {
         const totalFlows = filteredFlows.length;
         const totalPages = Math.max(1, Math.ceil(totalFlows / matrixPageSize));
@@ -1085,6 +1245,8 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
         const paginatedFlows = filteredFlows.slice(startIndex, startIndex + matrixPageSize);
 
         const myPaginatedFlows = paginatedFlows.filter(f => isFlowAwaitingUserAction(f, currentUser));
+
+        const shift = storageAdapter.getRegistryConfig().workShiftConfig || DEFAULT_WORK_SHIFT_CONFIG;
 
         const handleSelectAllMatrix = () => {
           const selectable = viewScope === 'USER_ONLY' ? paginatedFlows : myPaginatedFlows;
@@ -1108,8 +1270,137 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
           setMatrixSelectedIds([]);
         };
 
+        // Stages for horizontal matrix
+        const horizontalStages = activeStageDefs && activeStageDefs.length > 0
+          ? activeStageDefs.map((stg, sIdx) => ({
+              name: `${sIdx + 1}. ${stg.name}`,
+              assignee: stg.whoDefaultAssignee || stg.whoRole || 'Assigned Officer',
+              how: stg.howChannel || 'IN-APP FORM',
+              slaHours: stg.slaHours || 2,
+            }))
+          : (filteredFlows[0]?.stages?.map((stg, sIdx) => ({
+              name: `${sIdx + 1}. ${stg.stageName}`,
+              assignee: stg.assignee || 'Assigned Officer',
+              how: stg.how || 'IN-APP FORM',
+              slaHours: 2,
+            })) || [
+              { name: '1. INDENT RECIEVE', assignee: 'Amanat Bharadwaj (Store Manager)', how: 'WHATSAPP / CALL / PHYSICAL', slaHours: 1 },
+              { name: '2. DEGRADED MATERIAL CHECK', assignee: 'Bramhanand Patel (Asst. Mgr Purchase)', how: 'PHYSICAL CHECK', slaHours: 1 },
+              { name: '3. RETURN OF DEGRADED MATERIAL FORM', assignee: 'Shyam Rao Sureshe (Purchase Exec)', how: 'IN-APP FORM', slaHours: 1 },
+              { name: '4. PURCHASE APPROVAL', assignee: 'Pranay Ghosh (Project Manager)', how: 'MANUAL SHEET / IN-APP', slaHours: 3 },
+              { name: '5. GET QUOTATION', assignee: 'Bramhanand Patel', how: 'CALL / EMAIL', slaHours: 25 },
+              { name: '6. GET APPROVAL FOR QUOTATION', assignee: 'Pranay Ghosh', how: 'IN-APP APPROVAL', slaHours: 12 },
+              { name: '7. COMPARATIVE STATEMENT', assignee: 'Bramhanand Patel', how: 'EXCEL COMPARATIVE', slaHours: 1 },
+              { name: '8. PO CREATION', assignee: 'Shyam Rao Sureshe', how: 'ERP / SYSTEM', slaHours: 2 },
+              { name: '9. PO APPROVAL', assignee: 'Pranay Ghosh / MD', how: 'IN-APP APPROVAL', slaHours: 2 },
+              { name: '10. ADVANCE PAYMENT DECISION', assignee: 'Bramhanand Patel', how: 'IN-APP CHECKPOINT', slaHours: 1 },
+              { name: '11. SEND FOR PAYMENT', assignee: 'Shyam Rao Sureshe', how: 'PAYMENT DOSSIER', slaHours: 2 },
+              { name: '12. MATERIAL COLLECTION PO', assignee: 'Shyam Rao Sureshe', how: 'IN-APP FORM / DISPATCH', slaHours: 1 },
+            ]);
+
+        const activeWorkflowTitle = pipelineTypeFilter === 'INDENT_PURCHASE'
+          ? 'INDENT TO PO (PURCHASE DEPARTMENT FMS)'
+          : pipelineTypeFilter === 'PO_TO_PAYMENT'
+          ? 'PO TO PAYMENT (ACCOUNTS DEPARTMENT FMS)'
+          : pipelineTypeFilter === 'CHECK_STOCK'
+          ? 'CHECK STOCK (STORE DEPARTMENT FMS)'
+          : 'FMS HORIZONTAL MULTI-STAGE TRACKER';
+
         return (
           <div className="space-y-4">
+            {/* View Sub-Switcher & Direct Excel Export Strip */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-700">Display Layout:</span>
+                <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setMatrixStyle('HORIZONTAL_SPREADSHEET')}
+                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+                      matrixStyle === 'HORIZONTAL_SPREADSHEET'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>Horizontal Spreadsheet View (Shared Format)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMatrixStyle('COMPACT_TABLE')}
+                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+                      matrixStyle === 'COMPACT_TABLE'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Table className="w-3.5 h-3.5" />
+                    <span>Compact Requisition List</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => downloadFmsHorizontalMatrixExcel(filteredFlows, activeWorkflowTitle)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+                  title="Download Excel workbook matching the exact horizontal spreadsheet structure"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-200" />
+                  <span>📥 Download Spreadsheet (.xlsx)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Operating Shift & Calendar Parameters Banner */}
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 rounded-xl border border-indigo-900/60 shadow-xs space-y-2.5">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-indigo-800/40 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <h3 className="text-xs font-extrabold tracking-wide uppercase text-indigo-100">
+                    {activeWorkflowTitle}
+                  </h3>
+                </div>
+                <span className="text-[11px] font-mono font-semibold text-indigo-300">
+                  {horizontalStages.length} Stages • {filteredFlows.length} Requisitions Loaded
+                </span>
+              </div>
+
+              {/* Shift Badges Bar */}
+              <div className="flex flex-wrap items-center gap-2.5 text-xs">
+                <div className="flex items-center gap-1.5 bg-white/10 px-2.5 py-1 rounded-lg border border-white/10">
+                  <Clock className="w-3.5 h-3.5 text-amber-300" />
+                  <span className="text-slate-300 text-[11px]">Day Shift:</span>
+                  <span className="font-bold text-white text-[11px] font-mono">{shift.shiftStartTime || '09:30'} – {shift.shiftEndTime || '18:30'}</span>
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-white/10 px-2.5 py-1 rounded-lg border border-white/10">
+                  <Coffee className="w-3.5 h-3.5 text-orange-300" />
+                  <span className="text-slate-300 text-[11px]">Lunch Break:</span>
+                  <span className="font-bold text-white text-[11px] font-mono">{shift.lunchStartTime || '13:30'} – {shift.lunchEndTime || '14:30'} (Paused)</span>
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-white/10 px-2.5 py-1 rounded-lg border border-white/10">
+                  <CalendarDays className="w-3.5 h-3.5 text-cyan-300" />
+                  <span className="text-slate-300 text-[11px]">Work Week:</span>
+                  <span className="font-bold text-white text-[11px]">Mon – Sat (Sunday Off)</span>
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-rose-500/20 px-2.5 py-1 rounded-lg border border-rose-500/30">
+                  <Timer className="w-3.5 h-3.5 text-rose-300" />
+                  <span className="text-rose-200 text-[11px]">Delay Format:</span>
+                  <span className="font-bold text-rose-300 font-mono text-[11px]">- hh:mm:ss</span>
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-emerald-500/20 px-2.5 py-1 rounded-lg border border-emerald-500/30">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+                  <span className="text-emerald-200 text-[11px]">Google Forms:</span>
+                  <span className="font-bold text-emerald-300 text-[11px]">100% In-App Web Execution</span>
+                </div>
+              </div>
+            </div>
+
             {/* Batch Action Floating Bar */}
             {matrixSelectedIds.length > 0 && (
               <div className="bg-indigo-950 text-white p-3 px-4 rounded-xl shadow-lg border border-indigo-700/50 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
@@ -1120,14 +1411,14 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleBatchAdvanceMatrix}
-                    className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition-colors"
+                    className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition-colors cursor-pointer"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     Mass Advance Checked ({matrixSelectedIds.length})
                   </button>
                   <button
                     onClick={() => setMatrixSelectedIds([])}
-                    className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold"
+                    className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -1135,211 +1426,580 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
               </div>
             )}
 
-            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="bg-white text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
-                    <tr>
-                      <th className="py-2.5 px-3 w-8 text-center">
-                        <input
-                          type="checkbox"
-                          checked={matrixSelectedIds.length === paginatedFlows.length && paginatedFlows.length > 0}
-                          onChange={handleSelectAllMatrix}
-                          className="rounded text-indigo-600 cursor-pointer"
-                        />
-                      </th>
-                      <th className="py-2.5 px-3">Reference / Code</th>
-                      <th className="py-2.5 px-3">Pipeline Type &amp; Site</th>
-                      <th className="py-2.5 px-3">Active Stage &amp; Assignee</th>
-                      <th className="py-2.5 px-3">Status</th>
-                      <th className="py-2.5 px-3">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3.5 h-3.5 text-slate-500" />
-                          <span>Planned Date/Time</span>
-                        </span>
-                      </th>
-                      <th className="py-2.5 px-3">
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3.5 h-3.5 text-slate-500" />
-                          <span>Actual Date/Time</span>
-                        </span>
-                      </th>
-                      <th className="py-2.5 px-3">
-                        <span className="flex items-center gap-1">
-                          <AlertTriangle className="w-3.5 h-3.5 text-slate-500" />
-                          <span>Delay Variance</span>
-                        </span>
-                      </th>
-                      <th className="py-2.5 px-4 text-right">Quick Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {paginatedFlows.length > 0 ? (
-                      paginatedFlows.map((flow) => {
-                        const isChecked = matrixSelectedIds.includes(flow.id);
-                        const curStage = flow.stages[Math.min(flow.currentStageIndex, Math.max(0, flow.stages.length - 1))];
-                        const refCode = flow.flowType === 'CHECK_STOCK'
-                          ? (flow.requisitionNumber ? `Check Stock #${flow.requisitionNumber}` : `Stock Check #${flow.indentNo}`)
-                          : flow.flowType === 'PO_TO_PAYMENT'
-                          ? (flow.poNumber ? `PO #${flow.poNumber}` : `PO #${flow.indentNo}`)
-                          : `Indent #${flow.indentNo}`;
-
-                        const isCompleted = flow.status === 'Completed';
-                        const now = new Date();
-                        const todayFormatted = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
-                        const plannedStr = curStage?.plannedDateTime || `${flow.indentDate || todayFormatted} 11:00 AM`;
-                        const actualStr = isCompleted
-                          ? (flow.stages[flow.stages.length - 1]?.actualDateTime || curStage?.actualDateTime || `${todayFormatted} 12:00 PM`)
-                          : (curStage?.actualDateTime || '—');
-
-                        const flowDelayHrs = getFlowTotalDelay(flow);
-                        const stageDelayHrs = getStageDelayHours(curStage, plannedStr);
-                        const delayHrs = isCompleted ? flowDelayHrs : Math.max(flowDelayHrs, stageDelayHrs);
-                        const isDelayActive = delayHrs > 0;
-                        const delayText = formatDelayVariance(delayHrs);
-
-                        const isMyCurFlow = isFlowAwaitingUserAction(flow, currentUser);
-
-                        return (
-                          <tr key={flow.id} className={`hover:bg-slate-50 transition-colors ${isChecked ? 'bg-indigo-50/50' : ''}`}>
-                            <td className="py-2.5 px-3 text-center">
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => handleToggleMatrixId(flow.id)}
-                                className="rounded text-indigo-600 cursor-pointer"
-                              />
-                            </td>
-                            <td className="py-2.5 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
-                              {refCode}
-                            </td>
-                            <td className="py-2.5 px-3 whitespace-nowrap">
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-100 text-slate-700 block w-max">
-                                {flow.flowType.replace(/_/g, ' ')}
-                              </span>
-                              <span className="text-[11px] text-slate-500 font-medium">{flow.siteName}</span>
-                            </td>
-                            <td className="py-2.5 px-3">
-                              <div className="font-semibold text-slate-900 truncate max-w-[180px]">
-                                Stg {Math.min(flow.currentStageIndex + 1, flow.totalStages)}: {curStage?.stageName || 'Completed'}
-                              </div>
-                              <span className="text-[10px] text-slate-500 font-mono">Assignee: {curStage?.assignee || 'System'}</span>
-                            </td>
-                            <td className="py-2.5 px-3 whitespace-nowrap">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                flow.status === 'Completed' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                              }`}>
-                                {flow.status}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 font-mono text-slate-800 whitespace-nowrap">
-                              {plannedStr}
-                            </td>
-                            {/* Actual Date/Time - styled normally */}
-                            <td className="py-2.5 px-3 font-mono text-slate-700 whitespace-nowrap">
-                              {actualStr}
-                            </td>
-                            {/* Delay Variance - show precision duration with red/amber highlight badges */}
-                            <td className="py-2.5 px-3 font-mono whitespace-nowrap text-xs">
-                              {isDelayActive ? (
-                                <span className={`inline-block px-2 py-0.5 rounded font-bold ${
-                                  isCompleted
-                                    ? 'bg-red-100 text-red-800 border border-red-200'
-                                    : 'bg-yellow-100 text-yellow-800 border border-yellow-300'
-                                }`}>
-                                  {delayText}
-                                </span>
-                              ) : (
-                                <span className="text-slate-400">—</span>
-                              )}
-                            </td>
-                            <td className="py-2.5 px-4 text-right whitespace-nowrap">
-                              <div className="flex items-center justify-end gap-1.5">
-                                {/* Mark Done button: ONLY FOR ASSIGNED USER OF ACTIVE STAGE */}
-                                {flow.status !== 'Completed' && isMyCurFlow && (
-                                  <button
-                                    onClick={() => onOpenStageAction ? onOpenStageAction(flow, flow.currentStageIndex) : handleAdvanceCurrentStage(flow)}
-                                    className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded text-[11px] transition-colors cursor-pointer"
-                                  >
-                                    Mark Done
-                                  </button>
-                                )}
-                                {/* View Detail Context: AVAILABLE TO ALL USERS TO INSPECT CURRENT PROGRESS */}
-                                <button
-                                  onClick={() => {
-                                    setSelectedFlowId(flow.id);
-                                    setViewMode('FOCUS_FEED');
-                                  }}
-                                  className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 transition-colors"
-                                  title="Inspect Requisition Details"
-                                >
-                                  <Eye className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    ) : (
-                      <tr>
-                        <td colSpan={9} className="py-12 text-center text-slate-500 text-xs">
-                          No requisitions found matching current filter.
-                        </td>
+            {/* 1. HORIZONTAL MULTI-STAGE SPREADSHEET (THE EXACT USER SHARED LAYOUT) */}
+            {matrixStyle === 'HORIZONTAL_SPREADSHEET' ? (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                <div className="overflow-x-auto max-h-[72vh]">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="sticky top-0 z-20 bg-slate-900 text-white select-none">
+                      {/* TIER 1: WHAT */}
+                      <tr className="border-b border-slate-700 text-[11px]">
+                        <th colSpan={6} className="py-2.5 px-3 bg-slate-950 text-white font-extrabold uppercase tracking-wider border-r border-slate-800">
+                          WHAT &nbsp;•&nbsp; Requisition Information
+                        </th>
+                        {horizontalStages.map((stg, sIdx) => (
+                          <th
+                            key={`what-${sIdx}`}
+                            colSpan={4}
+                            className="py-2 px-3 bg-slate-800 text-indigo-100 font-bold text-center border-r border-slate-700 uppercase tracking-wide whitespace-nowrap text-[11px]"
+                          >
+                            {stg.name}
+                          </th>
+                        ))}
                       </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
 
-              {/* Pagination Bar - sm:pr-24 guarantees Next button is never blocked by floating buttons */}
-              <div className="p-3 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600 sm:pr-24">
-                <div className="flex items-center gap-4">
-                  {/* Relocated Rows per page dropdown */}
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-slate-500 font-medium">Rows:</span>
-                    <select
-                      value={matrixPageSize}
-                      onChange={(e) => {
-                        setMatrixPageSize(Number(e.target.value));
-                        setMatrixPage(1);
-                      }}
-                      className="px-2 py-0.5 font-bold bg-white border border-slate-300 rounded text-xs focus:ring-1 focus:ring-indigo-500"
+                      {/* TIER 2: WHO */}
+                      <tr className="border-b border-slate-700 text-[11px]">
+                        <th colSpan={6} className="py-1.5 px-3 bg-slate-900 text-slate-300 font-bold uppercase tracking-wider border-r border-slate-800">
+                          WHO &nbsp;•&nbsp; Responsible Assignee
+                        </th>
+                        {horizontalStages.map((stg, sIdx) => (
+                          <th
+                            key={`who-${sIdx}`}
+                            colSpan={4}
+                            className="py-1 px-3 bg-slate-850 text-emerald-200 font-semibold text-center border-r border-slate-700 whitespace-nowrap text-[11px]"
+                          >
+                            {stg.assignee}
+                          </th>
+                        ))}
+                      </tr>
+
+                      {/* TIER 3: HOW */}
+                      <tr className="border-b border-slate-700 text-[10px]">
+                        <th colSpan={6} className="py-1.5 px-3 bg-slate-900 text-slate-400 font-bold uppercase tracking-wider border-r border-slate-800">
+                          HOW &nbsp;•&nbsp; Execution Channel / Tool
+                        </th>
+                        {horizontalStages.map((stg, sIdx) => (
+                          <th
+                            key={`how-${sIdx}`}
+                            colSpan={4}
+                            className="py-1 px-3 bg-slate-800 text-slate-300 font-medium text-center border-r border-slate-700 whitespace-nowrap text-[10px]"
+                          >
+                            {stg.how}
+                          </th>
+                        ))}
+                      </tr>
+
+                      {/* TIER 4: WHEN (Sub-columns) */}
+                      <tr className="bg-slate-100 text-slate-700 border-b border-slate-300 text-[11px] font-bold uppercase tracking-wider">
+                        <th className="py-2 px-3 w-10 text-center border-r border-slate-200">
+                          <input
+                            type="checkbox"
+                            checked={matrixSelectedIds.length === paginatedFlows.length && paginatedFlows.length > 0}
+                            onChange={handleSelectAllMatrix}
+                            className="rounded text-indigo-600 cursor-pointer"
+                          />
+                        </th>
+                        <th className="py-2 px-3 border-r border-slate-200 whitespace-nowrap">Indent / PO No.</th>
+                        <th className="py-2 px-3 border-r border-slate-200 whitespace-nowrap">Date</th>
+                        <th className="py-2 px-3 border-r border-slate-200 whitespace-nowrap">Site</th>
+                        <th className="py-2 px-3 border-r border-slate-200 whitespace-nowrap min-w-[200px]">Item Details / Vendor</th>
+                        <th className="py-2 px-3 border-r border-slate-300 whitespace-nowrap">Overall Status</th>
+
+                        {horizontalStages.map((_, sIdx) => (
+                          <React.Fragment key={`when-cols-${sIdx}`}>
+                            <th className="py-2 px-2.5 text-center bg-slate-50 text-slate-600 border-r border-slate-200 whitespace-nowrap min-w-[130px]">Planned</th>
+                            <th className="py-2 px-2.5 text-center bg-slate-50 text-slate-600 border-r border-slate-200 whitespace-nowrap min-w-[130px]">Actual</th>
+                            <th className="py-2 px-2 text-center bg-slate-50 text-slate-600 border-r border-slate-200 whitespace-nowrap min-w-[90px]">Status</th>
+                            <th className="py-2 px-2.5 text-center bg-rose-50 text-rose-800 border-r-2 border-slate-300 whitespace-nowrap min-w-[100px]">Delay</th>
+                          </React.Fragment>
+                        ))}
+                      </tr>
+                    </thead>
+
+                    <tbody className="divide-y divide-slate-100">
+                      {paginatedFlows.length > 0 ? (
+                        paginatedFlows.map((flow, fIdx) => {
+                          const isChecked = matrixSelectedIds.includes(flow.id);
+                          const refCode = flow.indentNo || flow.poNumber || flow.requisitionNumber || flow.flowId;
+                          const dateStr = flow.indentDate || flow.createdAt?.slice(0, 10) || '—';
+
+                          return (
+                            <tr key={flow.id} className={`hover:bg-slate-50/80 transition-colors ${isChecked ? 'bg-indigo-50/40' : ''}`}>
+                              {/* S.No checkbox */}
+                              <td className="py-2.5 px-3 text-center border-r border-slate-200">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => handleToggleMatrixId(flow.id)}
+                                  className="rounded text-indigo-600 cursor-pointer"
+                                />
+                              </td>
+
+                              {/* Indent No */}
+                              <td className="py-2.5 px-3 font-mono font-bold text-slate-900 border-r border-slate-200 whitespace-nowrap">
+                                <div className="flex items-center justify-between gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedFlowId(flow.id);
+                                      setViewMode('FOCUS_FEED');
+                                    }}
+                                    className="text-indigo-600 hover:text-indigo-900 hover:underline cursor-pointer"
+                                    title="View audit & stage timeline"
+                                  >
+                                    {refCode}
+                                  </button>
+                                  {isSuperAdmin && (
+                                    confirmDeleteRecordId === flow.id ? (
+                                      <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteRecord(flow.id)}
+                                          className="px-1.5 py-0.2 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer"
+                                        >
+                                          Del
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setConfirmDeleteRecordId(null)}
+                                          className="px-1.5 py-0.2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-[10px] cursor-pointer"
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => setConfirmDeleteRecordId(flow.id)}
+                                        className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                                        title="Delete FMS Record (Super Admin)"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )
+                                  )}
+                                </div>
+                              </td>
+
+                              {/* Date */}
+                              <td className="py-2.5 px-3 text-slate-600 border-r border-slate-200 whitespace-nowrap font-mono text-[11px]">
+                                {dateStr}
+                              </td>
+
+                              {/* Site */}
+                              <td className="py-2.5 px-3 font-semibold text-slate-800 border-r border-slate-200 whitespace-nowrap">
+                                <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-bold">
+                                  {flow.siteName}
+                                </span>
+                              </td>
+
+                              {/* Item Details */}
+                              <td className="py-2.5 px-3 text-slate-700 border-r border-slate-200 max-w-[240px] truncate" title={flow.remarks || flow.vendorName}>
+                                {flow.remarks || flow.vendorName || (flow.poAmount ? `PO ₹${flow.poAmount.toLocaleString('en-IN')}` : 'General Requisition Items')}
+                              </td>
+
+                              {/* Overall Status */}
+                              <td className="py-2.5 px-3 border-r-2 border-slate-300 whitespace-nowrap">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  flow.status === 'Completed'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {flow.status}
+                                </span>
+                              </td>
+
+                              {/* Stage Cells: Planned | Actual | Status | Delay */}
+                              {horizontalStages.map((_, sIdx) => {
+                                const stageExec = flow.stages?.[sIdx];
+                                const isCurrentActiveStage = flow.status !== 'Completed' && flow.currentStageIndex === sIdx;
+                                const isStageWaitingForMe = isCurrentActiveStage && isFlowAwaitingUserAction(flow, currentUser);
+
+                                const plannedStr = stageExec?.plannedDateTime || '—';
+                                const actualStr = stageExec?.actualDateTime || '—';
+                                const stageStatus = stageExec?.status || 'Pending';
+
+                                // Calculate working hours delay taking shift, lunch break, and Sundays into account!
+                                const delayRes = calculateWorkingHoursDelay(stageExec?.plannedDateTime, stageExec?.actualDateTime, shift);
+                                const isDelayed = delayRes.isDelayed;
+                                const formattedDelay = delayRes.formattedDelay;
+
+                                return (
+                                  <React.Fragment key={`stage-data-${flow.id}-${sIdx}`}>
+                                    {/* Planned */}
+                                    <td className="py-2 px-2 text-center border-r border-slate-200 font-mono text-[10px] text-slate-700 whitespace-nowrap">
+                                      {plannedStr}
+                                    </td>
+
+                                    {/* Actual */}
+                                    <td className="py-2 px-2 text-center border-r border-slate-200 font-mono text-[10px] text-slate-700 whitespace-nowrap">
+                                      {actualStr}
+                                    </td>
+
+                                    {/* Status with quick action */}
+                                    <td className="py-2 px-2 text-center border-r border-slate-200 whitespace-nowrap">
+                                      <div className="flex items-center justify-center gap-1">
+                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                          stageStatus === 'Done'
+                                            ? 'bg-emerald-100 text-emerald-800'
+                                            : stageStatus === 'In Progress'
+                                            ? 'bg-blue-100 text-blue-800'
+                                            : stageStatus === 'Delayed'
+                                            ? 'bg-rose-100 text-rose-800'
+                                            : stageStatus === 'Skipped'
+                                            ? 'bg-slate-200 text-slate-600'
+                                            : 'bg-slate-100 text-slate-500'
+                                        }`}>
+                                          {stageStatus}
+                                        </span>
+
+                                        {isCurrentActiveStage && (isStageWaitingForMe || isSuperAdmin) && (
+                                          <button
+                                            type="button"
+                                            onClick={() => onOpenStageAction ? onOpenStageAction(flow, sIdx) : handleAdvanceCurrentStage(flow)}
+                                            className="p-1 hover:bg-indigo-100 rounded text-indigo-700 cursor-pointer"
+                                            title="Advance this stage"
+                                          >
+                                            <CheckCircle2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </td>
+
+                                    {/* Delay: - hh:mm:ss */}
+                                    <td className="py-2 px-2.5 text-center border-r-2 border-slate-300 font-mono whitespace-nowrap text-[11px]">
+                                      {isDelayed ? (
+                                        <span className="inline-block px-1.5 py-0.2 rounded font-bold text-rose-700 bg-rose-50 border border-rose-200">
+                                          {formattedDelay}
+                                        </span>
+                                      ) : (
+                                        <span className="inline-block px-1.5 py-0.2 rounded font-medium text-emerald-700 bg-emerald-50">
+                                          00:00:00
+                                        </span>
+                                      )}
+                                    </td>
+                                  </React.Fragment>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={6 + horizontalStages.length * 4} className="py-12 text-center text-slate-500 text-xs">
+                            No requisitions found matching current filter.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination Footer */}
+                <div className="p-3 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600 sm:pr-24">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-500 font-medium">Rows:</span>
+                      <select
+                        value={matrixPageSize}
+                        onChange={(e) => {
+                          setMatrixPageSize(Number(e.target.value));
+                          setMatrixPage(1);
+                        }}
+                        className="px-2 py-0.5 font-bold bg-white border border-slate-300 rounded text-xs focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                      >
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      Showing <span className="font-bold text-slate-900">{totalFlows > 0 ? startIndex + 1 : 0}</span> to{' '}
+                      <span className="font-bold text-slate-900">{Math.min(startIndex + matrixPageSize, totalFlows)}</span> of{' '}
+                      <span className="font-bold text-slate-900">{totalFlows}</span> Requisitions
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      disabled={validPage <= 1}
+                      onClick={() => setMatrixPage((p) => Math.max(1, p - 1))}
+                      className="px-3 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-40 font-semibold cursor-pointer"
                     >
-                      <option value={10}>10</option>
-                      <option value={25}>25</option>
-                      <option value={50}>50</option>
-                      <option value={100}>100</option>
-                    </select>
+                      ← Previous
+                    </button>
+                    <span className="px-2 font-mono font-bold text-slate-800">
+                      Page {validPage} of {totalPages}
+                    </span>
+                    <button
+                      disabled={validPage >= totalPages}
+                      onClick={() => setMatrixPage((p) => Math.min(totalPages, p + 1))}
+                      className="px-3 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-40 font-semibold cursor-pointer"
+                    >
+                      Next →
+                    </button>
                   </div>
-
-                  <div>
-                    Showing <span className="font-bold text-slate-900">{totalFlows > 0 ? startIndex + 1 : 0}</span> to{' '}
-                    <span className="font-bold text-slate-900">{Math.min(startIndex + matrixPageSize, totalFlows)}</span> of{' '}
-                    <span className="font-bold text-slate-900">{totalFlows}</span> Requisitions
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    disabled={validPage <= 1}
-                    onClick={() => setMatrixPage((p) => Math.max(1, p - 1))}
-                    className="px-3 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-40 font-semibold"
-                  >
-                    ← Previous
-                  </button>
-                  <span className="px-2 font-mono font-bold text-slate-800">
-                    Page {validPage} of {totalPages}
-                  </span>
-                  <button
-                    disabled={validPage >= totalPages}
-                    onClick={() => setMatrixPage((p) => Math.min(totalPages, p + 1))}
-                    className="px-3 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-40 font-semibold"
-                  >
-                    Next →
-                  </button>
                 </div>
               </div>
-            </div>
+            ) : (
+              /* 2. COMPACT REQUISITION LIST */
+              <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-white text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+                      <tr>
+                        <th className="py-2.5 px-3 w-8 text-center">
+                          <input
+                            type="checkbox"
+                            checked={matrixSelectedIds.length === paginatedFlows.length && paginatedFlows.length > 0}
+                            onChange={handleSelectAllMatrix}
+                            className="rounded text-indigo-600 cursor-pointer"
+                          />
+                        </th>
+                        <th className="py-2.5 px-3">Reference / Code</th>
+                        <th className="py-2.5 px-3">Pipeline Type &amp; Site</th>
+                        <th className="py-2.5 px-3">Active Stage &amp; Assignee</th>
+                        <th className="py-2.5 px-3">Status</th>
+                        <th className="py-2.5 px-3">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Planned Date/Time</span>
+                          </span>
+                        </th>
+                        <th className="py-2.5 px-3">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Actual Date/Time</span>
+                          </span>
+                        </th>
+                        <th className="py-2.5 px-3">
+                          <span className="flex items-center gap-1">
+                            <AlertTriangle className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Delay Variance</span>
+                          </span>
+                        </th>
+                        <th className="py-2.5 px-4 text-right">Quick Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {paginatedFlows.length > 0 ? (
+                        paginatedFlows.map((flow) => {
+                          const isChecked = matrixSelectedIds.includes(flow.id);
+                          const curStage = flow.stages[Math.min(flow.currentStageIndex, Math.max(0, flow.stages.length - 1))];
+                          const refCode = flow.flowType === 'CHECK_STOCK'
+                            ? (flow.requisitionNumber ? `Check Stock #${flow.requisitionNumber}` : `Stock Check #${flow.indentNo}`)
+                            : flow.flowType === 'PO_TO_PAYMENT'
+                            ? (flow.poNumber ? `PO #${flow.poNumber}` : `PO #${flow.indentNo}`)
+                            : `Indent #${flow.indentNo}`;
+
+                          const isCompleted = flow.status === 'Completed';
+                          const now = new Date();
+                          const todayFormatted = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+                          const plannedStr = curStage?.plannedDateTime || `${flow.indentDate || todayFormatted} 11:00 AM`;
+                          const actualStr = isCompleted
+                            ? (flow.stages[flow.stages.length - 1]?.actualDateTime || curStage?.actualDateTime || `${todayFormatted} 12:00 PM`)
+                            : (curStage?.actualDateTime || '—');
+
+                          const flowDelayHrs = getFlowTotalDelay(flow);
+                          const stageDelayHrs = getStageDelayHours(curStage, plannedStr);
+                          const delayHrs = isCompleted ? flowDelayHrs : Math.max(flowDelayHrs, stageDelayHrs);
+                          const isDelayActive = delayHrs > 0;
+                          const delayText = formatDelayVariance(delayHrs);
+
+                          const isMyCurFlow = isFlowAwaitingUserAction(flow, currentUser);
+
+                          return (
+                            <tr key={flow.id} className={`hover:bg-slate-50 transition-colors ${isChecked ? 'bg-indigo-50/50' : ''}`}>
+                              <td className="py-2.5 px-3 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => handleToggleMatrixId(flow.id)}
+                                  className="rounded text-indigo-600 cursor-pointer"
+                                />
+                              </td>
+                              <td className="py-2.5 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
+                                {refCode}
+                              </td>
+                              <td className="py-2.5 px-3 whitespace-nowrap">
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-100 text-slate-700 block w-max">
+                                  {flow.flowType.replace(/_/g, ' ')}
+                                </span>
+                                <span className="text-[11px] text-slate-500 font-medium">{flow.siteName}</span>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <div className="font-semibold text-slate-900 truncate max-w-[180px]">
+                                  Stg {Math.min(flow.currentStageIndex + 1, flow.totalStages)}: {curStage?.stageName || 'Completed'}
+                                </div>
+                                <span className="text-[10px] text-slate-500 font-mono">Assignee: {curStage?.assignee || 'System'}</span>
+                              </td>
+                              <td className="py-2.5 px-3 whitespace-nowrap">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  flow.status === 'Completed' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {flow.status}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-slate-800 whitespace-nowrap">
+                                {plannedStr}
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-slate-700 whitespace-nowrap">
+                                {actualStr}
+                              </td>
+                              <td className="py-2.5 px-3 font-mono whitespace-nowrap text-xs">
+                                {isDelayActive ? (
+                                  <span className={`inline-block px-2 py-0.5 rounded font-bold ${
+                                    isCompleted
+                                      ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                      : 'bg-amber-100 text-amber-800 border border-amber-300'
+                                  }`}>
+                                    {delayText}
+                                  </span>
+                                ) : (
+                                  <span className="inline-block px-2 py-0.5 rounded font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    00:00:00
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-4 text-right whitespace-nowrap">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  {flow.status !== 'Completed' && (isMyCurFlow || isSuperAdmin) && (
+                                    (() => {
+                                      const activeCurStage = flow.stages[flow.currentStageIndex];
+                                      const curStageHasApproval = activeCurStage?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval'));
+                                      const curStageHasForm = !!(
+                                        (activeCurStage?.fields && activeCurStage.fields.length > 0) ||
+                                        activeCurStage?.how === 'IN-APP FORM' ||
+                                        activeCurStage?.how === 'IN APP FORM'
+                                      );
+
+                                      return (
+                                        <button
+                                          onClick={() => onOpenStageAction ? onOpenStageAction(flow, flow.currentStageIndex) : handleAdvanceCurrentStage(flow)}
+                                          className={`px-2.5 py-1 font-bold rounded text-[11px] transition-colors cursor-pointer border shadow-2xs flex items-center gap-1 ${
+                                            curStageHasApproval
+                                              ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                                              : curStageHasForm
+                                              ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                                              : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'
+                                          }`}
+                                          title={isSuperAdmin && !isMyCurFlow ? 'Super Admin Action' : 'Action Stage'}
+                                        >
+                                          {curStageHasApproval ? (
+                                            <>
+                                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                              <span>Approve / Reject</span>
+                                            </>
+                                          ) : curStageHasForm ? (
+                                            <>
+                                              <FileText className="w-3 h-3 text-indigo-600" />
+                                              <span>Fill Form</span>
+                                            </>
+                                          ) : (
+                                            <span>Mark Done</span>
+                                          )}
+                                        </button>
+                                      );
+                                    })()
+                                  )}
+                                  <button
+                                    onClick={() => {
+                                      setSelectedFlowId(flow.id);
+                                      setViewMode('FOCUS_FEED');
+                                    }}
+                                    className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer"
+                                    title="Inspect Requisition Details"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </button>
+                                  {isSuperAdmin && (
+                                    confirmDeleteRecordId === flow.id ? (
+                                      <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5">
+                                        <span className="text-[10px] font-bold text-rose-700">Delete?</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteRecord(flow.id)}
+                                          className="px-1.5 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer"
+                                        >
+                                          Yes
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setConfirmDeleteRecordId(null)}
+                                          className="px-1.5 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-[10px] font-medium cursor-pointer"
+                                        >
+                                          No
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => setConfirmDeleteRecordId(flow.id)}
+                                        className="p-1.5 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                                        title="Delete FMS Record (Super Admin)"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    )
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={9} className="py-12 text-center text-slate-500 text-xs">
+                            No requisitions found matching current filter.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination Bar */}
+                <div className="p-3 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600 sm:pr-24">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-500 font-medium">Rows:</span>
+                      <select
+                        value={matrixPageSize}
+                        onChange={(e) => {
+                          setMatrixPageSize(Number(e.target.value));
+                          setMatrixPage(1);
+                        }}
+                        className="px-2 py-0.5 font-bold bg-white border border-slate-300 rounded text-xs focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                      >
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      Showing <span className="font-bold text-slate-900">{totalFlows > 0 ? startIndex + 1 : 0}</span> to{' '}
+                      <span className="font-bold text-slate-900">{Math.min(startIndex + matrixPageSize, totalFlows)}</span> of{' '}
+                      <span className="font-bold text-slate-900">{totalFlows}</span> Requisitions
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      disabled={validPage <= 1}
+                      onClick={() => setMatrixPage((p) => Math.max(1, p - 1))}
+                      className="px-3 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-40 font-semibold cursor-pointer"
+                    >
+                      ← Previous
+                    </button>
+                    <span className="px-2 font-mono font-bold text-slate-800">
+                      Page {validPage} of {totalPages}
+                    </span>
+                    <button
+                      disabled={validPage >= totalPages}
+                      onClick={() => setMatrixPage((p) => Math.min(totalPages, p + 1))}
+                      className="px-3 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-40 font-semibold cursor-pointer"
+                    >
+                      Next →
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         );
       })()}
@@ -1890,6 +2550,37 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                     <FileText className="w-3.5 h-3.5 text-slate-500" />
                     <span>Audit Breakdown</span>
                   </button>
+                  {isSuperAdmin && (
+                    confirmDeleteRecordId === activeFlow.id ? (
+                      <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1">
+                        <span className="text-xs font-bold text-rose-700">Delete record?</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRecord(activeFlow.id)}
+                          className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-bold cursor-pointer"
+                        >
+                          Yes
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteRecordId(null)}
+                          className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs font-medium cursor-pointer"
+                        >
+                          No
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteRecordId(activeFlow.id)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer"
+                        title="Delete FMS Record (Super Admin)"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Delete Record</span>
+                      </button>
+                    )
+                  )}
                 </div>
               </div>
 
@@ -2627,6 +3318,7 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                     <div className="flex flex-wrap items-center gap-2">
                       {(() => {
                         const activeStage = activeFlow.stages[activeFlow.currentStageIndex];
+                        const hasApprovalField = activeStage?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval')) || currentStageDef?.fields?.some((f: any) => f.type === 'APPROVAL');
                         const hasInAppForm = !!(
                           (activeStage?.fields && activeStage.fields.length > 0) ||
                           (currentStageDef?.fields && currentStageDef.fields.length > 0) ||
@@ -2638,10 +3330,21 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                           return (
                             <button
                               onClick={() => onOpenStageAction(activeFlow, activeFlow.currentStageIndex)}
-                              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition-colors cursor-pointer"
+                              className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white ${
+                                hasApprovalField ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'
+                              } rounded-lg shadow-2xs transition-colors cursor-pointer`}
                             >
-                              <FileText className="w-3.5 h-3.5" />
-                              <span>Fill Stage Form &amp; Advance</span>
+                              {hasApprovalField ? (
+                                <>
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Approve / Reject</span>
+                                </>
+                              ) : (
+                                <>
+                                  <FileText className="w-3.5 h-3.5" />
+                                  <span>Fill Stage Form &amp; Advance</span>
+                                </>
+                              )}
                             </button>
                           );
                         }
@@ -2769,9 +3472,51 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                           </p>
                         </div>
                       </div>
-                      <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-slate-200 text-slate-700">
-                        Awaiting {activeFlow.stages[activeFlow.currentStageIndex].assignee}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-slate-200 text-slate-700">
+                          Awaiting {activeFlow.stages[activeFlow.currentStageIndex].assignee}
+                        </span>
+                        {isSuperAdmin && (
+                          <button
+                            onClick={() => onOpenStageAction ? onOpenStageAction(activeFlow, activeFlow.currentStageIndex) : handleAdvanceCurrentStage(activeFlow)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition-colors cursor-pointer"
+                            title="Super Admin Override / Action"
+                          >
+                            {(() => {
+                              const activeStage = activeFlow.stages[activeFlow.currentStageIndex];
+                              const hasApprovalField = activeStage?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval')) || currentStageDef?.fields?.some((f: any) => f.type === 'APPROVAL');
+                              const hasInAppForm = !!(
+                                (activeStage?.fields && activeStage.fields.length > 0) ||
+                                (currentStageDef?.fields && currentStageDef.fields.length > 0) ||
+                                activeStage?.how === 'IN-APP FORM' ||
+                                activeStage?.how === 'IN APP FORM'
+                              );
+                              if (hasApprovalField) {
+                                return (
+                                  <>
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    <span>Approve / Reject</span>
+                                  </>
+                                );
+                              }
+                              if (hasInAppForm) {
+                                return (
+                                  <>
+                                    <FileText className="w-3.5 h-3.5" />
+                                    <span>Fill Form &amp; Advance</span>
+                                  </>
+                                );
+                              }
+                              return (
+                                <>
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Mark Done &amp; Advance</span>
+                                </>
+                              );
+                            })()}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ) : null
                 )
@@ -2935,6 +3680,31 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                                 <a href={def.formUrl} target="_blank" rel="noreferrer">
                                   Google Form: {def.formUrl}
                                 </a>
+                              </div>
+                            )}
+
+                            {isCurrent && activeFlow.status !== 'Completed' && (isMine || isSuperAdmin) && (
+                              <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-end">
+                                <button
+                                  onClick={() => onOpenStageAction ? onOpenStageAction(activeFlow, idx) : handleAdvanceCurrentStage(activeFlow)}
+                                  className={`px-3 py-1.5 text-xs font-bold text-white rounded-lg shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5 ${
+                                    (stageExec?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval')) || def.fields?.some((f: any) => f.type === 'APPROVAL'))
+                                      ? 'bg-emerald-600 hover:bg-emerald-700'
+                                      : 'bg-indigo-600 hover:bg-indigo-700'
+                                  }`}
+                                >
+                                  {(stageExec?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval')) || def.fields?.some((f: any) => f.type === 'APPROVAL')) ? (
+                                    <>
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                      <span>Approve / Reject</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <FileText className="w-3.5 h-3.5" />
+                                      <span>Fill Stage Form &amp; Advance</span>
+                                    </>
+                                  )}
+                                </button>
                               </div>
                             )}
                           </div>

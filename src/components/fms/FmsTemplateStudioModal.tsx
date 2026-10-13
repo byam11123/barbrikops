@@ -21,9 +21,13 @@ import {
   ArrowDown,
   ArrowUpDown,
   RotateCcw,
-  Settings
+  Settings,
+  FileSpreadsheet,
+  Download,
+  Upload
 } from 'lucide-react';
 import { FmsTemplateDefinition, FmsStageTemplate, FmsStageFieldConfig, FmsSubWorkflowTriggerConfig, Priority } from '../../types';
+import { downloadFmsExcelTemplate, parseFmsExcelFile } from '../../services/fmsExcelService';
 import { 
   FMS_CHECK_STOCK_STAGES, 
   FMS_STANDARD_PURCHASE_STAGES, 
@@ -644,7 +648,46 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
   ]);
 
   const [error, setError] = useState<string | null>(null);
+  const [importSuccessMsg, setImportSuccessMsg] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState<boolean>(false);
   const [confirmReset, setConfirmReset] = useState<boolean>(false);
+
+  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsImporting(true);
+    setError(null);
+    setImportSuccessMsg(null);
+    try {
+      const res = await parseFmsExcelFile(file);
+      if (!res.success || !res.template) {
+        setError(res.error || 'Failed to parse Excel file');
+        return;
+      }
+      const tpl = res.template;
+      setEditingTemplateId(tpl.id);
+      setTemplateName(tpl.name);
+      setDepartmentHub(tpl.departmentHub);
+      setReferenceLabel(tpl.referenceLabel);
+      setDescription(tpl.description || '');
+      setDefaultPriority(tpl.defaultPriority);
+      setStages(tpl.stages.map((s) => ({
+        ...s,
+        fields: s.fields ? [...s.fields] : [],
+        checkpoints: s.checkpoints ? [...s.checkpoints] : [],
+      })));
+      setSaveMode('SAVE_AS_NEW');
+      setSelectedExistingKey('');
+      setImportSuccessMsg(
+        `Successfully loaded "${tpl.name}" from Excel with ${res.stageCount} stages and ${res.fieldCount} fields! Review the details below and click "Save & Activate Workflow".`
+      );
+    } catch (err: any) {
+      setError(`Error reading file: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setIsImporting(false);
+      e.target.value = '';
+    }
+  };
 
   const handleResetTemplate = () => {
     setError(null);
@@ -1248,6 +1291,26 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
     handleUpdateStage(stageIdx, { fields: updatedFields });
   };
 
+  const handleMoveFieldUp = (stageIdx: number, fieldIdx: number) => {
+    if (fieldIdx <= 0) return;
+    const stage = stages[stageIdx];
+    const fields = [...(stage.fields || [])];
+    const temp = fields[fieldIdx - 1];
+    fields[fieldIdx - 1] = fields[fieldIdx];
+    fields[fieldIdx] = temp;
+    handleUpdateStage(stageIdx, { fields });
+  };
+
+  const handleMoveFieldDown = (stageIdx: number, fieldIdx: number) => {
+    const stage = stages[stageIdx];
+    const fields = [...(stage.fields || [])];
+    if (fieldIdx >= fields.length - 1) return;
+    const temp = fields[fieldIdx + 1];
+    fields[fieldIdx + 1] = fields[fieldIdx];
+    fields[fieldIdx] = temp;
+    handleUpdateStage(stageIdx, { fields });
+  };
+
   const handleUpdateField = (stageIdx: number, fieldIdx: number, patch: Partial<FmsStageFieldConfig>) => {
     const stage = stages[stageIdx];
     const updatedFields = [...(stage.fields || [])];
@@ -1473,6 +1536,78 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
             </div>
           )}
 
+          {importSuccessMsg && (
+            <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between gap-2 font-medium">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                <span>{importSuccessMsg}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setImportSuccessMsg(null)}
+                className="text-emerald-700 hover:text-emerald-950 font-bold p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* Excel / CSV Workflow Builder & Importer */}
+          <div className="p-4 bg-gradient-to-r from-emerald-50/90 via-teal-50/80 to-slate-50 rounded-xl border border-emerald-200/90 shadow-2xs space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 rounded-xl bg-emerald-600 text-white shrink-0 shadow-xs">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-bold text-slate-900 text-xs sm:text-sm">
+                      Excel / CSV Bulk Workflow Builder &amp; Importer
+                    </h4>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      Offline Ready
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 mt-0.5">
+                    Enter stages, assignees, SLAs, gateways &amp; custom form fields offline in Excel, then import to auto-create the complete workflow!
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => downloadFmsExcelTemplate()}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-emerald-300 text-emerald-800 text-xs font-bold hover:bg-emerald-100/50 transition-colors shadow-2xs cursor-pointer"
+                  title="Download blank Excel template with sample stages and form fields"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Download Excel File</span>
+                </button>
+                <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors shadow-2xs cursor-pointer">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{isImporting ? 'Reading Excel...' : 'Import Excel / CSV'}</span>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={handleFileImport}
+                    disabled={isImporting}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500 pt-1 border-t border-emerald-200/60">
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                <strong>Sheet 1:</strong> Workflow Master Details (Name, Dept, Priority, Reference No.)
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-teal-500"></span>
+                <strong>Sheet 2:</strong> Stages &amp; Form Fields (Stage Name, Assignee, SLA, Fields, Checkpoints)
+              </span>
+            </div>
+          </div>
+
           {/* Quick Load Existing FMS Process */}
           <div className="p-4 bg-indigo-50/70 rounded-xl border border-indigo-200 space-y-2">
             <div className="flex items-center justify-between">
@@ -1580,17 +1715,17 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
 
               <div className="space-y-1">
                 <label className="block text-xs font-semibold text-slate-700">
-                  Workflow Tracking Code Label (Serial / Voucher ID)
+                  Tracking Counter Series Prefix (e.g. BPL/BEN/)
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Voucher No. / Indent Ref / Ticket ID"
+                  placeholder="e.g. BPL/BEN/ or BPL/PO/"
                   value={referenceLabel}
                   onChange={(e) => setReferenceLabel(e.target.value)}
-                  className="w-full text-xs bg-white border border-slate-300 rounded-lg p-2 font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full text-xs bg-white border border-slate-300 rounded-lg p-2 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
                 />
                 <p className="text-[10px] text-slate-500">
-                  Unique serial identifier name for each ticket. (Dropdown choices like Account or UPI belong in Stage #1 Form Fields below).
+                  Automated ID Format: <strong className="text-indigo-700 font-mono">{(referenceLabel || 'BPL/BEN/').trim().toUpperCase()}{new Date().getFullYear()}{String(new Date().getMonth() + 1).padStart(2, '0')}{String(new Date().getDate()).padStart(2, '0')}-001</strong>
                 </p>
               </div>
 
@@ -1944,6 +2079,10 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
                         stg.fields.map((fld, fIdx) => (
                           <div key={fld.id || fIdx} className="bg-white p-2.5 rounded-lg border border-slate-200 space-y-2">
                             <div className="flex flex-wrap items-center gap-2">
+                              <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-mono font-bold text-[10px] border border-indigo-200 shrink-0" title={`Serial Position #${fIdx + 1}`}>
+                                #{fIdx + 1}
+                              </span>
+
                               <input
                                 type="text"
                                 value={fld.label}
@@ -1985,14 +2124,34 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
                                 <span>Required</span>
                               </label>
 
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveFieldFromStage(sIdx, fIdx)}
-                                className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer shrink-0"
-                                title="Delete field"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
+                              <div className="flex items-center gap-0.5 shrink-0 ml-auto">
+                                <button
+                                  type="button"
+                                  disabled={fIdx === 0}
+                                  onClick={() => handleMoveFieldUp(sIdx, fIdx)}
+                                  className={`p-1 rounded transition-colors ${fIdx === 0 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100 cursor-pointer'}`}
+                                  title={`Move field UP to serial #${fIdx}`}
+                                >
+                                  <ArrowUp className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={fIdx === (stg.fields?.length || 0) - 1}
+                                  onClick={() => handleMoveFieldDown(sIdx, fIdx)}
+                                  className={`p-1 rounded transition-colors ${fIdx === (stg.fields?.length || 0) - 1 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100 cursor-pointer'}`}
+                                  title={`Move field DOWN to serial #${fIdx + 2}`}
+                                >
+                                  <ArrowDown className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveFieldFromStage(sIdx, fIdx)}
+                                  className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 cursor-pointer shrink-0 transition-colors"
+                                  title="Delete field"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
 
                             {/* Dropdown Options Customizer */}

@@ -165,6 +165,32 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_id);
+
+-- 7. Vendor Beneficiary Registrations (Accounts & Finance)
+CREATE TABLE IF NOT EXISTS beneficiary_records (
+    sheet_no VARCHAR(64) PRIMARY KEY, -- Col A: BPL/BEN/YYYYMMDD/NN
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, -- Col B
+    name_of_beneficiary VARCHAR(255) NOT NULL, -- Col C
+    account_no VARCHAR(64) NOT NULL, -- Col D
+    ifsc_code VARCHAR(16) NOT NULL, -- Col E
+    bank_name VARCHAR(128) NOT NULL, -- Col F
+    purpose TEXT NOT NULL, -- Col G
+    cancelled_cheque_drive_url TEXT NOT NULL, -- Col H (Google Shared Drive link)
+    remarks TEXT, -- Col I
+    
+    -- Connected 3-Stage FMS Milestones (Cols J to O)
+    stage_1_finance_status VARCHAR(32) DEFAULT 'PENDING', -- Col J (Status: APPROVED/REJECTED)
+    stage_1_approval_timestamp TIMESTAMPTZ, -- Col K
+    stage_2_netbanking_status VARCHAR(32) DEFAULT 'PENDING', -- Col L (Beneficiary Entry: Done)
+    stage_2_entry_timestamp TIMESTAMPTZ, -- Col M
+    stage_3_activation_status VARCHAR(32) DEFAULT 'PENDING', -- Col N (Addition Status: Done)
+    stage_3_activation_timestamp TIMESTAMPTZ, -- Col O
+    
+    fms_flow_id VARCHAR(64) REFERENCES fms_flows(flow_id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_beneficiary_name ON beneficiary_records(name_of_beneficiary);
+CREATE INDEX IF NOT EXISTS idx_beneficiary_account ON beneficiary_records(account_no);
 `;
 
 export interface MigrationMapping {
@@ -174,6 +200,24 @@ export interface MigrationMapping {
   validationRule: string;
   notes: string;
 }
+
+export const BENEFICIARY_MIGRATION_MAPPINGS: MigrationMapping[] = [
+  { sheetColumn: 'Sheet No. (Col A)', postgresColumn: 'sheet_no', postgresType: 'VARCHAR(64) PRIMARY KEY', validationRule: 'Format: BPL/BEN/YYYYMMDD/NN', notes: 'Immutable unique identifier generated upon submission' },
+  { sheetColumn: 'Timestamp (Col B)', postgresColumn: 'created_at', postgresType: 'TIMESTAMPTZ', validationRule: 'DD-MM-YYYY HH:mm:ss parsed to ISO', notes: 'Form submission timestamp' },
+  { sheetColumn: 'Name of Beneficiary (Col C)', postgresColumn: 'name_of_beneficiary', postgresType: 'VARCHAR(255) NOT NULL', validationRule: 'Uppercase official payee account title', notes: 'Legal vendor title verified against bank passbook' },
+  { sheetColumn: 'Account No. (Col D)', postgresColumn: 'account_no', postgresType: 'VARCHAR(64) NOT NULL', validationRule: 'Min 9 digits, double confirmed in form', notes: 'Bank account number (encrypted/hashed at rest in DB)' },
+  { sheetColumn: 'IFSC Code (Col E)', postgresColumn: 'ifsc_code', postgresType: 'VARCHAR(16) NOT NULL', validationRule: 'RBI 11-char IFSC code format', notes: 'Standard branch routing code' },
+  { sheetColumn: 'Bank Name (Col F)', postgresColumn: 'bank_name', postgresType: 'VARCHAR(128) NOT NULL', validationRule: 'Auto-detected from IFSC prefix', notes: 'e.g. KOTAK MAHINDRA BANK, STATE BANK OF INDIA' },
+  { sheetColumn: 'Purpose (Col G)', postgresColumn: 'purpose', postgresType: 'TEXT NOT NULL', validationRule: 'Non-empty business justification', notes: 'e.g. FOR PAYMENT OF MSI MONITOR' },
+  { sheetColumn: 'CANCELLED CHEQUE (Col H)', postgresColumn: 'cancelled_cheque_drive_url', postgresType: 'TEXT NOT NULL', validationRule: 'Valid Google Shared Drive link / fileId', notes: 'Evidence file stored in Org Shared Drive folder' },
+  { sheetColumn: 'Remark (Col I)', postgresColumn: 'remarks', postgresType: 'TEXT', validationRule: 'Optional remarks string', notes: 'Vendor contact or internal accounts notes' },
+  { sheetColumn: 'Status (Col J)', postgresColumn: 'stage_1_finance_status', postgresType: 'VARCHAR(32)', validationRule: 'APPROVED / REJECTED', notes: 'FMS Stage 1: Management / Finance Officer approval' },
+  { sheetColumn: 'Approval Timestamp (Col K)', postgresColumn: 'stage_1_approval_timestamp', postgresType: 'TIMESTAMPTZ', validationRule: 'Standard ISO timestamp', notes: 'FMS Stage 1 execution timestamp' },
+  { sheetColumn: 'Beneficiary Entry (Col L)', postgresColumn: 'stage_2_netbanking_status', postgresType: 'VARCHAR(32)', validationRule: 'Done / Pending', notes: 'FMS Stage 2: Net banking portal addition' },
+  { sheetColumn: 'Entry Timestamp (Col M)', postgresColumn: 'stage_2_entry_timestamp', postgresType: 'TIMESTAMPTZ', validationRule: 'Standard ISO timestamp', notes: 'FMS Stage 2 execution timestamp' },
+  { sheetColumn: 'Addition Status (Col N)', postgresColumn: 'stage_3_activation_status', postgresType: 'VARCHAR(32)', validationRule: 'Done / Pending', notes: 'FMS Stage 3: Bank cooling period & activation check' },
+  { sheetColumn: 'Addition Timestamp (Col O)', postgresColumn: 'stage_3_activation_timestamp', postgresType: 'TIMESTAMPTZ', validationRule: 'Standard ISO timestamp', notes: 'FMS Stage 3 execution timestamp' },
+];
 
 export const FMS_MIGRATION_MAPPINGS: MigrationMapping[] = [
   { sheetColumn: 'Timestamp (Col A)', postgresColumn: 'created_at', postgresType: 'TIMESTAMPTZ', validationRule: 'Valid date/time format', notes: 'Initial indent submission' },

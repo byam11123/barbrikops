@@ -8,8 +8,109 @@ import {
   InventoryItem, 
   InventoryMovement, 
   UserProfile,
-  NoticeBoardItem
+  NoticeBoardItem,
+  AppNotification
 } from '../types';
+
+export const INITIAL_NOTIFICATIONS: AppNotification[] = [
+  {
+    id: 'notif-init-01',
+    userId: 'USR-000',
+    targetUserName: 'System Super Admin',
+    title: 'Executive Approval: Flow FLOW-INV-260715-006',
+    message: 'Stage 4 Rate Approval pending executive authorization for 500 MT Cement procurement.',
+    type: 'FMS_ACTION_REQUIRED',
+    urgency: 'HIGH',
+    timestamp: '10/10/2026, 09:15 AM',
+    read: false,
+    linkTab: 'fms',
+    linkEntityId: 'FLOW-INV-260715-006',
+    data: { flowId: 'FLOW-INV-260715-006', stageName: 'Rate Approval' }
+  },
+  {
+    id: 'notif-init-02',
+    userId: 'USR-001',
+    targetUserName: 'Amanat Bharadwaj',
+    title: 'Physical MRN Verification: FLOW-REC-102-001',
+    message: 'Consignment arrived at Central Store. Quality check and physical gate MRN entry required.',
+    type: 'FMS_ACTION_REQUIRED',
+    urgency: 'HIGH',
+    timestamp: '10/10/2026, 08:45 AM',
+    read: false,
+    linkTab: 'fms',
+    linkEntityId: 'FLOW-REC-102-001',
+    data: { flowId: 'FLOW-REC-102-001', stageName: 'Store MRN & Inspection' }
+  },
+  {
+    id: 'notif-init-03',
+    userId: 'USR-001',
+    targetUserName: 'Amanat Bharadwaj',
+    title: 'Low Stock Alert: ITEM-MAT-006 (OPC 53 Cement)',
+    message: 'Current stock is below safety buffer (150 Bags remaining). Urgent purchase replenishment advised.',
+    type: 'STOCK_ALERT',
+    urgency: 'HIGH',
+    timestamp: '10/10/2026, 07:30 AM',
+    read: false,
+    linkTab: 'ims',
+    linkEntityId: 'ITEM-MAT-006',
+    data: { itemId: 'ITEM-MAT-006' }
+  },
+  {
+    id: 'notif-init-04',
+    userId: 'USR-002',
+    targetUserName: 'Bramhanand Patel',
+    title: 'SLA Overdue: Rate Approval for FLOW-SSD-654',
+    message: 'Planned completion was exceeded by 3 hours. Please review quotation comparative table.',
+    type: 'SLA_BREACH',
+    urgency: 'HIGH',
+    timestamp: '09/10/2026, 04:30 PM',
+    read: false,
+    linkTab: 'fms',
+    linkEntityId: 'FLOW-SSD-654',
+    data: { flowId: 'FLOW-SSD-654', stageName: 'Rate Approval' }
+  },
+  {
+    id: 'notif-init-05',
+    userId: 'USR-003',
+    targetUserName: 'Shyam Rao Sureshe',
+    title: 'Delegated Task: Vendor Dispatch Follow-up',
+    message: 'Please coordinate with supplier for delivery schedule regarding Task #vhdlgas.',
+    type: 'DELEGATION',
+    urgency: 'MEDIUM',
+    timestamp: '09/10/2026, 02:00 PM',
+    read: false,
+    linkTab: 'delegation',
+    linkEntityId: 'vhdlgas',
+    data: { taskId: 'vhdlgas' }
+  },
+  {
+    id: 'notif-init-06',
+    userId: 'USR-013',
+    targetUserName: 'Pranjal Agrawal',
+    title: 'Accounts Voucher Approval: FLOW-SSD-477',
+    message: 'Commercial tax verification completed. Advance payment voucher awaiting director authorization.',
+    type: 'FMS_ACTION_REQUIRED',
+    urgency: 'HIGH',
+    timestamp: '09/10/2026, 11:15 AM',
+    read: false,
+    linkTab: 'fms',
+    linkEntityId: 'FLOW-SSD-477',
+    data: { flowId: 'FLOW-SSD-477', stageName: 'Payment Authorization' }
+  },
+  {
+    id: 'notif-init-07',
+    userId: 'ALL',
+    title: 'FMS Stage Completed: FLOW-BRK-DG82-01',
+    message: 'Equipment breakdown inspection signed off by Plant Ops. Flow advanced to parts procurement.',
+    type: 'STAGE_ADVANCED',
+    urgency: 'LOW',
+    timestamp: '08/10/2026, 05:20 PM',
+    read: true,
+    linkTab: 'fms',
+    linkEntityId: 'FLOW-BRK-DG82-01',
+    data: { flowId: 'FLOW-BRK-DG82-01' }
+  }
+];
 
 export const INITIAL_NOTICE_BOARD: NoticeBoardItem[] = [
   {
@@ -54,7 +155,7 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-000',
     name: 'System Super Admin',
-    username: 'admin',
+    username: 'superadmin',
     password: 'pass123',
     role: 'SUPER_ADMIN',
     systemRole: 'SUPER_ADMIN',
@@ -67,6 +168,24 @@ export const USERS: UserProfile[] = [
     shiftHours: '24/7 System Governance',
     status: 'ACTIVE',
     approvalPin: '0000',
+    lastLoginAt: '09/10/2026 09:30 AM'
+  },
+  {
+    userId: 'USR-ADMIN-01',
+    name: 'Administrative User',
+    username: 'admin',
+    password: 'pass123',
+    role: 'ADMIN',
+    systemRole: 'ADMIN',
+    departmentId: 'DEPT-ADMIN',
+    departmentName: 'Executive Control & Governance',
+    departmentKeys: ['PURCHASE', 'STORE', 'ACCOUNTS', 'PLANT_OPS', 'OPERATIONS'],
+    phone: '9999999998',
+    email: 'admin.daily@barbrik.in',
+    siteLocation: 'Raipur Headquarters',
+    shiftHours: '09:00 AM - 06:00 PM',
+    status: 'ACTIVE',
+    approvalPin: '1111',
     lastLoginAt: '09/10/2026 09:30 AM'
   },
   {
@@ -141,6 +260,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-004',
     name: 'Pranay Ghosh',
+    username: 'pranay.ghosh',
+    password: 'pass123',
     role: 'Project Manager',
     departmentId: 'DEPT-PROJECTS',
     departmentName: 'Project Management',
@@ -150,6 +271,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-005',
     name: 'Pooja Rao',
+    username: 'pooja.rao',
+    password: 'pass123',
     role: 'MIS Executive',
     departmentId: 'DEPT-MIS',
     departmentName: 'MIS & Operations',
@@ -159,6 +282,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-006',
     name: 'Byamkesh Kaiwartya',
+    username: 'byamkesh',
+    password: 'pass123',
     role: 'IT Executive',
     departmentId: 'DEPT-IT',
     departmentName: 'IT Engineering',
@@ -168,6 +293,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-007',
     name: 'Rajnikant Behera',
+    username: 'rajnikant',
+    password: 'pass123',
     role: 'Purchaser',
     departmentId: 'DEPT-PURCHASE',
     departmentName: 'Purchase',
@@ -177,6 +304,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-008',
     name: 'Vinod Tiwari',
+    username: 'vinod.tiwari',
+    password: 'pass123',
     role: 'Liaising Officer',
     departmentId: 'DEPT-ADMIN',
     departmentName: 'Liaising & Admin',
@@ -186,6 +315,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-009',
     name: 'Mamta Kumari',
+    username: 'mamta.kumari',
+    password: 'pass123',
     role: 'HR Executive',
     departmentId: 'DEPT-HR',
     departmentName: 'Human Resources',
@@ -195,6 +326,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-010',
     name: 'Aman Kumar',
+    username: 'aman.kumar',
+    password: 'pass123',
     role: 'Site IT/Structure',
     departmentId: 'DEPT-SITE-SILA',
     departmentName: 'Structure',
@@ -204,6 +337,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-011',
     name: 'Pappu Gupta / Rajesh Singh',
+    username: 'pappu.gupta',
+    password: 'pass123',
     role: 'Sr. Structure / Site IT',
     departmentId: 'DEPT-SITE-BIJE',
     departmentName: 'Sr. Structure',
@@ -213,6 +348,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-013',
     name: 'Pranjal Agrawal',
+    username: 'pranjal.agrawal',
+    password: 'pass123',
     role: 'Finance Approver / Director',
     departmentId: 'DEPT-ACCOUNTS',
     departmentName: 'Accounts & Finance',
@@ -222,6 +359,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-014',
     name: 'Khushboo Sahu',
+    username: 'khushboo.sahu',
+    password: 'pass123',
     role: 'Executive Assistant / Accounts',
     departmentId: 'DEPT-ACCOUNTS',
     departmentName: 'Accounts & Finance',
@@ -231,6 +370,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-015',
     name: 'Manish Koshle',
+    username: 'manish.koshle',
+    password: 'pass123',
     role: 'PO Accounts In-charge',
     departmentId: 'DEPT-ACCOUNTS',
     departmentName: 'Accounts & Finance',
@@ -240,6 +381,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-016',
     name: 'Vivek',
+    username: 'vivek',
+    password: 'pass123',
     role: 'Purchase Assistant',
     departmentId: 'DEPT-PURCHASE',
     departmentName: 'Purchase',
@@ -249,6 +392,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-017',
     name: 'Rajendra',
+    username: 'rajendra',
+    password: 'pass123',
     role: 'Purchase Assistant',
     departmentId: 'DEPT-PURCHASE',
     departmentName: 'Purchase',
@@ -258,6 +403,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-018',
     name: 'Sumant',
+    username: 'sumant',
+    password: 'pass123',
     role: 'Store Manager (Siladehi)',
     departmentId: 'DEPT-STORE-SILA',
     departmentName: 'Store Department (Siladehi)',
@@ -267,6 +414,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-019',
     name: 'Hemant',
+    username: 'hemant',
+    password: 'pass123',
     role: 'Store Manager (Bijetala)',
     departmentId: 'DEPT-STORE-BIJE',
     departmentName: 'Store Department (Bijetala)',
@@ -276,6 +425,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-020',
     name: 'Garima Pal',
+    username: 'garima.pal',
+    password: 'pass123',
     role: 'HR Executive',
     departmentId: 'DEPT-HR',
     departmentName: 'Human Resources',
@@ -285,6 +436,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-021',
     name: 'Mamta',
+    username: 'mamta',
+    password: 'pass123',
     role: 'HR & Accounts Officer',
     departmentId: 'DEPT-HR',
     departmentName: 'Human Resources',
@@ -294,6 +447,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-022',
     name: 'Nandita / Khilesh',
+    username: 'nandita',
+    password: 'pass123',
     role: 'DPR & Planning Officer',
     departmentId: 'DEPT-PLANNING',
     departmentName: 'Project Planning & DPR',
@@ -303,6 +458,8 @@ export const USERS: UserProfile[] = [
   {
     userId: 'USR-023',
     name: 'Ritu Sahu',
+    username: 'ritu.sahu',
+    password: 'pass123',
     role: 'Process Coordinator',
     departmentId: 'DEPT-MIS',
     departmentName: 'Process Coordination & Audit',
@@ -319,7 +476,7 @@ export const FMS_CHECK_STOCK_STAGES: FmsStageDefinition[] = [
     what: 'Receive material requisition details from site or company requester with required items',
     whoRole: 'REQUESTER / STORE MANAGER',
     whoDefaultAssignee: 'Amanat Bharadwaj',
-    howChannel: 'GOOGLE FORM / REQUISITION SLIP',
+    howChannel: 'IN-APP FORM / REQUISITION SLIP',
     slaHours: 1,
     hasYesNoDecision: false
   },
@@ -353,8 +510,8 @@ export const FMS_CHECK_STOCK_STAGES: FmsStageDefinition[] = [
     what: 'Submit material indent requisition to Purchase Department via Google Form',
     whoRole: 'STORE MANAGER',
     whoDefaultAssignee: 'Amanat Bharadwaj',
-    howChannel: 'GOOGLE FORM INDENT TO PO',
-    formUrl: 'https://docs.google.com/forms/d/e/1FAIpQLScYfRmZ4-SDR0DH5l680-0CK0Y0P5l8xAJVb6SWG9ALdAZDyQ/viewform',
+    howChannel: 'IN-APP REQUISITION ENTRY',
+    formUrl: undefined,
     slaHours: 2,
     hasYesNoDecision: false
   },
@@ -377,8 +534,8 @@ export const FMS_CHECK_STOCK_STAGES: FmsStageDefinition[] = [
     what: 'Dispatch available store stock to site and record gate pass/issue entry',
     whoRole: 'STORE MANAGER',
     whoDefaultAssignee: 'Amanat Bharadwaj',
-    howChannel: 'GOOGLE FORM STOCK TO DISPATCH',
-    formUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSdFWVguqGvgz3tiyjeKnlLxVsblra7MwaQQ36OLz9fRgCLC6A/viewform',
+    howChannel: 'IN-APP DISPATCH VOUCHER',
+    formUrl: undefined,
     slaHours: 12,
     hasYesNoDecision: false
   }
@@ -414,8 +571,8 @@ export const FMS_STANDARD_PURCHASE_STAGES: FmsStageDefinition[] = [
     what: 'Fill Google Form for Return of Degraded Material Sheet',
     whoRole: 'PURCHASE EXECUTIVE',
     whoDefaultAssignee: 'Shyam Rao Sureshe',
-    howChannel: 'GOOGLE FORM',
-    formUrl: 'https://forms.gle/degraded-material-sample',
+    howChannel: 'IN-APP FORM',
+    formUrl: undefined,
     slaHours: 1,
     hasYesNoDecision: false
   },
@@ -493,8 +650,8 @@ export const FMS_STANDARD_PURCHASE_STAGES: FmsStageDefinition[] = [
     what: 'Is payment to be made in advance? (Check point)',
     whoRole: 'PURCHASE EXECUTIVE',
     whoDefaultAssignee: 'Shyam Rao Sureshe',
-    howChannel: 'GOOGLE FORM',
-    formUrl: 'https://forms.gle/YzQWAkQDPKeeBkLe6',
+    howChannel: 'IN-APP FORM',
+    formUrl: undefined,
     slaHours: 1,
     isCheckpoint: true,
     hasYesNoDecision: true
@@ -517,8 +674,8 @@ export const FMS_STANDARD_PURCHASE_STAGES: FmsStageDefinition[] = [
     what: 'Send purchase order for material collection & gate pass',
     whoRole: 'PURCHASE EXECUTIVE',
     whoDefaultAssignee: 'Shyam Rao Sureshe',
-    howChannel: 'GOOGLE FORM',
-    formUrl: 'https://forms.gle/o5PsEMYntAYXWZbJ8',
+    howChannel: 'IN-APP FORM',
+    formUrl: undefined,
     slaHours: 1,
     hasYesNoDecision: false
   }
@@ -567,8 +724,8 @@ export const FMS_PO_PAYMENT_STAGES: FmsStageDefinition[] = [
     what: 'Submit beneficiary registration details form for bank addition',
     whoRole: 'ACCOUNTS EXECUTIVE',
     whoDefaultAssignee: 'Byamkesh Kaiwartya',
-    howChannel: 'GOOGLE FORM',
-    formUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSfQBM1AEyn_ZDxlUOO3nzBSKZlgEedLNNKNOy8ViF2le6MJxA/viewform',
+    howChannel: 'IN-APP FORM',
+    formUrl: undefined,
     slaHours: 1,
     isCheckpoint: true,
     hasYesNoDecision: false
@@ -603,8 +760,8 @@ export const FMS_PO_PAYMENT_STAGES: FmsStageDefinition[] = [
     what: 'Submit formal payment approval requisition for PO disbursement',
     whoRole: 'PURCHASE EXECUTIVE',
     whoDefaultAssignee: 'Shyam Rao Sureshe',
-    howChannel: 'GOOGLE FORM',
-    formUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSdF41kXu3ZViSeY9u3Kk7I1O4xsfBOLFZHPo2rgh-64IjuMgQ/viewform',
+    howChannel: 'IN-APP FORM',
+    formUrl: undefined,
     slaHours: 1,
     isCheckpoint: true,
     hasYesNoDecision: false
@@ -649,8 +806,8 @@ export const FMS_PO_PAYMENT_STAGES: FmsStageDefinition[] = [
     what: 'Submit UPI payment approval form with invoice and reason for quick disbursement',
     whoRole: 'EA / ACCOUNTS',
     whoDefaultAssignee: 'Khushboo Sahu',
-    howChannel: 'GOOGLE FORM',
-    formUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSf82paFNXOtDZHBEXR3aEddrOuGsvcdafFaoG_ZM9RFydNBHA/viewform',
+    howChannel: 'IN-APP FORM',
+    formUrl: undefined,
     slaHours: 1,
     isCheckpoint: true,
     hasYesNoDecision: false
@@ -695,8 +852,8 @@ export const FMS_PO_PAYMENT_STAGES: FmsStageDefinition[] = [
     what: 'Transmit payment receipt / UTR slip to vendor and store team for material dispatch/gate release',
     whoRole: 'ACCOUNTS / EA',
     whoDefaultAssignee: 'Byamkesh Kaiwartya / Khushboo',
-    howChannel: 'GOOGLE FORM',
-    formUrl: 'https://forms.gle/o5PsEMYntAYXWZbJ8',
+    howChannel: 'IN-APP FORM',
+    formUrl: undefined,
     slaHours: 1,
     isCheckpoint: true,
     hasYesNoDecision: false
@@ -812,7 +969,7 @@ export const FMS_PURCHASE_TO_STORE_DISPATCH_STAGES: FmsStageDefinition[] = [
     whoRole: 'PURCHASER (RAJENDRA/VIVEK/RAJNIKANT)',
     whoDefaultAssignee: 'Rajendra / Vivek / Rajnikant',
     howChannel: 'WHATSAPP/EMAIL/PHYSICALLY',
-    formUrl: 'https://forms.gle/tETaTMfRGfU2ERUc6',
+    formUrl: undefined,
     slaHours: 12,
     isCheckpoint: true,
     hasYesNoDecision: false
@@ -895,8 +1052,8 @@ export const FMS_PAYMENT_TO_DISPATCH_STAGES: FmsStageDefinition[] = [
     what: 'Fill Purchase to Store to Dispatch Google Form and release material to project site',
     whoRole: 'Purchaser (Rajendra/Rajnikant/Vivek)',
     whoDefaultAssignee: 'Rajendra / Rajnikant / Vivek',
-    howChannel: 'PURCHASE TO STORE TO DISPATCH GOOGLE FORM',
-    formUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSfDtaA-hHEepRqLxn69U-CeA7djTHNjJhnp_P9nEhdAuIjnhw/viewform',
+    howChannel: 'IN-APP DISPATCH ENTRY',
+    formUrl: undefined,
     slaHours: 28,
     isCheckpoint: true,
     hasYesNoDecision: false
@@ -1001,7 +1158,7 @@ export const FMS_SITE_RECEIVE_STAGES: FmsStageDefinition[] = [
     what: 'Digital Inventory Checkpoint: Has the Site DEO submitted the Material Inward Google Form?',
     whoRole: 'SITE DEO',
     whoDefaultAssignee: 'Site DEO',
-    howChannel: 'MATERIAL IN/OUT GOOGLE FORM',
+    howChannel: 'IN-APP MATERIAL LOG',
     slaHours: 1,
     isCheckpoint: true,
     hasYesNoDecision: true
@@ -1009,12 +1166,12 @@ export const FMS_SITE_RECEIVE_STAGES: FmsStageDefinition[] = [
   {
     stageId: 'STG-REC-10',
     stageNumber: 10,
-    name: 'FILL GOOGLE FORM FOR MATERIAL INWARD',
+    name: 'IN-APP MATERIAL INWARD ENTRY',
     what: 'Log official inbound receipt and physical inventory count in organization Material In/Out Google Form',
     whoRole: 'SITE DEO',
     whoDefaultAssignee: 'Site DEO',
-    howChannel: 'MATERIAL IN/OUT GOOGLE FORM',
-    formUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSfn24oudK7GLha0N1UOKAsNFRZudHSX_mA5ZVmsbFMr2dYxrA/viewform',
+    howChannel: 'IN-APP MATERIAL LOG',
+    formUrl: undefined,
     slaHours: 1,
     isCheckpoint: true,
     hasYesNoDecision: false
@@ -1119,7 +1276,7 @@ export const FMS_STORE_TO_SITE_DISPATCH_STAGES: FmsStageDefinition[] = [
     whoRole: 'PURCHASER',
     whoDefaultAssignee: 'Rajnikant Behera / Purchaser',
     howChannel: 'WHATSAPP/EMAIL/PHYSICAL COPY',
-    formUrl: 'https://forms.gle/tETaTMfRGfU2ERUc6',
+    formUrl: undefined,
     slaHours: 12,
     isCheckpoint: true,
     hasYesNoDecision: false
@@ -1499,7 +1656,7 @@ export const FMS_EQUIPMENT_PART_REPAIR_STAGES: FmsStageDefinition[] = [
     what: 'Receive and log equipment/part repair requisition via Google Form',
     whoRole: 'PURCHASE MANAGER (BRAMHANAND PATEL)',
     whoDefaultAssignee: 'Bramhanand Patel',
-    howChannel: 'GOOGLE FORM',
+    howChannel: 'IN-APP FORM',
     slaHours: 3,
     hasYesNoDecision: false
   },
@@ -1813,7 +1970,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
     totalDelayHours: 0,
     remarks: 'Bijetala Submersible Pump repair. Completed repair and trial run, receiving in store.',
     stages: [
-      { stageId: 'STG-EQP-01', stageName: 'RECEIVE REPAIR REQUEST', assignee: 'Bramhanand Patel', how: 'GOOGLE FORM', status: 'Done', plannedDateTime: '04/08/2026 10:49:43', actualDateTime: '03/08/2026 15:52:52', timeDelayHours: 0 },
+      { stageId: 'STG-EQP-01', stageName: 'RECEIVE REPAIR REQUEST', assignee: 'Bramhanand Patel', how: 'IN-APP FORM', status: 'Done', plannedDateTime: '04/08/2026 10:49:43', actualDateTime: '03/08/2026 15:52:52', timeDelayHours: 0 },
       { stageId: 'STG-EQP-02', stageName: 'CHECK WARRANTY DETAILS', assignee: 'Bramhanand Patel', how: 'INVOICE/WARRANTY CARD', status: 'Done', plannedDateTime: '03/08/2026 16:52:52', actualDateTime: '03/08/2026 15:53:03', timeDelayHours: 0 },
       { stageId: 'STG-EQP-03', stageName: 'IS PART/EQUIPMENT UNDER WARRANTY?', assignee: 'Bramhanand Patel', how: 'MANUAL', status: 'Done', decisionValue: 'No', plannedDateTime: '03/08/2026 17:53:03', actualDateTime: '03/08/2026 15:55:29', timeDelayHours: 0 },
       { stageId: 'STG-EQP-04', stageName: 'SEND PART/EQUIPMENT TO AUTHORIZED SERVICE CENTER', assignee: 'Bramhanand Patel', how: 'SEND PHYSICALLY', status: 'Skipped', notes: 'Skipped: Out of warranty' },
@@ -2308,7 +2465,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageName: 'GET RECEIVING OF MATERIAL',
         assignee: 'Rajnikant Behera / Purchaser',
         how: 'WHATSAPP/EMAIL/PHYSICAL COPY',
-        formResponseRef: 'https://forms.gle/tETaTMfRGfU2ERUc6',
+        formResponseRef: undefined,
         status: 'Done',
         plannedDateTime: '06/08/2026 14:56:24',
         actualDateTime: '05/08/2026 11:00:52',
@@ -2407,7 +2564,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageName: 'GET RECEIVING OF MATERIAL',
         assignee: 'Rajnikant Behera / Purchaser',
         how: 'WHATSAPP/EMAIL/PHYSICAL COPY',
-        formResponseRef: 'https://forms.gle/tETaTMfRGfU2ERUc6',
+        formResponseRef: undefined,
         status: 'Pending',
         plannedDateTime: '07/10/2026 10:30:00'
       }
@@ -2515,7 +2672,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-REC-09',
         stageName: 'IS MATERIAL INWARD FORM FILLED ?',
         assignee: 'Site DEO',
-        how: 'MATERIAL IN/OUT GOOGLE FORM',
+        how: 'IN-APP MATERIAL LOG',
         plannedDateTime: '04/08/2026 14:09:14',
         actualDateTime: '05/08/2026 18:07:33',
         decisionValue: 'Yes',
@@ -2524,14 +2681,14 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
       },
       {
         stageId: 'STG-REC-10',
-        stageName: 'FILL GOOGLE FORM FOR MATERIAL INWARD',
+        stageName: 'IN-APP MATERIAL INWARD ENTRY',
         assignee: 'Site DEO',
-        how: 'MATERIAL IN/OUT GOOGLE FORM',
+        how: 'IN-APP MATERIAL LOG',
         plannedDateTime: '06/08/2026 11:07:33',
         actualDateTime: '07/08/2026 17:17:44',
         status: 'Done',
         timeDelayHours: 30.17,
-        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSfn24oudK7GLha0N1UOKAsNFRZudHSX_mA5ZVmsbFMr2dYxrA/viewform'
+        formResponseRef: undefined,
       }
     ]
   },
@@ -2638,17 +2795,17 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-REC-09',
         stageName: 'IS MATERIAL INWARD FORM FILLED ?',
         assignee: 'Site DEO',
-        how: 'MATERIAL IN/OUT GOOGLE FORM',
+        how: 'IN-APP MATERIAL LOG',
         plannedDateTime: '04/08/2026 16:30:00',
         status: 'In Progress',
         timeDelayHours: 0
       },
       {
         stageId: 'STG-REC-10',
-        stageName: 'FILL GOOGLE FORM FOR MATERIAL INWARD',
+        stageName: 'IN-APP MATERIAL INWARD ENTRY',
         assignee: 'Site DEO',
-        how: 'MATERIAL IN/OUT GOOGLE FORM',
-        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSfn24oudK7GLha0N1UOKAsNFRZudHSX_mA5ZVmsbFMr2dYxrA/viewform',
+        how: 'IN-APP MATERIAL LOG',
+        formResponseRef: undefined,
         status: 'Pending',
         timeDelayHours: 0
       }
@@ -2772,7 +2929,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         status: 'Done',
         timeDelayHours: 0,
         doerName: 'Rajendra',
-        formResponseRef: 'https://forms.gle/tETaTMfRGfU2ERUc6'
+        formResponseRef: undefined,
       }
     ]
   },
@@ -2881,7 +3038,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageName: 'GET RECEIVING',
         assignee: 'Rajendra / Vivek / Rajnikant',
         how: 'WHATSAPP/EMAIL/PHYSICALLY',
-        formResponseRef: 'https://forms.gle/tETaTMfRGfU2ERUc6',
+        formResponseRef: undefined,
         status: 'Pending',
         timeDelayHours: 0
       }
@@ -2971,12 +3128,12 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-DISP-07',
         stageName: 'DISPATCH MATERIAL',
         assignee: 'Rajendra / Rajnikant / Vivek',
-        how: 'PURCHASE TO STORE TO DISPATCH GOOGLE FORM',
+        how: 'IN-APP DISPATCH ENTRY',
         plannedDateTime: '20/06/2026 11:41:19',
         actualDateTime: '16/06/2026 15:41:28',
         status: 'Done',
         timeDelayHours: 0,
-        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSfDtaA-hHEepRqLxn69U-CeA7djTHNjJhnp_P9nEhdAuIjnhw/viewform'
+        formResponseRef: undefined,
       }
     ]
   },
@@ -3064,12 +3221,12 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-DISP-07',
         stageName: 'DISPATCH MATERIAL',
         assignee: 'Rajendra / Rajnikant / Vivek',
-        how: 'PURCHASE TO STORE TO DISPATCH GOOGLE FORM',
+        how: 'IN-APP DISPATCH ENTRY',
         plannedDateTime: '20/06/2026 11:41:44',
         actualDateTime: '16/06/2026 15:41:51',
         status: 'Done',
         timeDelayHours: 0,
-        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSfDtaA-hHEepRqLxn69U-CeA7djTHNjJhnp_P9nEhdAuIjnhw/viewform'
+        formResponseRef: undefined,
       }
     ]
   },
@@ -3157,12 +3314,12 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-DISP-07',
         stageName: 'DISPATCH MATERIAL',
         assignee: 'Rajendra / Rajnikant / Vivek',
-        how: 'PURCHASE TO STORE TO DISPATCH GOOGLE FORM',
+        how: 'IN-APP DISPATCH ENTRY',
         plannedDateTime: '29/06/2026 15:30:11',
         actualDateTime: '25/06/2026 11:30:26',
         status: 'Done',
         timeDelayHours: 0,
-        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSfDtaA-hHEepRqLxn69U-CeA7djTHNjJhnp_P9nEhdAuIjnhw/viewform'
+        formResponseRef: undefined,
       }
     ]
   },
@@ -3188,7 +3345,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-STK-01',
         stageName: 'RECEIVE MATERIAL REQUISITION',
         assignee: 'Amanat Bharadwaj',
-        how: 'GOOGLE FORM / REQUISITION SLIP',
+        how: 'IN-APP FORM / REQUISITION SLIP',
         plannedDateTime: '07/08/2026 17:55:36',
         actualDateTime: '07/08/2026 16:55:36',
         status: 'Done',
@@ -3219,12 +3376,12 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-STK-04',
         stageName: 'SEND INDENT FOR MATERIAL TO BE PURCHASED',
         assignee: 'Amanat Bharadwaj',
-        how: 'GOOGLE FORM INDENT TO PO',
+        how: 'IN-APP REQUISITION ENTRY',
         plannedDateTime: '08/08/2026 11:00:33',
         actualDateTime: '07/08/2026 17:00:51',
         status: 'Done',
         timeDelayHours: 0,
-        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLScYfRmZ4-SDR0DH5l680-0CK0Y0P5l8xAJVb6SWG9ALdAZDyQ/viewform'
+        formResponseRef: undefined,
       },
       {
         stageId: 'STG-STK-05',
@@ -3241,12 +3398,12 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-STK-06',
         stageName: 'DISPATCH MATERIAL AVAILABLE',
         assignee: 'Amanat Bharadwaj',
-        how: 'GOOGLE FORM STOCK TO DISPATCH',
+        how: 'IN-APP DISPATCH VOUCHER',
         plannedDateTime: '10/08/2026 13:00:51',
         actualDateTime: '08/08/2026 10:58:51',
         status: 'Done',
         timeDelayHours: 0,
-        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSdFWVguqGvgz3tiyjeKnlLxVsblra7MwaQQ36OLz9fRgCLC6A/viewform'
+        formResponseRef: undefined,
       }
     ]
   },
@@ -3272,7 +3429,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-STK-01',
         stageName: 'RECEIVE MATERIAL REQUISITION',
         assignee: 'Amanat Bharadwaj',
-        how: 'GOOGLE FORM / REQUISITION SLIP',
+        how: 'IN-APP FORM / REQUISITION SLIP',
         plannedDateTime: '10/07/2026 15:00:00',
         actualDateTime: '10/07/2026 14:00:00',
         status: 'Done',
@@ -3303,12 +3460,12 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-STK-04',
         stageName: 'SEND INDENT FOR MATERIAL TO BE PURCHASED',
         assignee: 'Amanat Bharadwaj',
-        how: 'GOOGLE FORM INDENT TO PO',
+        how: 'IN-APP REQUISITION ENTRY',
         plannedDateTime: '10/07/2026 16:35:00',
         actualDateTime: '10/07/2026 15:20:00',
         status: 'Done',
         timeDelayHours: 0,
-        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLScYfRmZ4-SDR0DH5l680-0CK0Y0P5l8xAJVb6SWG9ALdAZDyQ/viewform'
+        formResponseRef: undefined,
       },
       {
         stageId: 'STG-STK-05',
@@ -3325,10 +3482,10 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-STK-06',
         stageName: 'DISPATCH MATERIAL AVAILABLE',
         assignee: 'Amanat Bharadwaj',
-        how: 'GOOGLE FORM STOCK TO DISPATCH',
+        how: 'IN-APP DISPATCH VOUCHER',
         plannedDateTime: '11/07/2026 03:25:00',
         status: 'In Progress',
-        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSdFWVguqGvgz3tiyjeKnlLxVsblra7MwaQQ36OLz9fRgCLC6A/viewform'
+        formResponseRef: undefined,
       }
     ]
   },
@@ -3388,8 +3545,8 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-PAY-04',
         stageName: 'BENEFICIARY APPROVAL FORM',
         assignee: 'Byamkesh Kaiwartya',
-        how: 'GOOGLE FORM',
-        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSfQBM1AEyn_ZDxlUOO3nzBSKZlgEedLNNKNOy8ViF2le6MJxA/viewform',
+        how: 'IN-APP FORM',
+        formResponseRef: undefined,
         status: 'Skipped',
         notes: 'Skipped: Account already verified in internet banking'
       },
@@ -3413,12 +3570,12 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-PAY-07',
         stageName: 'PAYMENT APPROVAL FORM',
         assignee: 'Shyam Rao Sureshe',
-        how: 'GOOGLE FORM',
+        how: 'IN-APP FORM',
         plannedDateTime: '26/06/2026 10:45:37',
         actualDateTime: '25/06/2026 17:46:38',
         status: 'Done',
         timeDelayHours: 0,
-        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSdF41kXu3ZViSeY9u3Kk7I1O4xsfBOLFZHPo2rgh-64IjuMgQ/viewform'
+        formResponseRef: undefined,
       },
       {
         stageId: 'STG-PAY-08',
@@ -3454,7 +3611,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-PAY-11',
         stageName: 'PAYMENT APPROVAL FORM (UPI)',
         assignee: 'Khushboo Sahu',
-        how: 'GOOGLE FORM',
+        how: 'IN-APP FORM',
         status: 'Skipped',
         notes: 'Skipped: Paid via Bank Account route'
       },
@@ -3486,12 +3643,12 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-PAY-15',
         stageName: 'SEND PAYMENT DETAILS TO GET MATERIAL',
         assignee: 'Byamkesh Kaiwartya / Khushboo',
-        how: 'GOOGLE FORM',
+        how: 'IN-APP FORM',
         plannedDateTime: '27/06/2026 14:28:49',
         actualDateTime: '27/06/2026 13:29:02',
         status: 'Done',
         timeDelayHours: 0,
-        formResponseRef: 'https://forms.gle/o5PsEMYntAYXWZbJ8'
+        formResponseRef: undefined,
       }
     ]
   },
@@ -3547,8 +3704,8 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-PAY-04',
         stageName: 'BENEFICIARY APPROVAL FORM',
         assignee: 'Byamkesh Kaiwartya',
-        how: 'GOOGLE FORM',
-        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSfQBM1AEyn_ZDxlUOO3nzBSKZlgEedLNNKNOy8ViF2le6MJxA/viewform',
+        how: 'IN-APP FORM',
+        formResponseRef: undefined,
         plannedDateTime: '06/10/2026 14:30:00',
         status: 'Pending'
       },
@@ -3572,8 +3729,8 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-PAY-07',
         stageName: 'PAYMENT APPROVAL FORM',
         assignee: 'Shyam Rao Sureshe',
-        how: 'GOOGLE FORM',
-        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSdF41kXu3ZViSeY9u3Kk7I1O4xsfBOLFZHPo2rgh-64IjuMgQ/viewform',
+        how: 'IN-APP FORM',
+        formResponseRef: undefined,
         plannedDateTime: '06/10/2026 17:30:00',
         status: 'Pending'
       },
@@ -3605,8 +3762,8 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-PAY-11',
         stageName: 'PAYMENT APPROVAL FORM (UPI)',
         assignee: 'Khushboo Sahu',
-        how: 'GOOGLE FORM',
-        formResponseRef: 'https://docs.google.com/forms/d/e/1FAIpQLSf82paFNXOtDZHBEXR3aEddrOuGsvcdafFaoG_ZM9RFydNBHA/viewform',
+        how: 'IN-APP FORM',
+        formResponseRef: undefined,
         plannedDateTime: '07/10/2026 15:00:00',
         status: 'Pending'
       },
@@ -3638,10 +3795,147 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-PAY-15',
         stageName: 'SEND PAYMENT DETAILS TO GET MATERIAL',
         assignee: 'Byamkesh Kaiwartya / Khushboo',
-        how: 'GOOGLE FORM',
-        formResponseRef: 'https://forms.gle/o5PsEMYntAYXWZbJ8',
+        how: 'IN-APP FORM',
+        formResponseRef: undefined,
         plannedDateTime: '07/10/2026 17:30:00',
         status: 'Pending'
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-ben-20261010-001',
+    flowId: 'BPL/BEN/20261010-001',
+    flowType: 'BENEFICIARY_APPROVAL',
+    requisitionNumber: 'BEN/20261010-001',
+    indentNo: 'BPL/BEN/20261010-001',
+    indentDate: '10/10/2026',
+    siteName: 'SILADEHI',
+    priority: 'Urgent',
+    currentStageId: 'STG-BEN-03',
+    currentStageIndex: 2,
+    totalStages: 3,
+    status: 'In Progress',
+    createdAt: '10/10/2026 10:00:00',
+    updatedAt: '11/10/2026 15:30:00',
+    totalDelayHours: 0,
+    remarks: 'Disbursal payment to Barbrik Infra Pvt Ltd for Siladehi civil works.',
+    stages: [
+      {
+        stageId: 'STG-BEN-01',
+        stageName: 'BENEFICIARY DETAILS ENTRY',
+        assignee: 'Site Accountant',
+        how: 'IN-APP FORM',
+        status: 'Done',
+        plannedDateTime: '10/10/2026 10:00:00',
+        actualDateTime: '10/10/2026 10:45:00',
+        timeDelayHours: 0,
+        doerName: 'Site Accountant',
+        submittedData: {
+          beneficiaryName: 'Barbrik Infra Pvt Ltd',
+          accountNo: '987654321001',
+          ifscCode: 'SBIN0001234',
+          bankName: 'State Bank of India',
+          purpose: 'Siladehi Site Earthwork Advance Settlement',
+          chequeCopyUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=500'
+        }
+      },
+      {
+        stageId: 'STG-BEN-02',
+        stageName: 'ACCOUNTS APPROVAL',
+        assignee: 'Pranjal Agrawal / Accounts Head',
+        how: 'IN-APP APPROVAL',
+        status: 'Done',
+        plannedDateTime: '11/10/2026 14:00:00',
+        actualDateTime: '11/10/2026 15:30:00',
+        timeDelayHours: 0,
+        decisionValue: 'Yes',
+        doerName: 'Pranjal Agrawal',
+        submittedData: {
+          approvalStatus: 'Approved',
+          approvedAmount: 250000,
+          accountsRemarks: 'Approved for immediate RTGS disburse.'
+        }
+      },
+      {
+        stageId: 'STG-BEN-03',
+        stageName: 'UTR DISBURSEMENT & RELEASE',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'BANK ERP / IN-APP FORM',
+        status: 'In Progress',
+        plannedDateTime: '12/10/2026 11:00:00',
+        submittedData: {}
+      }
+    ]
+  },
+  {
+    id: 'fms-inst-ben-20261010-002',
+    flowId: 'BPL/BEN/20261010-002',
+    flowType: 'BENEFICIARY_APPROVAL',
+    requisitionNumber: 'BEN/20261010-002',
+    indentNo: 'BPL/BEN/20261010-002',
+    indentDate: '08/10/2026',
+    siteName: 'BIJETALA',
+    priority: 'Normal',
+    currentStageId: 'COMPLETED',
+    currentStageIndex: 3,
+    totalStages: 3,
+    status: 'Completed',
+    createdAt: '08/10/2026 09:00:00',
+    updatedAt: '10/10/2026 16:40:00',
+    totalDelayHours: 2.5,
+    remarks: 'Disbursal payment to Royal Build Tech Ltd.',
+    stages: [
+      {
+        stageId: 'STG-BEN-01',
+        stageName: 'BENEFICIARY DETAILS ENTRY',
+        assignee: 'Site Accountant',
+        how: 'IN-APP FORM',
+        status: 'Done',
+        plannedDateTime: '08/10/2026 09:00:00',
+        actualDateTime: '08/10/2026 11:30:00',
+        timeDelayHours: 2.5,
+        doerName: 'Site Accountant',
+        submittedData: {
+          beneficiaryName: 'Royal Build Tech Ltd',
+          accountNo: '456789012004',
+          ifscCode: 'HDFC0000456',
+          bankName: 'HDFC Bank',
+          purpose: 'Bijetala Plant Fabrication Work',
+          chequeCopyUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=500'
+        }
+      },
+      {
+        stageId: 'STG-BEN-02',
+        stageName: 'ACCOUNTS APPROVAL',
+        assignee: 'Pranjal Agrawal / Accounts Head',
+        how: 'IN-APP APPROVAL',
+        status: 'Done',
+        plannedDateTime: '09/10/2026 12:00:00',
+        actualDateTime: '09/10/2026 13:15:00',
+        timeDelayHours: 0,
+        decisionValue: 'Yes',
+        doerName: 'Pranjal Agrawal',
+        submittedData: {
+          approvalStatus: 'Approved',
+          approvedAmount: 120000,
+          accountsRemarks: 'Verified and cleared.'
+        }
+      },
+      {
+        stageId: 'STG-BEN-03',
+        stageName: 'UTR DISBURSEMENT & RELEASE',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'BANK ERP / IN-APP FORM',
+        status: 'Done',
+        plannedDateTime: '10/10/2026 16:00:00',
+        actualDateTime: '10/10/2026 16:40:00',
+        timeDelayHours: 0,
+        doerName: 'Shyam Rao Sureshe',
+        submittedData: {
+          utrNumber: 'UTR-98214',
+          disbursalDate: '10/10/2026',
+          paymentMode: 'RTGS'
+        }
       }
     ]
   },
@@ -3688,7 +3982,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-03',
         stageName: 'RETURN OF DEGRADED MATERIAL FORM',
         assignee: 'Shyam Rao Sureshe',
-        how: 'GOOGLE FORM',
+        how: 'IN-APP FORM',
         status: 'Skipped',
         notes: 'Not applicable (No degraded material to return)'
       },
@@ -3755,13 +4049,13 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-10',
         stageName: 'ADVANCE PAYMENT DECISION',
         assignee: 'Shyam Rao Sureshe',
-        how: 'GOOGLE FORM',
+        how: 'IN-APP FORM',
         plannedDateTime: '16/06/2026 11:30:00',
         actualDateTime: '16/06/2026 10:12:28',
         status: 'Done',
         decisionValue: 'Yes',
         timeDelayHours: 0,
-        formResponseRef: 'https://forms.gle/YzQWAkQDPKeeBkLe6'
+        formResponseRef: undefined,
       },
       {
         stageId: 'STG-11',
@@ -3777,10 +4071,10 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-12',
         stageName: 'MATERIAL COLLECTION PO',
         assignee: 'Shyam Rao Sureshe',
-        how: 'GOOGLE FORM',
+        how: 'IN-APP FORM',
         plannedDateTime: '16/06/2026 12:30:00',
         status: 'In Progress',
-        formResponseRef: 'https://forms.gle/o5PsEMYntAYXWZbJ8'
+        formResponseRef: undefined,
       }
     ]
   },
@@ -3827,7 +4121,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         stageId: 'STG-03',
         stageName: 'RETURN OF DEGRADED MATERIAL FORM',
         assignee: 'Shyam Rao Sureshe',
-        how: 'GOOGLE FORM',
+        how: 'IN-APP FORM',
         plannedDateTime: '01/10/2026 12:30:00',
         actualDateTime: '01/10/2026 13:45:00',
         status: 'Done',
@@ -4486,6 +4780,13 @@ export const INITIAL_INVENTORY_MOVEMENTS: InventoryMovement[] = [
 export const DEFAULT_REGISTRY_CONFIG: CentralRegistryConfig = {
   organizationName: 'BarBrik Construction & Engineering',
   activeDataSource: 'HYBRID_TRANSITION',
+  workShiftConfig: {
+    shiftStartTime: '09:30',
+    shiftEndTime: '18:30',
+    lunchStartTime: '13:30',
+    lunchEndTime: '14:30',
+    workingDays: [1, 2, 3, 4, 5, 6], // Monday to Saturday (Sunday weekly off)
+  },
   sheetsConfig: {
     fmsSpreadsheetId: '1eB8x9Q_fms_central_indent_v2',
     fmsSheetTabId: 'FMS_INDENT_RECIEVE',
@@ -4497,16 +4798,24 @@ export const DEFAULT_REGISTRY_CONFIG: CentralRegistryConfig = {
     inventorySheetTabId: 'IMS_STOCK_MASTER'
   },
   formsConfig: {
-    returnOfDegradedMaterialFormUrl: 'https://forms.gle/degraded-material-sample',
-    advancePaymentApprovalFormUrl: 'https://forms.gle/YzQWAkQDPKeeBkLe6',
-    materialCollectionPoFormUrl: 'https://forms.gle/o5PsEMYntAYXWZbJ8',
-    generalIndentFormUrl: 'https://forms.gle/indent-requisition-form'
+    returnOfDegradedMaterialFormUrl: '',
+    advancePaymentApprovalFormUrl: '',
+    materialCollectionPoFormUrl: '',
+    generalIndentFormUrl: '',
   },
   driveConfig: {
     sharedDriveId: '0ABrBk_Shared_Org_Drive_Root',
     billsAndInvoicesFolderId: '1Fdr_Bills_Invoices_Archive',
     purchaseOrdersFolderId: '1Fdr_Approved_PO_PDFs',
     evidencePhotosFolderId: '1Fdr_Checklist_Site_Photos'
+  },
+  notificationSettings: {
+    webhookUrl: '',
+    enableDesktopPush: true,
+    enableSlaBreachAlerts: true,
+    enableDelegationAlerts: true,
+    enableStockAlerts: true,
+    enableFmsAlerts: true,
   },
   databaseSchemaReady: true
 };
@@ -4517,7 +4826,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     templateKey: 'INDENT_PURCHASE',
     name: 'Indent to Purchase Order Workflow',
     departmentHub: 'PURCHASE',
-    referenceLabel: 'Indent No. / Requisition Ref',
+    referenceLabel: 'BPL/IND/',
     defaultPriority: 'Normal',
     description: '12-stage requisition, RFQ quotation, approval & PO generation process.',
     createdAt: '01/10/2026',
@@ -4536,7 +4845,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     templateKey: 'CHECK_STOCK',
     name: 'Stock Check & Requisition Workflow',
     departmentHub: 'STORE',
-    referenceLabel: 'Requisition No. / Indent Ref',
+    referenceLabel: 'BPL/STK/',
     defaultPriority: 'Normal',
     description: '6-stage site store inventory verification, stock availability check, and material requisition.',
     createdAt: '01/10/2026',
@@ -4555,7 +4864,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     templateKey: 'PO_TO_PAYMENT',
     name: 'PO to Payment Disbursement Workflow',
     departmentHub: 'ACCOUNTS',
-    referenceLabel: 'PO Number / Voucher No.',
+    referenceLabel: 'BPL/PO/',
     defaultPriority: 'Normal',
     description: '14-stage accounts voucher creation, multi-level verification, bank account/UPI payment route.',
     createdAt: '01/10/2026',
@@ -4574,7 +4883,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     templateKey: 'PURCHASE_TO_STORE_DISPATCH',
     name: 'Purchase Vendor to Central Store Dispatch',
     departmentHub: 'STORE',
-    referenceLabel: 'PO / Lorry Receipt (LR) No.',
+    referenceLabel: 'BPL/PTS/',
     defaultPriority: 'Normal',
     description: '10-stage vendor dispatch tracking, LR verification, gate entry & warehouse intake.',
     createdAt: '01/10/2026',
@@ -4593,7 +4902,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     templateKey: 'STORE_TO_SITE_DISPATCH',
     name: 'Central Store to Site Material Issue',
     departmentHub: 'STORE',
-    referenceLabel: 'Store Issue Voucher (SIV)',
+    referenceLabel: 'BPL/SIV/',
     defaultPriority: 'Normal',
     description: '8-stage central warehouse issue voucher, loading, transit & site store gate receipt.',
     createdAt: '01/10/2026',
@@ -4612,7 +4921,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     templateKey: 'SITE_RECEIVE',
     name: 'Site Material Receive (MRN) Workflow',
     departmentHub: 'STORE',
-    referenceLabel: 'MRN / Delivery Challan',
+    referenceLabel: 'BPL/MRN/',
     defaultPriority: 'Normal',
     description: '8-stage material receipt note (MRN), physical inspection, quality check & store register entry.',
     createdAt: '01/10/2026',
@@ -4631,7 +4940,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     templateKey: 'PAYMENT_TO_DISPATCH',
     name: 'Vendor Payment to Dispatch Clearance',
     departmentHub: 'PURCHASE',
-    referenceLabel: 'PO Number / Payment Ref',
+    referenceLabel: 'BPL/PAY/',
     defaultPriority: 'Normal',
     description: '7-stage payment confirmation, vendor dispatch advice, lorry receipt collection & clearance.',
     createdAt: '01/10/2026',
@@ -4650,7 +4959,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     templateKey: 'ACCOUNTS_INVOICE_COLLECTION',
     name: 'Accounts Invoice Collection Workflow',
     departmentHub: 'ACCOUNTS',
-    referenceLabel: 'Invoice / PO Reference',
+    referenceLabel: 'BPL/INV/',
     defaultPriority: 'Normal',
     description: '6-stage tax invoice collection, GSTR 2B reconciliation, 3-way matching & accounts posting.',
     createdAt: '01/10/2026',
@@ -4669,7 +4978,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     templateKey: 'HR_ATTENDANCE_PAYMENT',
     name: 'Labour Attendance & Payment Workflow',
     departmentHub: 'PLANT_OPS',
-    referenceLabel: 'Attendance Cycle Ref',
+    referenceLabel: 'BPL/ATT/',
     defaultPriority: 'Normal',
     description: '9-stage daily site labour muster roll, wage calculation, site engineer approval & payout.',
     createdAt: '01/10/2026',
@@ -4688,7 +4997,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     templateKey: 'BREAKDOWN_REPORTING',
     name: 'Machine Breakdown & Repair Workflow',
     departmentHub: 'PLANT_OPS',
-    referenceLabel: 'Machine ID / Breakdown Ref',
+    referenceLabel: 'BPL/MAC/',
     defaultPriority: 'Urgent',
     description: '13-stage plant machinery breakdown alert, mechanic assignment, spares indent, repair & job card.',
     createdAt: '01/10/2026',
@@ -4707,7 +5016,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     templateKey: 'EQUIPMENT_PART_REPAIR',
     name: 'Equipment Part Repair Workflow',
     departmentHub: 'PLANT_OPS',
-    referenceLabel: 'Part Serial No.',
+    referenceLabel: 'BPL/PRT/',
     defaultPriority: 'Normal',
     description: '18-stage heavy equipment component overhaul, workshop dispatch, quotation, repair & testing.',
     createdAt: '01/10/2026',
@@ -4726,7 +5035,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     templateKey: 'DPR_REPORTING',
     name: 'Daily Progress Report (DPR) Workflow',
     departmentHub: 'OPERATIONS',
-    referenceLabel: 'DPR Sheet Date/Code',
+    referenceLabel: 'BPL/DPR/',
     defaultPriority: 'Normal',
     description: '6-stage site engineer daily execution log, machinery hours, material usage & project manager sign-off.',
     createdAt: '01/10/2026',

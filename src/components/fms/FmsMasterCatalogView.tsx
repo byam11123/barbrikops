@@ -21,21 +21,27 @@ import {
   Building2, 
   ExternalLink,
   ShieldCheck,
-  CheckCircle2
+  CheckCircle2,
+  FileSpreadsheet
 } from 'lucide-react';
-import { FmsTemplateDefinition } from '../../types';
+import { FmsTemplateDefinition, UserProfile, isUserSuperAdmin } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { getDepartmentBranchLabel } from '../../services/stageAssignment';
+import { downloadFmsExcelTemplate } from '../../services/fmsExcelService';
 
 interface FmsMasterCatalogViewProps {
+  currentUser?: UserProfile;
   onOpenTemplateStudio?: (templateKey?: string) => void;
   onCreateFlow?: (flowType?: string) => void;
 }
 
 export const FmsMasterCatalogView: React.FC<FmsMasterCatalogViewProps> = ({
+  currentUser,
   onOpenTemplateStudio,
   onCreateFlow,
 }) => {
+  const activeUser = currentUser || storageAdapter.getAuthUser();
+  const isSuperAdmin = isUserSuperAdmin(activeUser);
   const [templates, setTemplates] = useState<FmsTemplateDefinition[]>(() => storageAdapter.getAllMasterTemplates());
   const [searchQuery, setSearchQuery] = useState('');
   const [deptFilter, setDeptFilter] = useState<string>('ALL');
@@ -53,9 +59,9 @@ export const FmsMasterCatalogView: React.FC<FmsMasterCatalogViewProps> = ({
   };
 
   const handleDelete = (tpl: FmsTemplateDefinition) => {
-    storageAdapter.deleteFmsTemplate(tpl.id);
+    storageAdapter.deleteFmsTemplate(tpl.id, activeUser || undefined);
     if (tpl.templateKey) {
-      storageAdapter.deleteFmsTemplate(tpl.templateKey);
+      storageAdapter.deleteFmsTemplate(tpl.templateKey, activeUser || undefined);
     }
     setConfirmDeleteId(null);
     refreshTemplates();
@@ -137,16 +143,27 @@ export const FmsMasterCatalogView: React.FC<FmsMasterCatalogViewProps> = ({
           </div>
         </div>
 
-        {onOpenTemplateStudio && (
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            onClick={() => onOpenTemplateStudio()}
-            className="flex items-center justify-center gap-2 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer shrink-0"
+            onClick={() => downloadFmsExcelTemplate()}
+            className="flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer"
+            title="Download blank Excel template to configure workflows offline"
           >
-            <Plus className="w-4 h-4" />
-            <span>Design Custom Workflow in Studio</span>
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Download Excel Template</span>
           </button>
-        )}
+          {onOpenTemplateStudio && (
+            <button
+              type="button"
+              onClick={() => onOpenTemplateStudio()}
+              className="flex items-center justify-center gap-2 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Design / Import in Studio</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filter & Search Controls */}
@@ -315,8 +332,8 @@ export const FmsMasterCatalogView: React.FC<FmsMasterCatalogViewProps> = ({
                               {tpl.isArchived ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
                             </button>
 
-                            {(tpl.isCustom || tpl.id.startsWith('template-') || tpl.templateKey.startsWith('CUSTOM_')) && (
-                              confirmDeleteId === tpl.id ? (
+                            {isSuperAdmin && (
+                              confirmDeleteId === tpl.id || confirmDeleteId === tpl.templateKey ? (
                                 <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-lg px-1.5 py-0.5">
                                   <span className="text-[10px] font-bold text-rose-700">Delete?</span>
                                   <button
@@ -337,9 +354,9 @@ export const FmsMasterCatalogView: React.FC<FmsMasterCatalogViewProps> = ({
                               ) : (
                                 <button
                                   type="button"
-                                  onClick={() => setConfirmDeleteId(tpl.id)}
+                                  onClick={() => setConfirmDeleteId(tpl.id || tpl.templateKey)}
                                   className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                                  title="Delete Custom Template"
+                                  title="Delete Workflow Template (Super Admin)"
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </button>

@@ -4,7 +4,7 @@ export type TaskStatus = 'Pending' | 'Completed' | 'Week Shifted' | 'In Progress
 
 export type Priority = 'Urgent' | 'Normal' | 'Low';
 
-export type UserRole = 'SUPER_ADMIN' | 'DEPT_ADMIN' | 'PROCESS_MANAGER' | 'OPERATIONAL_USER';
+export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'DEPT_ADMIN' | 'PROCESS_MANAGER' | 'OPERATIONAL_USER';
 
 export interface UserSession {
   sessionId: string;
@@ -20,7 +20,7 @@ export interface UserProfile {
   username?: string;
   password?: string;
   role: string; // e.g. "Store Manager" or "SUPER_ADMIN"
-  systemRole?: UserRole; // "SUPER_ADMIN" | "DEPT_ADMIN" | "PROCESS_MANAGER" | "OPERATIONAL_USER"
+  systemRole?: UserRole; // "SUPER_ADMIN" | "ADMIN" | "DEPT_ADMIN" | "PROCESS_MANAGER" | "OPERATIONAL_USER"
   departmentId: string;
   departmentName: string;
   departmentKeys?: string[];
@@ -65,7 +65,12 @@ export const SYSTEM_MODULES: ModuleDefinition[] = [
 
 export function isUserSuperAdmin(user?: UserProfile | null): boolean {
   if (!user) return false;
-  return user.systemRole === 'SUPER_ADMIN' || user.role === 'SUPER_ADMIN' || user.userId === 'USR-000';
+  return user.systemRole === 'SUPER_ADMIN' || user.role === 'SUPER_ADMIN' || user.role === 'Super Admin' || user.username === 'superadmin';
+}
+
+export function isUserAdminOrSuperAdmin(user?: UserProfile | null): boolean {
+  if (!user) return false;
+  return isUserSuperAdmin(user) || user.systemRole === 'ADMIN' || user.role === 'ADMIN' || user.userId === 'USR-000';
 }
 
 export function getUserModulePermission(
@@ -75,8 +80,8 @@ export function getUserModulePermission(
   if (!user) {
     return { visible: false, canEdit: false, canDelete: false };
   }
-  // Super Admin always holds full unrestricted access
-  if (isUserSuperAdmin(user)) {
+  // Super Admin & Admin hold full unrestricted access to modules
+  if (isUserAdminOrSuperAdmin(user)) {
     return { visible: true, canEdit: true, canDelete: true };
   }
   // If specific permissions have been configured for this user, use them
@@ -328,7 +333,11 @@ export interface FmsInstance {
   currentStageId: string;
   currentStageIndex: number;
   totalStages: number;
-  status: 'In Progress' | 'Completed' | 'On Hold' | 'Cancelled';
+  status: 'In Progress' | 'Completed' | 'On Hold' | 'Cancelled' | 'CLOSED';
+  isClosed?: boolean;
+  closedAt?: string;
+  closedBy?: string;
+  closureRemark?: string;
   createdAt: string;
   updatedAt: string;
   stages: FmsStageExecution[];
@@ -394,9 +403,31 @@ export interface InventoryMovement {
 }
 
 // Registry Design (Central registry for stable mapping to Google Sheets & Cloud DB)
+export interface NotificationSettings {
+  webhookUrl?: string; // Configurable Webhook URL (Slack, Microsoft Teams, Zapier, Custom HTTP)
+  enableDesktopPush: boolean;
+  enableSlaBreachAlerts: boolean;
+  enableDelegationAlerts: boolean;
+  enableStockAlerts: boolean;
+  enableFmsAlerts: boolean;
+}
+
+export interface WorkShiftConfig {
+  shiftStartTime: string; // e.g. "09:30"
+  shiftEndTime: string;   // e.g. "18:30"
+  lunchStartTime: string; // e.g. "13:30"
+  lunchEndTime: string;   // e.g. "14:30"
+  workingDays: number[];  // [1, 2, 3, 4, 5, 6] (1=Mon, ..., 6=Sat; 0=Sun)
+  timezone?: string;
+}
+
 export interface CentralRegistryConfig {
   organizationName: string;
   activeDataSource: 'GOOGLE_SHEETS' | 'POSTGRES_SUPABASE' | 'HYBRID_TRANSITION';
+  masterSites?: string[];
+  masterVendors?: string[];
+  masterPriorities?: string[];
+  workShiftConfig?: WorkShiftConfig;
   sheetsConfig: {
     fmsSpreadsheetId: string;
     fmsSheetTabId: string;
@@ -419,6 +450,7 @@ export interface CentralRegistryConfig {
     purchaseOrdersFolderId: string;
     evidencePhotosFolderId: string;
   };
+  notificationSettings?: NotificationSettings;
   databaseSchemaReady: boolean;
 }
 
@@ -429,8 +461,25 @@ export interface AuditLogEntry {
   userId: string;
   userName: string;
   module: 'FMS' | 'DELEGATION' | 'CHECKLIST' | 'IMS' | 'REGISTRY';
-  action: 'CREATE' | 'UPDATE' | 'STAGE_ADVANCE' | 'REVISE_DATE' | 'STATUS_CHANGE' | 'STOCK_MOVEMENT';
+  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'STAGE_ADVANCE' | 'REVISE_DATE' | 'STATUS_CHANGE' | 'STOCK_MOVEMENT';
   entityId: string;
   details: string;
   changes?: Record<string, { from: any; to: any }>;
+}
+
+// In-App Notification Center
+export interface AppNotification {
+  id: string;
+  userId: string; // Target user or 'ALL'
+  targetUserName?: string;
+  senderName?: string;
+  urgency?: 'HIGH' | 'MEDIUM' | 'LOW';
+  title: string;
+  message: string;
+  type: 'FMS_ACTION_REQUIRED' | 'STAGE_ADVANCED' | 'SLA_BREACH' | 'NUDGE' | 'DELEGATION' | 'STOCK_ALERT' | 'SYSTEM';
+  timestamp: string;
+  read: boolean;
+  linkTab?: string;
+  linkEntityId?: string;
+  data?: Record<string, any>;
 }

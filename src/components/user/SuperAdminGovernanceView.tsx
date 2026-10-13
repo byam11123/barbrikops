@@ -26,7 +26,8 @@ import {
   Users,
   Eye,
   EyeOff,
-  Layers
+  Layers,
+  X
 } from 'lucide-react';
 import { 
   UserProfile, 
@@ -62,7 +63,7 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
 
   // Permissions Matrix State
   const [selectedStaffForPermissions, setSelectedStaffForPermissions] = useState<string>(
-    usersList.find((u) => u.systemRole !== 'SUPER_ADMIN')?.userId || usersList[0]?.userId || ''
+    usersList.find((u) => !isUserSuperAdmin(u))?.userId || usersList[0]?.userId || ''
   );
   const [permissionSuccessMsg, setPermissionSuccessMsg] = useState<string | null>(null);
 
@@ -76,6 +77,25 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
   const [newUserPhone, setNewUserPhone] = useState('');
   const [newUserSite, setNewUserSite] = useState('Siladehi Site');
 
+  // Password Reset Modal State
+  const [passwordResetUser, setPasswordResetUser] = useState<UserProfile | null>(null);
+  const [newPasswordValue, setNewPasswordValue] = useState('');
+  const [newPinValue, setNewPinValue] = useState('');
+  const [showPasswordText, setShowPasswordText] = useState(false);
+  const [passwordResetCopied, setPasswordResetCopied] = useState(false);
+  const [passwordResetSuccessMsg, setPasswordResetSuccessMsg] = useState<string | null>(null);
+
+  // Role Manager Modal State
+  const [roleManagerUser, setRoleManagerUser] = useState<UserProfile | null>(null);
+  const [editSystemRole, setEditSystemRole] = useState<UserRole>('OPERATIONAL_USER');
+  const [editFunctionalRole, setEditFunctionalRole] = useState('');
+  const [editDepartmentId, setEditDepartmentId] = useState('');
+  const [editDepartmentName, setEditDepartmentName] = useState('');
+  const [editSiteLocation, setEditSiteLocation] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [roleManagerSuccessMsg, setRoleManagerSuccessMsg] = useState<string | null>(null);
+
   // Emergency Re-assignment State
   const [selectedAbsentUser, setSelectedAbsentUser] = useState<string>('');
   const [selectedReliefUser, setSelectedReliefUser] = useState<string>('');
@@ -87,6 +107,80 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
   const [noticeCategory, setNoticeCategory] = useState<NoticeBoardItem['category']>('URGENT');
   const [noticeContent, setNoticeContent] = useState('');
   const [noticeIsPinned, setNoticeIsPinned] = useState(true);
+
+  // Password Reset Handlers
+  const handleOpenPasswordReset = (user: UserProfile) => {
+    setPasswordResetUser(user);
+    setNewPasswordValue(user.password || 'pass123');
+    setNewPinValue(user.approvalPin || '1234');
+    setShowPasswordText(false);
+    setPasswordResetCopied(false);
+    setPasswordResetSuccessMsg(null);
+  };
+
+  const handleSavePasswordReset = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordResetUser || !newPasswordValue.trim()) return;
+
+    const updated = usersList.map((u) => {
+      if (u.userId === passwordResetUser.userId) {
+        return {
+          ...u,
+          password: newPasswordValue.trim(),
+          approvalPin: newPinValue.trim() || '1234',
+        };
+      }
+      return u;
+    });
+
+    onUpdateUsersList(updated);
+    setPasswordResetSuccessMsg(`Password & PIN updated for ${passwordResetUser.name}!`);
+    setTimeout(() => {
+      setPasswordResetSuccessMsg(null);
+      setPasswordResetUser(null);
+    }, 1500);
+  };
+
+  // Role Manager Handlers
+  const handleOpenRoleManager = (user: UserProfile) => {
+    setRoleManagerUser(user);
+    setEditSystemRole(user.systemRole || 'OPERATIONAL_USER');
+    setEditFunctionalRole(user.role || 'Staff Member');
+    setEditDepartmentId(user.departmentId || 'DEPT-STORE');
+    setEditDepartmentName(user.departmentName || 'Central Operations');
+    setEditSiteLocation(user.siteLocation || 'Siladehi Site');
+    setEditPhone(user.phone || '');
+    setEditEmail(user.email || '');
+    setRoleManagerSuccessMsg(null);
+  };
+
+  const handleSaveRoleManager = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!roleManagerUser) return;
+
+    const updated = usersList.map((u) => {
+      if (u.userId === roleManagerUser.userId) {
+        return {
+          ...u,
+          systemRole: editSystemRole,
+          role: editFunctionalRole.trim() || u.role,
+          departmentId: editDepartmentId,
+          departmentName: editDepartmentName,
+          siteLocation: editSiteLocation.trim() || u.siteLocation,
+          phone: editPhone.trim() || u.phone,
+          email: editEmail.trim() || u.email,
+        };
+      }
+      return u;
+    });
+
+    onUpdateUsersList(updated);
+    setRoleManagerSuccessMsg(`System Role & Details updated for ${roleManagerUser.name}!`);
+    setTimeout(() => {
+      setRoleManagerSuccessMsg(null);
+      setRoleManagerUser(null);
+    }, 1500);
+  };
 
   const filteredUsers = usersList.filter(
     (u) =>
@@ -419,6 +513,7 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                         <option value="OPERATIONAL_USER">OPERATIONAL_USER (Staff)</option>
                         <option value="PROCESS_MANAGER">PROCESS_MANAGER (Approval HOD)</option>
                         <option value="DEPT_ADMIN">DEPT_ADMIN (Store/Purchase Manager)</option>
+                        <option value="ADMIN">ADMIN (Daily Operational Administrator)</option>
                         <option value="SUPER_ADMIN">SUPER_ADMIN (Master Control)</option>
                       </select>
                     </div>
@@ -498,6 +593,8 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                               <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase ${
                                 user.systemRole === 'SUPER_ADMIN'
                                   ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                  : user.systemRole === 'ADMIN'
+                                  ? 'bg-indigo-100 text-indigo-900 border border-indigo-300'
                                   : user.systemRole === 'DEPT_ADMIN'
                                   ? 'bg-blue-100 text-blue-900 border border-blue-200'
                                   : user.systemRole === 'PROCESS_MANAGER'
@@ -518,39 +615,63 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                               </span>
                             </td>
 
-                            <td className="p-3 pr-4 text-right space-x-1.5 whitespace-nowrap">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedStaffForPermissions(user.userId);
-                                  setActiveTab('PERMISSIONS');
-                                }}
-                                className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold rounded-lg border border-amber-300 cursor-pointer text-[11px]"
-                                title="Configure Module Visibility, Edit and Delete Permissions"
-                              >
-                                Permissions
-                              </button>
+                            <td className="p-3 pr-4 text-right whitespace-nowrap">
+                              <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenPasswordReset(user)}
+                                  className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-lg border border-slate-300 cursor-pointer text-[11px] flex items-center gap-1"
+                                  title="Reset User Password & Security PIN"
+                                >
+                                  <KeyRound className="w-3 h-3 text-slate-600" />
+                                  <span>Password</span>
+                                </button>
 
-                              <button
-                                type="button"
-                                onClick={() => onImpersonateUser(user)}
-                                className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 cursor-pointer text-[11px]"
-                                title="Login As This User (Session Impersonation)"
-                              >
-                                View As
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenRoleManager(user)}
+                                  className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold rounded-lg border border-indigo-300 cursor-pointer text-[11px] flex items-center gap-1"
+                                  title="Manage System Role, Department & Job Title"
+                                >
+                                  <Edit3 className="w-3 h-3 text-indigo-600" />
+                                  <span>Role</span>
+                                </button>
 
-                              <button
-                                type="button"
-                                onClick={() => handleToggleUserStatus(user.userId)}
-                                className={`px-2.5 py-1 font-bold rounded-lg border cursor-pointer text-[11px] ${
-                                  isInactive
-                                    ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
-                                    : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
-                                }`}
-                              >
-                                {isInactive ? 'Re-activate' : 'Deactivate'}
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedStaffForPermissions(user.userId);
+                                    setActiveTab('PERMISSIONS');
+                                  }}
+                                  className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold rounded-lg border border-amber-300 cursor-pointer text-[11px] flex items-center gap-1"
+                                  title="Configure Module Visibility, Edit and Delete Permissions"
+                                >
+                                  <Sliders className="w-3 h-3 text-amber-700" />
+                                  <span>Permissions</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => onImpersonateUser(user)}
+                                  className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-lg border border-blue-200 cursor-pointer text-[11px] flex items-center gap-1"
+                                  title="Login As This User (Session Impersonation)"
+                                >
+                                  <Eye className="w-3 h-3 text-blue-600" />
+                                  <span>View As</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleUserStatus(user.userId)}
+                                  className={`px-2 py-1 font-bold rounded-lg border cursor-pointer text-[11px] ${
+                                    isInactive
+                                      ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                                      : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
+                                  }`}
+                                >
+                                  {isInactive ? 'Re-activate' : 'Deactivate'}
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -612,6 +733,8 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                           <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase ${
                             selectedStaffObj.systemRole === 'SUPER_ADMIN'
                               ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                              : selectedStaffObj.systemRole === 'ADMIN'
+                              ? 'bg-indigo-100 text-indigo-900 border border-indigo-300'
                               : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
                           }`}>
                             {selectedStaffObj.systemRole || 'STAFF'}
@@ -1035,6 +1158,286 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
         </div>
 
       </div>
+
+      {/* MODAL: Password Reset */}
+      {passwordResetUser && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-amber-500/20 text-amber-400 rounded-lg">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm">Reset Password &amp; Security Credentials</h3>
+                  <p className="text-[11px] text-slate-400">User: {passwordResetUser.name} ({passwordResetUser.username})</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPasswordResetUser(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePasswordReset} className="p-5 space-y-4">
+              {passwordResetSuccessMsg && (
+                <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{passwordResetSuccessMsg}</span>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    New Web Password *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPasswordText ? "text" : "password"}
+                      value={newPasswordValue}
+                      onChange={(e) => setNewPasswordValue(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 pr-10 text-sm font-mono font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-amber-500 outline-none"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordText(!showPasswordText)}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showPasswordText ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const randomPass = 'pass' + Math.floor(1000 + Math.random() * 9000);
+                        setNewPasswordValue(randomPass);
+                      }}
+                      className="text-[10px] font-bold text-indigo-600 hover:underline cursor-pointer"
+                    >
+                      Auto-generate random password
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    Approval 4-Digit Security PIN *
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={4}
+                    value={newPinValue}
+                    onChange={(e) => setNewPinValue(e.target.value.replace(/\D/g, ''))}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-mono font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-amber-500 outline-none"
+                    placeholder="1234"
+                    required
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Used for authorising stage transitions &amp; approvals in FMS/IMS.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  Copy credentials to clipboard to share directly with staff member:
+                  <div className="mt-1 font-mono font-bold text-[10px] bg-white p-1.5 rounded border border-amber-300 select-all flex items-center justify-between">
+                    <span>User: {passwordResetUser.username} | Pass: {newPasswordValue} | PIN: {newPinValue}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`User: ${passwordResetUser.username}\nPass: ${newPasswordValue}\nPIN: ${newPinValue}`);
+                        setPasswordResetCopied(true);
+                        setTimeout(() => setPasswordResetCopied(false), 2000);
+                      }}
+                      className="ml-2 text-amber-800 hover:text-amber-950 underline cursor-pointer shrink-0 font-sans"
+                    >
+                      {passwordResetCopied ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setPasswordResetUser(null)}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Save New Password</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Role & Access Manager */}
+      {roleManagerUser && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-indigo-950 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-indigo-500/20 text-indigo-300 rounded-lg">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm">Role &amp; System Access Manager</h3>
+                  <p className="text-[11px] text-indigo-200">Staff: {roleManagerUser.name} ({roleManagerUser.userId})</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRoleManagerUser(null)}
+                className="text-indigo-300 hover:text-white p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveRoleManager} className="p-5 space-y-4">
+              {roleManagerSuccessMsg && (
+                <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{roleManagerSuccessMsg}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    System Level Authorization *
+                  </label>
+                  <select
+                    value={editSystemRole}
+                    onChange={(e) => setEditSystemRole(e.target.value as UserRole)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 cursor-pointer focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    <option value="OPERATIONAL_USER">OPERATIONAL_USER (Field &amp; Site Staff)</option>
+                    <option value="PROCESS_MANAGER">PROCESS_MANAGER (Process Coordinators &amp; Approvers)</option>
+                    <option value="DEPT_ADMIN">DEPT_ADMIN (Department Head)</option>
+                    <option value="ADMIN">ADMIN (Operational Administrator)</option>
+                    <option value="SUPER_ADMIN">SUPER_ADMIN (Full Governance)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    Designation / Job Title *
+                  </label>
+                  <input
+                    type="text"
+                    value={editFunctionalRole}
+                    onChange={(e) => setEditFunctionalRole(e.target.value)}
+                    placeholder="e.g. Site Manager, Store Keeper"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    Department *
+                  </label>
+                  <select
+                    value={editDepartmentId}
+                    onChange={(e) => {
+                      const deptId = e.target.value;
+                      setEditDepartmentId(deptId);
+                      const deptMap: Record<string, string> = {
+                        'DEPT-STORE': 'Central Operations / Store',
+                        'DEPT-FMS': 'Flow Management (FMS)',
+                        'DEPT-CHECKLIST': 'Checklists & Audit',
+                        'DEPT-DELEGATION': 'Task Delegation',
+                        'DEPT-MIS': 'MIS & Accounts',
+                      };
+                      setEditDepartmentName(deptMap[deptId] || 'Central Operations');
+                    }}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 cursor-pointer focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    <option value="DEPT-STORE">Central Store &amp; Inventory (IMS)</option>
+                    <option value="DEPT-FMS">Flow Management System (FMS)</option>
+                    <option value="DEPT-CHECKLIST">Checklist Management</option>
+                    <option value="DEPT-DELEGATION">Delegation &amp; Tasks</option>
+                    <option value="DEPT-MIS">Management Info System (MIS)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    Site Location *
+                  </label>
+                  <input
+                    type="text"
+                    value={editSiteLocation}
+                    onChange={(e) => setEditSiteLocation(e.target.value)}
+                    placeholder="e.g. Siladehi Site"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    WhatsApp Mobile
+                  </label>
+                  <input
+                    type="text"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    placeholder="e.g. 9827100000"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    Official Email
+                  </label>
+                  <input
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    placeholder="user@barbrik.in"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setRoleManagerUser(null)}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Update Role &amp; Permissions</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

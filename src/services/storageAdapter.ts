@@ -12,7 +12,8 @@ import {
   FmsTemplateDefinition,
   DepartmentDefinition,
   UserProfile,
-  NoticeBoardItem
+  NoticeBoardItem,
+  AppNotification
 } from '../types';
 
 export const INITIAL_DEPARTMENTS: DepartmentDefinition[] = [
@@ -71,7 +72,8 @@ import {
   DEFAULT_REGISTRY_CONFIG,
   SYSTEM_BUILTIN_TEMPLATES,
   USERS,
-  INITIAL_NOTICE_BOARD
+  INITIAL_NOTICE_BOARD,
+  INITIAL_NOTIFICATIONS
 } from '../data/initialData';
 
 // Zod schemas for input validation
@@ -148,6 +150,9 @@ const RAW_STORAGE_KEYS = {
   USERS: 'barbrik_ops_users_v1',
   NOTICE_BOARD: 'barbrik_ops_notice_board_v1',
   AUTH_USER: 'barbrik_ops_auth_user_v1',
+  NOTIFICATIONS: 'barbrik_ops_notifications_v1',
+  DELETED_FLOWS: 'barbrik_ops_deleted_flow_ids_v1',
+  DELETED_TEMPLATES: 'barbrik_ops_deleted_template_keys_v1',
 };
 
 const STORAGE_KEYS = new Proxy(RAW_STORAGE_KEYS, {
@@ -838,29 +843,43 @@ class StorageAdapter {
     };
   }
 
+  public getDeletedFlowIds(): string[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.DELETED_FLOWS);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+
   public getFmsFlows(): FmsInstance[] {
     if (typeof window === 'undefined') return INITIAL_FMS_FLOWS.map((f) => this.normalizeFmsFlow(f));
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.FMS);
       const parsed: FmsInstance[] = raw ? JSON.parse(raw) : INITIAL_FMS_FLOWS;
+      const deletedIds = new Set(this.getDeletedFlowIds());
       
-      let allFlows = [...parsed];
-      // Ensure CHECK_STOCK flows are merged if not yet present
+      let allFlows = parsed.filter((f) => !deletedIds.has(f.id) && !deletedIds.has(f.flowId));
+      // Ensure CHECK_STOCK flows are merged if not yet present and not explicitly deleted
       const hasStockFlows = allFlows.some((f) => f.flowType === 'CHECK_STOCK');
       if (!hasStockFlows) {
-        allFlows = [...INITIAL_FMS_FLOWS.filter((f) => f.flowType === 'CHECK_STOCK'), ...allFlows];
+        const seedStock = INITIAL_FMS_FLOWS.filter((f) => f.flowType === 'CHECK_STOCK' && !deletedIds.has(f.id) && !deletedIds.has(f.flowId));
+        allFlows = [...seedStock, ...allFlows];
       }
 
-      // Ensure PO_TO_PAYMENT flows are merged if not yet present
+      // Ensure PO_TO_PAYMENT flows are merged if not yet present and not explicitly deleted
       const hasPaymentFlows = allFlows.some((f) => f.flowType === 'PO_TO_PAYMENT');
       if (!hasPaymentFlows) {
-        allFlows = [...allFlows, ...INITIAL_FMS_FLOWS.filter((f) => f.flowType === 'PO_TO_PAYMENT')];
+        const seedPayment = INITIAL_FMS_FLOWS.filter((f) => f.flowType === 'PO_TO_PAYMENT' && !deletedIds.has(f.id) && !deletedIds.has(f.flowId));
+        allFlows = [...allFlows, ...seedPayment];
       }
 
-      // Ensure PAYMENT_TO_DISPATCH flows are merged if not yet present
+      // Ensure PAYMENT_TO_DISPATCH flows are merged if not yet present and not explicitly deleted
       const hasDispatchFlows = allFlows.some((f) => f.flowType === 'PAYMENT_TO_DISPATCH');
       if (!hasDispatchFlows) {
-        allFlows = [...allFlows, ...INITIAL_FMS_FLOWS.filter((f) => f.flowType === 'PAYMENT_TO_DISPATCH')];
+        const seedDispatch = INITIAL_FMS_FLOWS.filter((f) => f.flowType === 'PAYMENT_TO_DISPATCH' && !deletedIds.has(f.id) && !deletedIds.has(f.flowId));
+        allFlows = [...allFlows, ...seedDispatch];
       }
 
       const normalized = allFlows.map((f) => this.normalizeFmsFlow(f));
@@ -878,6 +897,86 @@ class StorageAdapter {
     localStorage.setItem(STORAGE_KEYS.FMS, JSON.stringify(normalized));
     this.syncToFirestore('fmsFlows', normalized, 'flowId');
     this.notifyListeners();
+  }
+
+  public deleteFmsFlow(flowIdOrId: string, currentUser?: UserProfile) {
+    if (typeof window === 'undefined') return;
+    const existing = this.getFmsFlows();
+    const target = existing.find((f) => f.id === flowIdOrId || f.flowId === flowIdOrId);
+    const updated = existing.filter((f) => f.id !== flowIdOrId && f.flowId !== flowIdOrId);
+
+    // Track in deleted IDs to prevent baseline re-injection
+    const deletedIds = this.getDeletedFlowIds();
+    if (target) {
+      if (target.id && !deletedIds.includes(target.id)) deletedIds.push(target.id);
+      if (target.flowId && !deletedIds.includes(target.flowId)) deletedIds.push(target.flowId);
+    } else {
+      if (!deletedIds.includes(flowIdOrId)) deletedIds.push(flowIdOrId);
+    }
+    localStorage.setItem(STORAGE_KEYS.DELETED_FLOWS, JSON.stringify(deletedIds));
+
+    // Save remaining flows locally & trigger remote Firestore deletion
+    localStorage.setItem(STORAGE_KEYS.FMS, JSON.stringify(updated));
+    if (target) {
+      this.deleteFromFirestore('fmsFlows', target.flowId || target.id);
+    } else {
+      this.deleteFromFirestore('fmsFlows', flowIdOrId);
+    }
+    this.notifyListeners();
+
+    const userName = currentUser?.name || 'Super Administrator';
+    const userId = currentUser?.userId || 'SUPER_ADMIN';
+
+    this.logAudit({
+      userId,
+      userName,
+      module: 'FMS',
+      action: 'DELETE',
+      entityId: target?.flowId || flowIdOrId,
+      details: `Deleted FMS record #${target?.indentNo || flowIdOrId} (${target?.flowType || 'Workflow'}) for site ${target?.siteName || 'N/A'}`
+    });
+  }
+
+  public closeFmsInstance(flowIdOrId: string, closureRemark: string, currentUser?: UserProfile): FmsInstance | null {
+    if (typeof window === 'undefined') return null;
+    const existing = this.getFmsFlows();
+    let updatedFlow: FmsInstance | null = null;
+
+    const updated = existing.map((f) => {
+      if (f.id === flowIdOrId || f.flowId === flowIdOrId) {
+        const closedAtStr = new Date().toLocaleString('en-GB');
+        const closedByName = currentUser?.name || currentUser?.email || 'Super Administrator';
+        updatedFlow = {
+          ...f,
+          status: 'CLOSED',
+          isClosed: true,
+          closedAt: closedAtStr,
+          closedBy: closedByName,
+          closureRemark: closureRemark,
+          updatedAt: closedAtStr,
+        };
+        return updatedFlow;
+      }
+      return f;
+    });
+
+    if (!updatedFlow) return null;
+
+    this.saveFmsFlows(updated);
+
+    const userName = currentUser?.name || 'Super Administrator';
+    const userId = currentUser?.userId || 'SUPER_ADMIN';
+
+    this.logAudit({
+      userId,
+      userName,
+      module: 'FMS',
+      action: 'UPDATE',
+      entityId: (updatedFlow as FmsInstance).flowId || (updatedFlow as FmsInstance).id,
+      details: `Closed FMS record #${(updatedFlow as FmsInstance).indentNo} with verification remark: "${closureRemark}"`
+    });
+
+    return updatedFlow;
   }
 
   // Delegation Operations
@@ -977,6 +1076,131 @@ class StorageAdapter {
     });
   }
 
+  // Dynamic Master Registries (Sites, Vendors, Priorities)
+  public getMasterSites(): string[] {
+    const config = this.getRegistryConfig();
+    const defaults = ['SILADEHI', 'BIJETALA', 'RAIPUR OFFICE', 'CENTRAL STORE'];
+    if (config.masterSites && Array.isArray(config.masterSites) && config.masterSites.length > 0) {
+      const merged = Array.from(new Set([...defaults, ...config.masterSites]));
+      return merged;
+    }
+    return defaults;
+  }
+
+  public addMasterSite(siteName: string): string[] {
+    const clean = siteName.trim().toUpperCase();
+    if (!clean) return this.getMasterSites();
+    const config = this.getRegistryConfig();
+    const current = this.getMasterSites();
+    if (!current.includes(clean)) {
+      const updated = [...current, clean];
+      this.saveRegistryConfig({
+        ...config,
+        masterSites: updated,
+      });
+      return updated;
+    }
+    return current;
+  }
+
+  public getMasterVendors(): string[] {
+    const config = this.getRegistryConfig();
+    const defaults = [
+      'M/S ULTRA TECH CEMENT',
+      'M/S ASHARAM ELECTRICALS',
+      'M/S R D SONS',
+      'M/S PATEL TRADERS',
+      'M/S AMBUJA CEMENT LTD',
+      'M/S SHREE SHYAM ENTERPRISES',
+    ];
+    if (config.masterVendors && Array.isArray(config.masterVendors) && config.masterVendors.length > 0) {
+      const merged = Array.from(new Set([...defaults, ...config.masterVendors]));
+      return merged;
+    }
+    return defaults;
+  }
+
+  public addMasterVendor(vendorName: string): string[] {
+    const clean = vendorName.trim();
+    if (!clean) return this.getMasterVendors();
+    const config = this.getRegistryConfig();
+    const current = this.getMasterVendors();
+    if (!current.includes(clean)) {
+      const updated = [clean, ...current];
+      this.saveRegistryConfig({
+        ...config,
+        masterVendors: updated,
+      });
+      return updated;
+    }
+    return current;
+  }
+
+  public getMasterPriorities(): string[] {
+    const config = this.getRegistryConfig();
+    const defaults = ['Normal', 'Urgent', 'Low'];
+    if (config.masterPriorities && Array.isArray(config.masterPriorities) && config.masterPriorities.length > 0) {
+      const merged = Array.from(new Set([...defaults, ...config.masterPriorities]));
+      return merged;
+    }
+    return defaults;
+  }
+
+  public addMasterPriority(priorityName: string): string[] {
+    const clean = priorityName.trim();
+    if (!clean) return this.getMasterPriorities();
+    const config = this.getRegistryConfig();
+    const current = this.getMasterPriorities();
+    if (!current.includes(clean)) {
+      const updated = [...current, clean];
+      this.saveRegistryConfig({
+        ...config,
+        masterPriorities: updated,
+      });
+      return updated;
+    }
+    return current;
+  }
+
+  public addFieldOptionToTemplateStage(templateIdOrKey: string, stageId: string, fieldId: string, newOption: string) {
+    const cleanOpt = newOption.trim();
+    if (!cleanOpt) return;
+
+    const templates = this.getAllMasterTemplates();
+    const targetTpl = templates.find((t) => t.id === templateIdOrKey || t.templateKey === templateIdOrKey);
+    if (!targetTpl) return;
+
+    const updatedStages = targetTpl.stages.map((stg) => {
+      if (stg.stageId === stageId || stg.stageName === stageId) {
+        const updatedFields = (stg.fields || []).map((f) => {
+          if (f.id === fieldId || f.label === fieldId) {
+            const existingOpts = f.options || [];
+            if (!existingOpts.includes(cleanOpt)) {
+              return {
+                ...f,
+                options: [...existingOpts, cleanOpt],
+              };
+            }
+          }
+          return f;
+        });
+        return {
+          ...stg,
+          fields: updatedFields,
+        };
+      }
+      return stg;
+    });
+
+    const updatedTemplate = {
+      ...targetTpl,
+      stages: updatedStages,
+      updatedAt: new Date().toLocaleDateString('en-GB'),
+    };
+
+    this.saveFmsTemplate(updatedTemplate);
+  }
+
   // Dynamic FMS Templates Operations
   public getFmsTemplates(): FmsTemplateDefinition[] {
     if (typeof window === 'undefined') return [];
@@ -1005,13 +1229,28 @@ class StorageAdapter {
     }
   }
 
+  public getDeletedTemplateKeys(): string[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.DELETED_TEMPLATES);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+
   public getAllMasterTemplates(): FmsTemplateDefinition[] {
-    const custom = this.getFmsTemplates();
+    const deletedKeys = new Set(this.getDeletedTemplateKeys());
+    const custom = this.getFmsTemplates().filter((t) => !deletedKeys.has(t.id) && !deletedKeys.has(t.templateKey));
     const matchedCustomIds = new Set<string>();
     const combined: FmsTemplateDefinition[] = [];
 
-    // Add built-ins (override with custom if modified)
+    // Add built-ins (override with custom if modified) unless explicitly deleted
     SYSTEM_BUILTIN_TEMPLATES.forEach((sys) => {
+      if (deletedKeys.has(sys.id) || deletedKeys.has(sys.templateKey) || deletedKeys.has(`builtin_${sys.templateKey}`)) {
+        return;
+      }
+
       const customOverride = custom.find(
         (c) =>
           (c.templateKey && c.templateKey === sys.templateKey) ||
@@ -1033,7 +1272,7 @@ class StorageAdapter {
 
     // Add remaining custom templates (non-builtins)
     custom.forEach((tpl) => {
-      if (!matchedCustomIds.has(tpl.id)) {
+      if (!matchedCustomIds.has(tpl.id) && !deletedKeys.has(tpl.id) && !deletedKeys.has(tpl.templateKey)) {
         const alreadyInCombined = combined.some(
           (existing) =>
             existing.id === tpl.id ||
@@ -1086,7 +1325,7 @@ class StorageAdapter {
     });
   }
 
-  public deleteFmsTemplate(idOrKey: string) {
+  public deleteFmsTemplate(idOrKey: string, currentUser?: UserProfile) {
     if (typeof window === 'undefined') return;
     const cleanId = idOrKey.startsWith('CUSTOM_') ? idOrKey.replace('CUSTOM_', '') : idOrKey;
     const existing = this.getFmsTemplates();
@@ -1099,16 +1338,30 @@ class StorageAdapter {
         t.id !== `builtin_${idOrKey}` &&
         t.id !== `builtin_${cleanId}`
     );
+
+    // Track in deleted template keys to permanently exclude built-in or custom templates
+    const deletedKeys = this.getDeletedTemplateKeys();
+    [idOrKey, cleanId, `builtin_${idOrKey}`, `builtin_${cleanId}`].forEach((k) => {
+      if (k && !deletedKeys.includes(k)) deletedKeys.push(k);
+    });
+    localStorage.setItem(STORAGE_KEYS.DELETED_TEMPLATES, JSON.stringify(deletedKeys));
+
     localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(updated));
     this.syncToFirestore('fmsTemplates', updated, 'id');
+    this.deleteFromFirestore('fmsTemplates', idOrKey);
+    this.deleteFromFirestore('fmsTemplates', cleanId);
     this.notifyListeners();
+
+    const userName = currentUser?.name || 'Super Administrator';
+    const userId = currentUser?.userId || 'SUPER_ADMIN';
+
     this.logAudit({
-      userId: 'ADMIN',
-      userName: 'Process Administrator',
+      userId,
+      userName,
       module: 'FMS',
-      action: 'STATUS_CHANGE',
+      action: 'DELETE',
       entityId: idOrKey,
-      details: `Deleted custom FMS template "${idOrKey}"`
+      details: `Deleted FMS template "${idOrKey}"`
     });
   }
 
@@ -1246,6 +1499,72 @@ class StorageAdapter {
     this.notifyListeners();
   }
 
+  // App Notifications (Channel 1 & Channel 2)
+  public getNotifications(userId?: string): AppNotification[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
+      let all: AppNotification[] = [];
+      if (data) {
+        all = JSON.parse(data);
+      } else {
+        all = INITIAL_NOTIFICATIONS;
+        localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(all));
+      }
+      if (!userId) return all;
+      return all.filter((n) => n.userId === 'ALL' || n.userId === userId);
+    } catch (e) {
+      return INITIAL_NOTIFICATIONS;
+    }
+  }
+
+  public saveNotifications(notifications: AppNotification[]) {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
+    this.syncToFirestore('notifications', notifications, 'id');
+    this.notifyListeners();
+  }
+
+  public addNotification(notification: Omit<AppNotification, 'id' | 'timestamp' | 'read'> & { id?: string; timestamp?: string }) {
+    const existing = this.getNotifications();
+    const newNotif: AppNotification = {
+      id: notification.id || `notif-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      timestamp: notification.timestamp || new Date().toLocaleString('en-GB'),
+      read: false,
+      ...notification,
+    };
+    const updated = [newNotif, ...existing].slice(0, 100); // retain last 100
+    this.saveNotifications(updated);
+    return newNotif;
+  }
+
+  public markNotificationRead(id: string) {
+    const existing = this.getNotifications();
+    const updated = existing.map((n) => (n.id === id ? { ...n, read: true } : n));
+    this.saveNotifications(updated);
+  }
+
+  public markAllNotificationsRead(userId?: string) {
+    const existing = this.getNotifications();
+    const updated = existing.map((n) => {
+      if (!userId || n.userId === 'ALL' || n.userId === userId) {
+        return { ...n, read: true };
+      }
+      return n;
+    });
+    this.saveNotifications(updated);
+  }
+
+  public clearAllNotifications(userId?: string) {
+    if (!userId) {
+      this.saveNotifications([]);
+      return;
+    }
+    const existing = this.getNotifications();
+    const filtered = existing.filter((n) => n.userId !== 'ALL' && n.userId !== userId);
+    this.saveNotifications(filtered);
+  }
+
   // Active Authenticated User Session
   public getAuthUser(): UserProfile | null {
     if (typeof window === 'undefined') return null;
@@ -1275,6 +1594,8 @@ class StorageAdapter {
     localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(INITIAL_INVENTORY_ITEMS));
     localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(INITIAL_INVENTORY_MOVEMENTS));
     localStorage.setItem(STORAGE_KEYS.REGISTRY, JSON.stringify(DEFAULT_REGISTRY_CONFIG));
+    localStorage.removeItem(STORAGE_KEYS.DELETED_FLOWS);
+    localStorage.removeItem(STORAGE_KEYS.DELETED_TEMPLATES);
     this.logAudit({
       userId: 'ADMIN',
       userName: 'Central Administrator',
