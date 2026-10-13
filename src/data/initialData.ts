@@ -376,6 +376,7 @@ export const USERS: UserProfile[] = [
     departmentId: 'DEPT-ACCOUNTS',
     departmentName: 'Accounts & Finance',
     phone: '9827100088',
+    whatsappPhone: '9827100088',
     email: 'manish.koshle@barbrik.in'
   },
   {
@@ -386,7 +387,8 @@ export const USERS: UserProfile[] = [
     role: 'Purchase Assistant',
     departmentId: 'DEPT-PURCHASE',
     departmentName: 'Purchase',
-    phone: '9827100022',
+    phone: '9827100023',
+    whatsappPhone: '9827100023',
     email: 'vivek.purchase@barbrik.in'
   },
   {
@@ -398,6 +400,7 @@ export const USERS: UserProfile[] = [
     departmentId: 'DEPT-PURCHASE',
     departmentName: 'Purchase',
     phone: '9827100033',
+    whatsappPhone: '9827100033',
     email: 'rajendra.purchase@barbrik.in'
   },
   {
@@ -409,6 +412,7 @@ export const USERS: UserProfile[] = [
     departmentId: 'DEPT-STORE-SILA',
     departmentName: 'Store Department (Siladehi)',
     phone: '9827100044',
+    whatsappPhone: '9827100044',
     email: 'sumant.store@barbrik.in'
   },
   {
@@ -419,7 +423,8 @@ export const USERS: UserProfile[] = [
     role: 'Store Manager (Bijetala)',
     departmentId: 'DEPT-STORE-BIJE',
     departmentName: 'Store Department (Bijetala)',
-    phone: '9827100055',
+    phone: '9827100056',
+    whatsappPhone: '9827100056',
     email: 'hemant.store@barbrik.in'
   },
   {
@@ -430,7 +435,8 @@ export const USERS: UserProfile[] = [
     role: 'HR Executive',
     departmentId: 'DEPT-HR',
     departmentName: 'Human Resources',
-    phone: '9827100066',
+    phone: '9827100067',
+    whatsappPhone: '9827100067',
     email: 'garima.hr@barbrik.in'
   },
   {
@@ -441,7 +447,8 @@ export const USERS: UserProfile[] = [
     role: 'HR & Accounts Officer',
     departmentId: 'DEPT-HR',
     departmentName: 'Human Resources',
-    phone: '9827100077',
+    phone: '9827100078',
+    whatsappPhone: '9827100078',
     email: 'mamta.hr@barbrik.in'
   },
   {
@@ -452,7 +459,8 @@ export const USERS: UserProfile[] = [
     role: 'DPR & Planning Officer',
     departmentId: 'DEPT-PLANNING',
     departmentName: 'Project Planning & DPR',
-    phone: '9827100088',
+    phone: '9827100089',
+    whatsappPhone: '9827100089',
     email: 'nandita.planning@barbrik.in'
   },
   {
@@ -463,7 +471,8 @@ export const USERS: UserProfile[] = [
     role: 'Process Coordinator',
     departmentId: 'DEPT-MIS',
     departmentName: 'Process Coordination & Audit',
-    phone: '9827100099',
+    phone: '9827100091',
+    whatsappPhone: '9827100091',
     email: 'process.coordinator@barbrik.in'
   }
 ];
@@ -856,6 +865,44 @@ export const FMS_PO_PAYMENT_STAGES: FmsStageDefinition[] = [
     formUrl: undefined,
     slaHours: 1,
     isCheckpoint: true,
+    hasYesNoDecision: false
+  }
+];
+
+export const FMS_BENEFICIARY_APPROVAL_STAGES: FmsStageDefinition[] = [
+  {
+    stageId: 'STG-BEN-01',
+    stageNumber: 1,
+    name: 'GET APPROVAL (BENEFICIARY)',
+    what: 'Obtain management / director approval for vendor beneficiary registration',
+    whoRole: 'FINANCE APPROVER',
+    whoDefaultAssignee: 'Pranjal Agrawal / Khushboo Sahu',
+    howChannel: 'WHATSAPP / CALL / MANUAL',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-BEN-02',
+    stageNumber: 2,
+    name: 'ADD ACCOUNT ONLINE',
+    what: 'Add vendor beneficiary bank account details into online net banking portal',
+    whoRole: 'ACCOUNTS EXECUTIVE',
+    whoDefaultAssignee: 'Byamkesh Kaiwartya',
+    howChannel: 'ONLINE BANKING',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-BEN-03',
+    stageNumber: 3,
+    name: 'CONFIRM ACCOUNT ADDITION',
+    what: 'Verify bank cooling period and confirm beneficiary account addition',
+    whoRole: 'ACCOUNTS EXECUTIVE',
+    whoDefaultAssignee: 'Byamkesh Kaiwartya',
+    howChannel: 'WHATSAPP / PHONE / EMAIL',
+    slaHours: 4,
     hasYesNoDecision: false
   }
 ];
@@ -4870,6 +4917,25 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
     stages: FMS_PO_PAYMENT_STAGES.map((s) => ({
+      stageId: s.stageId,
+      stageName: s.name,
+      whoRole: s.whoRole,
+      whoDefaultAssignee: s.whoDefaultAssignee,
+      howChannel: s.howChannel,
+      slaHours: s.slaHours,
+    })),
+  },
+  {
+    id: 'tpl_beneficiary_approval',
+    templateKey: 'BENEFICIARY_APPROVAL',
+    name: 'Vendor Beneficiary Bank Approval Workflow',
+    departmentHub: 'ACCOUNTS',
+    referenceLabel: 'BPL/BEN/',
+    defaultPriority: 'Normal',
+    description: '3-stage bank beneficiary registration, director signoff & net-banking activation verification.',
+    createdAt: '01/10/2026',
+    updatedAt: '01/10/2026',
+    stages: FMS_BENEFICIARY_APPROVAL_STAGES.map((s) => ({
       stageId: s.stageId,
       stageName: s.name,
       whoRole: s.whoRole,

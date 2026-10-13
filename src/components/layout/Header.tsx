@@ -15,11 +15,12 @@ import {
   ShieldAlert,
   Crown
 } from 'lucide-react';
-import { UserProfile, CentralRegistryConfig, isUserSuperAdmin, AppNotification } from '../../types';
+import { UserProfile, CentralRegistryConfig, isUserSuperAdmin, isUserAdminOrSuperAdmin, AppNotification } from '../../types';
 import { USERS } from '../../data/initialData';
 import { UserAvatar } from '../common/UserAvatar';
 import { CustomSelect } from '../common/CustomSelect';
 import { NotificationCenter } from './NotificationCenter';
+import { filterUsersForViewer } from '../../utils/staffValidation';
 
 export type ViewScope = 'USER_ONLY' | 'ALL_ORG';
 
@@ -48,6 +49,8 @@ interface HeaderProps {
   onSelectNotification?: (notif: AppNotification) => void;
   desktopPermission?: NotificationPermission;
   onRequestDesktopPermission?: () => void;
+  impersonatorAdmin?: UserProfile | null;
+  onExitImpersonation?: () => void;
 }
 
 export function getDynamicGreetingHeader(name: string): string {
@@ -86,10 +89,14 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectNotification,
   desktopPermission = 'default',
   onRequestDesktopPermission,
+  impersonatorAdmin,
+  onExitImpersonation,
 }) => {
   const [isNotificationOpen, setIsNotificationOpen] = React.useState(false);
   const isSuperAdmin = isUserSuperAdmin(currentUser);
-  const availableUsers = usersList && usersList.length > 0 ? usersList : USERS;
+  const isAdminOrSuperAdmin = isUserAdminOrSuperAdmin(currentUser);
+  const rawAvailableUsers = usersList && usersList.length > 0 ? usersList : USERS;
+  const availableUsers = filterUsersForViewer(rawAvailableUsers, currentUser);
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
@@ -130,7 +137,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Center Controls: Global Search Bar & (SuperAdmin only) Scope Dropdown & PC Desk */}
+      {/* Center Controls: Global Search Bar */}
       <div className="hidden md:flex items-center gap-3">
         {/* Prominent Global Search Bar */}
         {onOpenGlobalSearch && (
@@ -147,38 +154,6 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </button>
         )}
-
-        {/* Scope Dropdown - Super Admin Only */}
-        {isSuperAdmin && (
-          <CustomSelect
-            options={[
-              { value: 'USER_ONLY', label: 'My Items Only' },
-              { value: 'ALL_ORG', label: 'All Organization' },
-            ]}
-            value={viewScope}
-            onChange={(val) => onToggleScope(val as ViewScope)}
-            icon={<User className="w-3.5 h-3.5 text-indigo-600" />}
-            size="xs"
-            variant="subtle"
-            className="w-40"
-          />
-        )}
-
-        {/* Relocated PC Desk button - Super Admin Only */}
-        {isSuperAdmin && onTogglePcDesk && (
-          <button
-            onClick={onTogglePcDesk}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
-              pcDeskActive
-                ? 'bg-purple-600 text-white border-purple-700 shadow-xs ring-1 ring-purple-400/50'
-                : 'bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200'
-            }`}
-            title={pcDeskActive ? "PC Desk Mode Active (Click to disable)" : "Switch to Process Coordinator Control Desk"}
-          >
-            <ShieldAlert className={`w-3.5 h-3.5 ${pcDeskActive ? 'text-purple-200' : 'text-purple-600'}`} />
-            <span>PC Desk</span>
-          </button>
-        )}
       </div>
 
       {/* Mobile Right Controls: Touch-friendly Quick Actions */}
@@ -191,37 +166,6 @@ export const Header: React.FC<HeaderProps> = ({
             title="Global Search"
           >
             <Search className="w-4 h-4 text-slate-700" />
-          </button>
-        )}
-
-        {/* Mobile Scope Toggle - Super Admin Only */}
-        {isSuperAdmin && (
-          <button
-            onClick={() => onToggleScope(viewScope === 'USER_ONLY' ? 'ALL_ORG' : 'USER_ONLY')}
-            className={`px-2 py-1 rounded-lg text-[10px] font-bold border flex items-center gap-1 transition-colors ${
-              viewScope === 'ALL_ORG' 
-                ? 'bg-indigo-50 border-indigo-200 text-indigo-700' 
-                : 'bg-slate-50 border-slate-200 text-slate-700'
-            }`}
-            title="Toggle My Items vs All Org"
-          >
-            <User className="w-3 h-3 text-indigo-600" />
-            <span>{viewScope === 'USER_ONLY' ? 'Mine' : 'All Org'}</span>
-          </button>
-        )}
-
-        {/* Mobile PC Desk Indicator/Toggle - Super Admin Only */}
-        {isSuperAdmin && onTogglePcDesk && (
-          <button
-            onClick={onTogglePcDesk}
-            className={`p-1.5 rounded-lg border transition-colors ${
-              pcDeskActive 
-                ? 'bg-purple-600 text-white border-purple-700' 
-                : 'bg-slate-50 text-slate-600 border-slate-200'
-            }`}
-            title="Toggle PC Desk mode"
-          >
-            <ShieldAlert className="w-3.5 h-3.5" />
           </button>
         )}
 
@@ -240,34 +184,16 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </button>
 
-        {/* Mobile User Profile: Switcher for SuperAdmin, Identity badge for normal users */}
+        {/* Mobile User Profile Identity badge */}
         <div className="flex items-center gap-1.5">
           <UserAvatar
             user={currentUser}
             size="xs"
             onClick={onOpenMyProfile}
           />
-          {isSuperAdmin ? (
-            <CustomSelect
-              options={availableUsers.map((user) => ({
-                value: user.userId,
-                label: `${user.name.split(' ')[0]} (${user.role.slice(0, 8)})`,
-              }))}
-              value={currentUser.userId}
-              onChange={(val) => {
-                const found = availableUsers.find((u) => u.userId === val);
-                if (found) onUserChange(found);
-              }}
-              size="xs"
-              variant="subtle"
-              align="right"
-              className="max-w-[120px]"
-            />
-          ) : (
-            <span className="text-[10px] bg-slate-50 border border-slate-200 rounded-lg py-1 px-1.5 font-bold text-slate-800 max-w-[90px] truncate">
-              {currentUser.name.split(' ')[0]}
-            </span>
-          )}
+          <span className="text-[10px] bg-slate-50 border border-slate-200 rounded-lg py-1 px-1.5 font-bold text-slate-800 max-w-[90px] truncate">
+            {currentUser.name.split(' ')[0]}
+          </span>
         </div>
       </div>
 
@@ -288,20 +214,7 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </button>
 
-        {/* Super Admin Control Center Button */}
-        {isSuperAdmin && onOpenSuperAdmin && (
-          <button
-            type="button"
-            onClick={onOpenSuperAdmin}
-            className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-lg text-xs transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
-            title="Super Admin Governance Center"
-          >
-            <Crown className="w-3.5 h-3.5 text-slate-950" />
-            <span>Super Admin</span>
-          </button>
-        )}
-
-        {/* User Identity & Switcher */}
+        {/* User Identity */}
         <div className="flex items-center gap-2.5">
           <UserAvatar
             user={currentUser}
@@ -316,26 +229,16 @@ export const Header: React.FC<HeaderProps> = ({
               {currentUser.role}
             </p>
           </div>
-          
-          {/* Super Admin only: User Switcher dropdown */}
-          {isSuperAdmin && (
-            <CustomSelect
-              options={availableUsers.map((user) => ({
-                value: user.userId,
-                label: user.name,
-                sublabel: user.departmentName,
-                badge: user.role,
-              }))}
-              value={currentUser.userId}
-              onChange={(val) => {
-                const found = availableUsers.find((u) => u.userId === val);
-                if (found) onUserChange(found);
-              }}
-              size="xs"
-              variant="subtle"
-              align="right"
-              className="w-48"
-            />
+
+          {/* Exit View As Action */}
+          {impersonatorAdmin && onExitImpersonation && (
+            <button
+              onClick={onExitImpersonation}
+              className="text-xs bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-2.5 py-1.5 rounded-lg shadow-2xs transition-all cursor-pointer flex items-center gap-1 shrink-0"
+              title={`Exit View As and return to ${impersonatorAdmin.name}`}
+            >
+              <span>Exit View As</span>
+            </button>
           )}
 
           {/* Logout Button */}

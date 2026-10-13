@@ -505,6 +505,8 @@ export const isFlowAwaitingUserAction = (
 
   const stageDefs = flow.flowType === 'CHECK_STOCK'
     ? FMS_CHECK_STOCK_STAGES
+    : flow.flowType === 'BENEFICIARY_APPROVAL'
+    ? FMS_BENEFICIARY_APPROVAL_STAGES
     : flow.flowType === 'PO_TO_PAYMENT'
     ? FMS_PO_PAYMENT_STAGES
     : flow.flowType === 'PURCHASE_TO_STORE_DISPATCH'
@@ -712,6 +714,67 @@ export const getLinkedFmsChain = (currentFlow: FmsInstance, allFlows: FmsInstanc
 };
 
 /**
+ * Accurately matches any FMS flow instance against a workflowKey or template ID
+ */
+export const isFlowMatchingWorkflow = (
+  flow: FmsInstance,
+  workflowKeyOrTemplateId?: string | null
+): boolean => {
+  if (!workflowKeyOrTemplateId || workflowKeyOrTemplateId === 'ALL') return true;
+  const target = workflowKeyOrTemplateId.trim();
+  const targetUpper = target.toUpperCase();
+
+  // 1. Exact match on flowType or customTemplateId
+  if (flow.flowType === target || flow.flowType?.toUpperCase() === targetUpper) return true;
+  if (flow.customTemplateId === target || flow.customTemplateId?.toUpperCase() === targetUpper) return true;
+
+  // 2. Builtin template ID and templateKey aliases
+  const BUILTIN_KEY_MAP: Record<string, string> = {
+    tpl_indent_purchase: 'INDENT_PURCHASE',
+    INDENT_PURCHASE: 'tpl_indent_purchase',
+    tpl_check_stock: 'CHECK_STOCK',
+    CHECK_STOCK: 'tpl_check_stock',
+    tpl_po_to_payment: 'PO_TO_PAYMENT',
+    PO_TO_PAYMENT: 'tpl_po_to_payment',
+    tpl_beneficiary_approval: 'BENEFICIARY_APPROVAL',
+    BENEFICIARY_APPROVAL: 'tpl_beneficiary_approval',
+    tpl_purchase_to_store: 'PURCHASE_TO_STORE_DISPATCH',
+    PURCHASE_TO_STORE_DISPATCH: 'tpl_purchase_to_store',
+    tpl_store_to_site: 'STORE_TO_SITE_DISPATCH',
+    STORE_TO_SITE_DISPATCH: 'tpl_store_to_site',
+    tpl_site_receive: 'SITE_RECEIVE',
+    SITE_RECEIVE: 'tpl_site_receive',
+    tpl_payment_to_dispatch: 'PAYMENT_TO_DISPATCH',
+    PAYMENT_TO_DISPATCH: 'tpl_payment_to_dispatch',
+    tpl_accounts_invoice: 'ACCOUNTS_INVOICE_COLLECTION',
+    ACCOUNTS_INVOICE_COLLECTION: 'tpl_accounts_invoice',
+    tpl_hr_attendance: 'HR_ATTENDANCE_PAYMENT',
+    HR_ATTENDANCE_PAYMENT: 'tpl_hr_attendance',
+    tpl_breakdown: 'BREAKDOWN_REPORTING',
+    BREAKDOWN_REPORTING: 'tpl_breakdown',
+    tpl_part_repair: 'EQUIPMENT_PART_REPAIR',
+    EQUIPMENT_PART_REPAIR: 'tpl_part_repair',
+    tpl_dpr: 'DPR_REPORTING',
+    DPR_REPORTING: 'tpl_dpr',
+  };
+
+  const alias = BUILTIN_KEY_MAP[target] || BUILTIN_KEY_MAP[targetUpper];
+  if (alias) {
+    if (flow.flowType === alias || flow.flowType?.toUpperCase() === alias.toUpperCase()) return true;
+    if (flow.customTemplateId === alias || flow.customTemplateId?.toUpperCase() === alias.toUpperCase()) return true;
+  }
+
+  // Beneficiary Approval fallback heuristics (indent or requisition starting with BEN)
+  if (targetUpper === 'BENEFICIARY_APPROVAL' || target === 'tpl_beneficiary_approval') {
+    if (flow.flowType === 'BENEFICIARY_APPROVAL') return true;
+    if (flow.indentNo && flow.indentNo.toUpperCase().includes('BEN')) return true;
+    if (flow.requisitionNumber && flow.requisitionNumber.toUpperCase().includes('BEN')) return true;
+  }
+
+  return false;
+};
+
+/**
  * Resolves the department key for any FMS flow instance
  */
 export const getFlowDepartmentKey = (
@@ -734,14 +797,17 @@ export const getFlowDepartmentKey = (
   if (['CHECK_STOCK', 'STORE_TO_SITE_DISPATCH', 'PURCHASE_TO_STORE_DISPATCH', 'SITE_RECEIVE', 'FUEL_ISSUE'].includes(ft)) {
     return 'STORE';
   }
-  if (['INDENT_PURCHASE', 'SUBCONTRACTOR_BILLING'].includes(ft)) {
+  if (['INDENT_PURCHASE', 'PAYMENT_TO_DISPATCH', 'SUBCONTRACTOR_BILLING'].includes(ft)) {
     return 'PURCHASE';
   }
   if (['PO_TO_PAYMENT', 'ACCOUNTS_INVOICE_COLLECTION', 'PAYROLL', 'BENEFICIARY_APPROVAL'].includes(ft)) {
     return 'ACCOUNTS';
   }
-  if (['BREAKDOWN_REPORTING', 'EQUIPMENT_PART_REPAIR', 'DPR_REPORTING', 'HR_ATTENDANCE_PAYMENT', 'LEAVE_SUBMISSION'].includes(ft)) {
+  if (['BREAKDOWN_REPORTING', 'EQUIPMENT_PART_REPAIR', 'HR_ATTENDANCE_PAYMENT', 'LEAVE_SUBMISSION'].includes(ft)) {
     return 'PLANT_OPS';
+  }
+  if (['DPR_REPORTING'].includes(ft)) {
+    return 'OPERATIONS';
   }
   return 'OPERATIONS';
 };
@@ -784,6 +850,49 @@ export const getDepartmentBranchLabel = (deptKey: string): string => {
     default:
       return deptKey.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   }
+};
+
+/**
+ * Maps a workflow key/template ID to its parent department key
+ */
+export const getDepartmentForWorkflow = (
+  wfKey: string | null | undefined, 
+  customTemplates: any[] = [], 
+  flows: any[] = []
+): string | null => {
+  if (!wfKey || wfKey === 'ALL') return null;
+
+  const k = wfKey.toLowerCase();
+  
+  if (k.includes('check_stock') || k.includes('store_dispatch') || k.includes('site_issue') || k.includes('site_receive') || k.includes('store')) {
+    return 'STORE';
+  }
+  if (k.includes('indent') || k.includes('purchase') || k.includes('vendor_payment_dispatch') || k.includes('payment_to_dispatch')) {
+    return 'PURCHASE';
+  }
+  if (k.includes('po_to_payment') || k.includes('beneficiary') || k.includes('accounts') || k.includes('invoice_collection')) {
+    return 'ACCOUNTS';
+  }
+  if (k.includes('hr_attendance') || k.includes('breakdown') || k.includes('equipment_part_repair') || k.includes('plant_ops') || k.includes('labour')) {
+    return 'PLANT_OPS';
+  }
+  if (k.includes('dpr') || k.includes('operations')) {
+    return 'OPERATIONS';
+  }
+
+  // Check custom templates
+  const tpl = customTemplates.find(t => t.id === wfKey || t.templateKey === wfKey);
+  if (tpl && tpl.departmentHub) {
+    return tpl.departmentHub;
+  }
+
+  // Check flows
+  const flow = flows.find(f => f.flowType === wfKey || f.customTemplateId === wfKey || isFlowMatchingWorkflow(f, wfKey));
+  if (flow) {
+    return getFlowDepartmentKey(flow, customTemplates);
+  }
+
+  return null;
 };
 
 /**

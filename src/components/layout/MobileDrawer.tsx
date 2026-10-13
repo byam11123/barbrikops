@@ -22,15 +22,17 @@ import {
   Zap,
   Plus,
   RefreshCw,
-  ShieldCheck
+  ShieldCheck,
+  FileSpreadsheet
 } from 'lucide-react';
 import { NavTab } from './Sidebar';
-import { UserProfile, FmsInstance, isUserSuperAdmin, hasModulePermission, ChecklistItem, DelegationTask } from '../../types';
+import { UserProfile, FmsInstance, isUserSuperAdmin, isUserAdminOrSuperAdmin, hasModulePermission, ChecklistItem, DelegationTask } from '../../types';
 import { USERS } from '../../data/initialData';
 import { ViewScope } from './Header';
 import { storageAdapter } from '../../services/storageAdapter';
-import { getFlowDepartmentKey, getDepartmentBranchLabel, matchItemDepartment, matchTaskDepartment } from '../../services/stageAssignment';
+import { getFlowDepartmentKey, getDepartmentBranchLabel, matchItemDepartment, matchTaskDepartment, getDepartmentForWorkflow } from '../../services/stageAssignment';
 import { UserAvatar } from '../common/UserAvatar';
+import { filterUsersForViewer } from '../../utils/staffValidation';
 
 interface MobileDrawerProps {
   isOpen: boolean;
@@ -92,12 +94,13 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
 }) => {
   const [collapsedDepts, setCollapsedDepts] = useState<Record<string, boolean>>({});
   const [collapsedSubSections, setCollapsedSubSections] = useState<Record<string, boolean>>({});
-  const [isAllFmsExpanded, setIsAllFmsExpanded] = useState<boolean>(true);
+  const [isAllFmsExpanded, setIsAllFmsExpanded] = useState<boolean>(false);
 
   const toggleSubSection = (subKey: string) => {
-    setCollapsedSubSections((prev) => ({ ...prev, [subKey]: !prev[subKey] }));
+    setCollapsedSubSections((prev) => ({ ...prev, [subKey]: prev[subKey] === false ? true : false }));
   };
-  const availableUsers = usersList && usersList.length > 0 ? usersList : USERS;
+  const rawAvailableUsers = usersList && usersList.length > 0 ? usersList : USERS;
+  const availableUsers = filterUsersForViewer(rawAvailableUsers, currentUser);
 
   React.useEffect(() => {
     if (isOpen) {
@@ -124,12 +127,36 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
   if (!isOpen) return null;
 
   const toggleDept = (deptKey: string) => {
-    setCollapsedDepts((prev) => ({ ...prev, [deptKey]: !prev[deptKey] }));
+    setCollapsedDepts((prev) => ({ ...prev, [deptKey]: prev[deptKey] === false ? true : false }));
   };
 
   const configuredDepts = storageAdapter.getDepartments();
   const customTemplates = storageAdapter.getFmsTemplates();
   const allMasterTemplates = storageAdapter.getAllMasterTemplates();
+
+  // Auto-expand department and FMS sub-tree when selectedWorkflowKey or selectedDepartment changes
+  React.useEffect(() => {
+    let targetDept = selectedDepartment;
+    if (selectedWorkflowKey && selectedWorkflowKey !== 'ALL') {
+      const mappedDept = getDepartmentForWorkflow(selectedWorkflowKey, customTemplates, flows);
+      if (mappedDept) targetDept = mappedDept;
+    }
+
+    if (targetDept) {
+      setCollapsedDepts((prev) => ({
+        ...prev,
+        [targetDept]: false
+      }));
+
+      setCollapsedSubSections((prev) => ({
+        ...prev,
+        [`${targetDept}-fms`]: false,
+        [`nav-fms-${targetDept}`]: false
+      }));
+
+      setIsAllFmsExpanded(true);
+    }
+  }, [selectedWorkflowKey, selectedDepartment, customTemplates, flows]);
 
   const detectedDeptKeys = new Set<string>();
   const archivedKeys = new Set(configuredDepts.filter((d) => d.isArchived).map((d) => d.key.toUpperCase()));
@@ -239,7 +266,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
     return <FolderOpen className="w-4 h-4 text-indigo-600 shrink-0" />;
   };
 
-  const navItems = [
+  const userNavItems = [
     {
       id: 'summary' as NavTab,
       label: 'My Work (Task Feed)',
@@ -256,34 +283,11 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
       label: 'My Scoreboard (MIS)',
       icon: BarChart3,
     },
-    {
-      id: 'fms' as NavTab,
-      label: 'All FMS Pipelines',
-      icon: GitBranch,
-      badge: badgeCounts.fmsActive > 0 ? `${badgeCounts.fmsActive} Active` : undefined,
-      badgeColor: 'bg-indigo-100 text-indigo-800'
-    },
-    {
-      id: 'delegation' as NavTab,
-      label: 'Delegation Board',
-      icon: ListTodo,
-      badge: badgeCounts.delegationPending > 0 ? `${badgeCounts.delegationPending}` : undefined,
-      badgeColor: 'bg-purple-100 text-purple-800'
-    },
-    {
-      id: 'checklist' as NavTab,
-      label: 'Daily Checklists',
-      icon: CheckSquare,
-      badge: badgeCounts.checklistPending > 0 ? `${badgeCounts.checklistPending}` : undefined,
-      badgeColor: 'bg-blue-100 text-blue-800'
-    },
-    {
-      id: 'ims' as NavTab,
-      label: 'Inventory IMS',
-      icon: Boxes,
-      badge: badgeCounts.lowStockCount > 0 ? `${badgeCounts.lowStockCount} Low` : undefined,
-      badgeColor: 'bg-orange-100 text-orange-800'
-    },
+  ];
+
+  const operationsNavItems: any[] = [];
+
+  const systemNavItems = [
     {
       id: 'registry' as NavTab,
       label: 'Central Registry & Depts',
@@ -296,7 +300,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
     },
     {
       id: 'super-admin' as NavTab,
-      label: 'Super Admin Governance',
+      label: 'Users',
       icon: ShieldCheck,
       badge: 'Master',
       badgeColor: 'bg-amber-100 text-amber-900 border border-amber-300',
@@ -304,13 +308,29 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
   ];
 
   const isSuperAdmin = isUserSuperAdmin(currentUser);
+  const isAdminOrSuperAdmin = isUserAdminOrSuperAdmin(currentUser);
 
-  const filteredNavItems = navItems.filter((item) => {
+  type NavItemDef = {
+    id: NavTab;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    badge?: string;
+    badgeColor?: string;
+  };
+
+  const filterItem = (item: NavItemDef) => {
     if (item.id === 'super-admin') {
-      return isSuperAdmin;
+      return isSuperAdmin || isAdminOrSuperAdmin;
+    }
+    if (item.id === 'fms') {
+      return isSuperAdmin || isAdminOrSuperAdmin || hasModulePermission(currentUser, 'fms', 'view');
     }
     return hasModulePermission(currentUser, item.id, 'view');
-  });
+  };
+
+  const filteredUserNavItems = userNavItems.filter(filterItem);
+  const filteredOperationsNavItems = operationsNavItems.filter(filterItem);
+  const filteredSystemNavItems = systemNavItems.filter(filterItem);
 
   const handleNavigate = (tab: NavTab) => {
     onTabChange(tab);
@@ -363,7 +383,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
             </div>
           </div>
 
-          {/* User Profile Card & (Super Admin only) Switcher */}
+          {/* User Profile Card & (Super Admin & Administrative User) Switcher */}
           <div className="mt-3 p-2 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2">
             <div 
               onClick={() => {
@@ -382,7 +402,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
               </div>
               <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all shrink-0 ml-1" />
             </div>
-            {isSuperAdmin && (
+            {isAdminOrSuperAdmin && (
               <div>
                 <label className="text-[10px] text-slate-400 font-semibold uppercase block mb-1">Switch Staff Profile</label>
                 <select
@@ -404,8 +424,8 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
             )}
           </div>
 
-          {/* Scope and PC Desk toggles - Super Admin Only */}
-          {isSuperAdmin && (
+          {/* Scope and PC Desk toggles - Super Admin & Administrative User */}
+          {isAdminOrSuperAdmin && (
             <div className="grid grid-cols-2 gap-2 mt-2.5">
               <button
                 onClick={() => onToggleScope(viewScope === 'USER_ONLY' ? 'ALL_ORG' : 'USER_ONLY')}
@@ -444,14 +464,58 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
 
         {/* Modules List */}
         <div className="p-3 space-y-4 flex-1">
-          <div>
-            <span className="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-              Modules
-            </span>
-            <div className="space-y-1">
-              {filteredNavItems.map((item) => {
-                const Icon = item.icon;
-                const isItemActive = activeTab === item.id && (item.id !== 'fms' || (selectedDepartment === null && selectedWorkflowKey === null));
+          {/* User Modules */}
+          {filteredUserNavItems.length > 0 && (
+            <div>
+              <span className="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                User Modules
+              </span>
+              <div className="space-y-1">
+                {filteredUserNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const isItemActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleNavigate(item.id)}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all ${
+                        isItemActive
+                          ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                          : 'text-slate-700 hover:bg-slate-100 font-semibold'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 py-0.5">
+                        <Icon className={`w-4 h-4 shrink-0 ${isItemActive ? 'text-white' : 'text-slate-500'}`} />
+                        <span className="text-xs truncate">{item.label}</span>
+                      </div>
+                      {item.badge && (
+                        <span
+                          className={`text-[10px] font-mono shrink-0 font-bold px-2 py-0.5 rounded-full ${
+                            isItemActive 
+                              ? 'bg-white/20 text-white' 
+                              : item.badgeColor || 'bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          {item.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Operations Modules */}
+          {filteredOperationsNavItems.length > 0 && (
+            <div className="pt-2 border-t border-slate-100">
+              <span className="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                Operations Modules
+              </span>
+              <div className="space-y-1">
+                {filteredOperationsNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const isItemActive = activeTab === item.id && (item.id !== 'fms' || (selectedDepartment === null && selectedWorkflowKey === null));
 
                 if (item.id === 'fms') {
                   return (
@@ -484,26 +548,29 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                             </span>
                           )}
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setIsAllFmsExpanded(!isAllFmsExpanded)}
-                          className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 ml-1 cursor-pointer transition-colors"
-                          title="Toggle All FMS department workflows sub-tree"
-                        >
-                          {isAllFmsExpanded ? (
-                            <ChevronDown className="w-4 h-4" />
-                          ) : (
-                            <ChevronRight className="w-4 h-4" />
-                          )}
-                        </button>
+                        {isAdminOrSuperAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => setIsAllFmsExpanded(!isAllFmsExpanded)}
+                            className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 ml-1 cursor-pointer transition-colors"
+                            title="Toggle All FMS department workflows sub-tree"
+                          >
+                            {isAllFmsExpanded ? (
+                              <ChevronDown className="w-4 h-4" />
+                            ) : (
+                              <ChevronRight className="w-4 h-4" />
+                            )}
+                          </button>
+                        )}
                       </div>
 
-                      {/* Department Sub-Branches & Individual FMS Workflow Sub-Tree */}
-                      {isAllFmsExpanded && (
+                      {/* Department Sub-Branches & Individual FMS Workflow Sub-Tree - Super Admin & Admin */}
+                      {isAdminOrSuperAdmin && isAllFmsExpanded && (
                         <div className="pl-3 pr-1 space-y-1.5 border-l-2 border-indigo-100 ml-3 my-1">
                           {departmentList.map((dept) => {
                             const isDeptActive = activeTab === 'fms' && selectedDepartment === dept.key && !selectedWorkflowKey;
-                            const isDeptCollapsed = !!collapsedSubSections[`mob-fms-${dept.key}`];
+                            // Expanded by default so workflows are immediately visible and selectable
+                            const isDeptCollapsed = collapsedSubSections[`mob-fms-${dept.key}`] === true;
 
                             return (
                               <div key={`mob-dept-${dept.key}`} className="space-y-1">
@@ -515,8 +582,9 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                                         onSelectWorkflowFms(dept.key, null);
                                       } else {
                                         onSelectDepartmentFms?.(dept.key);
+                                        onTabChange('fms');
                                       }
-                                      handleNavigate('fms');
+                                      onClose();
                                     }}
                                     className={`flex-1 flex items-center justify-between px-2 py-1 rounded-md text-left transition-all ${
                                       isDeptActive
@@ -567,8 +635,9 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                                               onSelectWorkflowFms(dept.key, wf.key);
                                             } else {
                                               onSelectDepartmentFms?.(dept.key);
+                                              onTabChange('fms');
                                             }
-                                            handleNavigate('fms');
+                                            onClose();
                                           }}
                                           title={`${wf.name} (${wf.activeCount} active, ${wf.totalCount} total)`}
                                           className={`w-full flex items-center justify-between px-2 py-1 rounded text-left transition-all group cursor-pointer ${
@@ -640,19 +709,21 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                   </button>
                 );
               })}
-            </div>
           </div>
+        </div>
+      )}
 
-          {/* Department Branches - Super Admin Only */}
-          {isSuperAdmin && (
+          {/* Department Modules - Admin & Super Admin */}
+          {isAdminOrSuperAdmin && (
             <div className="pt-2 border-t border-slate-100">
               <span className="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                Department Hubs
+                Department Modules
               </span>
               <div className="space-y-1">
                 {departmentList.map((dept) => {
-                  const isCollapsed = !!collapsedDepts[dept.key];
+                  const isCollapsed = collapsedDepts[dept.key] !== false;
                   const isDeptFmsActive = activeTab === 'fms' && selectedDepartment === dept.key;
+                  const isSubCollapsed = collapsedSubSections[`mob-${dept.key}-fms`] !== false;
                   return (
                     <div key={dept.key} className="space-y-1">
                       <button
@@ -717,7 +788,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                                 className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 ml-0.5"
                                 title="Toggle FMS workflows list"
                               >
-                                {collapsedSubSections[`mob-${dept.key}-fms`] ? (
+                                {isSubCollapsed ? (
                                   <ChevronRight className="w-3.5 h-3.5" />
                                 ) : (
                                   <ChevronDown className="w-3.5 h-3.5" />
@@ -725,7 +796,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                               </button>
                             </div>
 
-                            {!collapsedSubSections[`mob-${dept.key}-fms`] && (
+                            {!isSubCollapsed && (
                               <div className="pl-2 space-y-0.5 border-l border-indigo-100 ml-2">
                                 <button
                                   onClick={() => {
@@ -866,6 +937,48 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                         </div>
                       )}
                     </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* System Modules */}
+          {filteredSystemNavItems.length > 0 && (
+            <div className="pt-2 border-t border-slate-100">
+              <span className="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                System Modules
+              </span>
+              <div className="space-y-1">
+                {filteredSystemNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const isItemActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleNavigate(item.id)}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all ${
+                        isItemActive
+                          ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                          : 'text-slate-700 hover:bg-slate-100 font-semibold'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 py-0.5">
+                        <Icon className={`w-4 h-4 shrink-0 ${isItemActive ? 'text-white' : 'text-slate-500'}`} />
+                        <span className="text-xs truncate">{item.label}</span>
+                      </div>
+                      {item.badge && (
+                        <span
+                          className={`text-[10px] font-mono shrink-0 font-bold px-2 py-0.5 rounded-full ${
+                            isItemActive 
+                              ? 'bg-white/20 text-white' 
+                              : item.badgeColor || 'bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          {item.badge}
+                        </span>
+                      )}
+                    </button>
                   );
                 })}
               </div>

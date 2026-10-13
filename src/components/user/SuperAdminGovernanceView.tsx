@@ -27,7 +27,11 @@ import {
   Eye,
   EyeOff,
   Layers,
-  X
+  X,
+  Phone,
+  MessageSquare,
+  Mail,
+  Info
 } from 'lucide-react';
 import { 
   UserProfile, 
@@ -40,6 +44,8 @@ import {
   isUserSuperAdmin
 } from '../../types';
 import { USERS } from '../../data/initialData';
+import { validateStaffUniqueness, normalizePhone, filterUsersForViewer } from '../../utils/staffValidation';
+import { storageAdapter } from '../../services/storageAdapter';
 
 interface SuperAdminGovernanceViewProps {
   usersList: UserProfile[];
@@ -58,12 +64,13 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
   onImpersonateUser,
   currentUser,
 }) => {
+  const visibleUsersList = filterUsersForViewer(usersList, currentUser);
   const [activeTab, setActiveTab] = useState<'DIRECTORY' | 'PERMISSIONS' | 'REASSIGN' | 'NOTICES'>('DIRECTORY');
   const [search, setSearch] = useState('');
 
   // Permissions Matrix State
   const [selectedStaffForPermissions, setSelectedStaffForPermissions] = useState<string>(
-    usersList.find((u) => !isUserSuperAdmin(u))?.userId || usersList[0]?.userId || ''
+    visibleUsersList.find((u) => !isUserSuperAdmin(u))?.userId || visibleUsersList[0]?.userId || ''
   );
   const [permissionSuccessMsg, setPermissionSuccessMsg] = useState<string | null>(null);
 
@@ -75,7 +82,20 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
   const [newUserSystemRole, setNewUserSystemRole] = useState<UserRole>('OPERATIONAL_USER');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPhone, setNewUserPhone] = useState('');
+  const [newUserWhatsappPhone, setNewUserWhatsappPhone] = useState('');
+  const [newUserSameAsMobile, setNewUserSameAsMobile] = useState(true);
   const [newUserSite, setNewUserSite] = useState('Siladehi Site');
+  const [newUserPassword, setNewUserPassword] = useState('pass123');
+  const [newUserPin, setNewUserPin] = useState('1234');
+  const [newUserValidationErr, setNewUserValidationErr] = useState<string | null>(null);
+
+  // Read / View Profile Modal State
+  const [viewProfileUser, setViewProfileUser] = useState<UserProfile | null>(null);
+
+  // Delete User Modal State
+  const [deleteConfirmUser, setDeleteConfirmUser] = useState<UserProfile | null>(null);
+  const [deleteErrorMsg, setDeleteErrorMsg] = useState<string | null>(null);
+  const [deleteSuccessMsg, setDeleteSuccessMsg] = useState<string | null>(null);
 
   // Password Reset Modal State
   const [passwordResetUser, setPasswordResetUser] = useState<UserProfile | null>(null);
@@ -85,16 +105,20 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
   const [passwordResetCopied, setPasswordResetCopied] = useState(false);
   const [passwordResetSuccessMsg, setPasswordResetSuccessMsg] = useState<string | null>(null);
 
-  // Role Manager Modal State
+  // Role Manager / Edit Staff Modal State
   const [roleManagerUser, setRoleManagerUser] = useState<UserProfile | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editUsername, setEditUsername] = useState('');
   const [editSystemRole, setEditSystemRole] = useState<UserRole>('OPERATIONAL_USER');
   const [editFunctionalRole, setEditFunctionalRole] = useState('');
   const [editDepartmentId, setEditDepartmentId] = useState('');
   const [editDepartmentName, setEditDepartmentName] = useState('');
   const [editSiteLocation, setEditSiteLocation] = useState('');
   const [editPhone, setEditPhone] = useState('');
+  const [editWhatsappPhone, setEditWhatsappPhone] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [roleManagerSuccessMsg, setRoleManagerSuccessMsg] = useState<string | null>(null);
+  const [editValidationErr, setEditValidationErr] = useState<string | null>(null);
 
   // Emergency Re-assignment State
   const [selectedAbsentUser, setSelectedAbsentUser] = useState<string>('');
@@ -141,73 +165,132 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
     }, 1500);
   };
 
-  // Role Manager Handlers
+  // Role Manager & Edit Staff Handlers
   const handleOpenRoleManager = (user: UserProfile) => {
     setRoleManagerUser(user);
+    setEditName(user.name);
+    setEditUsername(user.username || '');
     setEditSystemRole(user.systemRole || 'OPERATIONAL_USER');
     setEditFunctionalRole(user.role || 'Staff Member');
     setEditDepartmentId(user.departmentId || 'DEPT-STORE');
     setEditDepartmentName(user.departmentName || 'Central Operations');
     setEditSiteLocation(user.siteLocation || 'Siladehi Site');
     setEditPhone(user.phone || '');
+    setEditWhatsappPhone(user.whatsappPhone || user.phone || '');
     setEditEmail(user.email || '');
     setRoleManagerSuccessMsg(null);
+    setEditValidationErr(null);
   };
 
   const handleSaveRoleManager = (e: React.FormEvent) => {
     e.preventDefault();
     if (!roleManagerUser) return;
 
+    // Validate uniqueness for Username, Mobile, WhatsApp, and Email
+    const validation = validateStaffUniqueness({
+      username: editUsername,
+      phone: editPhone,
+      whatsappPhone: editWhatsappPhone || editPhone,
+      email: editEmail,
+      excludeUserId: roleManagerUser.userId,
+      usersList,
+    });
+
+    if (!validation.isValid) {
+      const firstErr = 
+        validation.errors.username || 
+        validation.errors.phone || 
+        validation.errors.whatsappPhone || 
+        validation.errors.email || 
+        'Validation failed. Please correct duplicate fields.';
+      setEditValidationErr(firstErr);
+      return;
+    }
+
+    setEditValidationErr(null);
+
     const updated = usersList.map((u) => {
       if (u.userId === roleManagerUser.userId) {
         return {
           ...u,
+          name: editName.trim() || u.name,
+          username: editUsername.trim().toLowerCase() || u.username,
           systemRole: editSystemRole,
           role: editFunctionalRole.trim() || u.role,
           departmentId: editDepartmentId,
           departmentName: editDepartmentName,
           siteLocation: editSiteLocation.trim() || u.siteLocation,
           phone: editPhone.trim() || u.phone,
-          email: editEmail.trim() || u.email,
+          whatsappPhone: (editWhatsappPhone.trim() || editPhone.trim()) || u.whatsappPhone,
+          email: editEmail.trim().toLowerCase() || u.email,
         };
       }
       return u;
     });
 
     onUpdateUsersList(updated);
-    setRoleManagerSuccessMsg(`System Role & Details updated for ${roleManagerUser.name}!`);
+    setRoleManagerSuccessMsg(`Updated profile and access for ${editName.trim()}!`);
     setTimeout(() => {
       setRoleManagerSuccessMsg(null);
       setRoleManagerUser(null);
     }, 1500);
   };
 
-  const filteredUsers = usersList.filter(
+  const filteredUsers = visibleUsersList.filter(
     (u) =>
       u.name.toLowerCase().includes(search.toLowerCase()) ||
       u.role.toLowerCase().includes(search.toLowerCase()) ||
       u.email.toLowerCase().includes(search.toLowerCase()) ||
-      (u.username && u.username.toLowerCase().includes(search.toLowerCase()))
+      (u.username && u.username.toLowerCase().includes(search.toLowerCase())) ||
+      (u.phone && u.phone.includes(search))
   );
 
   const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUserName.trim()) return;
 
+    const actualUsername = newUserUsername.trim() || newUserName.trim().toLowerCase().replace(/\s+/g, '.');
+    const actualPhone = newUserPhone.trim() || '9827100000';
+    const actualWhatsapp = newUserSameAsMobile ? actualPhone : (newUserWhatsappPhone.trim() || actualPhone);
+    const actualEmail = newUserEmail.trim() || `${actualUsername}@barbrik.in`;
+
+    // Validate uniqueness for Username, Mobile, WhatsApp, and Email
+    const validation = validateStaffUniqueness({
+      username: actualUsername,
+      phone: actualPhone,
+      whatsappPhone: actualWhatsapp,
+      email: actualEmail,
+      usersList,
+    });
+
+    if (!validation.isValid) {
+      const firstErr = 
+        validation.errors.username || 
+        validation.errors.phone || 
+        validation.errors.whatsappPhone || 
+        validation.errors.email || 
+        'Validation failed. Please correct duplicate fields.';
+      setNewUserValidationErr(firstErr);
+      return;
+    }
+
+    setNewUserValidationErr(null);
+
     const created: UserProfile = {
       userId: `USR-${Date.now().toString().slice(-4)}`,
       name: newUserName.trim(),
-      username: newUserUsername.trim() || newUserName.trim().toLowerCase().replace(/\s+/g, '.'),
-      password: 'pass123',
-      role: newUserRoleTitle,
+      username: actualUsername,
+      password: newUserPassword.trim() || 'pass123',
+      role: newUserRoleTitle.trim() || 'Store Keeper',
       systemRole: newUserSystemRole,
       departmentId: 'DEPT-STORE',
       departmentName: 'Central Operations',
-      email: newUserEmail.trim() || `${newUserName.trim().toLowerCase().replace(/\s+/g, '.')}@barbrik.in`,
-      phone: newUserPhone.trim() || '9827100000',
+      email: actualEmail,
+      phone: actualPhone,
+      whatsappPhone: actualWhatsapp,
       siteLocation: newUserSite,
       status: 'ACTIVE',
-      approvalPin: '1234',
+      approvalPin: newUserPin.trim() || '1234',
     };
 
     onUpdateUsersList([...usersList, created]);
@@ -216,6 +299,50 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
     setNewUserUsername('');
     setNewUserEmail('');
     setNewUserPhone('');
+    setNewUserWhatsappPhone('');
+    setNewUserSameAsMobile(true);
+  };
+
+  // Open Safety Delete Modal
+  const handleOpenDeleteConfirm = (user: UserProfile) => {
+    setDeleteConfirmUser(user);
+    setDeleteErrorMsg(null);
+    setDeleteSuccessMsg(null);
+
+    // Safeguard 1: Cannot delete currently logged in session user
+    if (currentUser && currentUser.userId === user.userId) {
+      setDeleteErrorMsg("Safety Lock: You cannot delete your own active logged-in account!");
+      return;
+    }
+
+    // Safeguard 2: Root Super Admin USR-000 cannot be deleted
+    if (user.userId === 'USR-000') {
+      setDeleteErrorMsg("Safety Lock: Root Super Admin (USR-000) is the master account and cannot be deleted.");
+      return;
+    }
+
+    // Safeguard 3: If only 1 Super Admin exists, prevent deleting them
+    const superAdmins = usersList.filter((u) => isUserSuperAdmin(u));
+    if (isUserSuperAdmin(user) && superAdmins.length <= 1) {
+      setDeleteErrorMsg("Safety Lock: System requires at least 1 active Super Admin account. Create another Super Admin before deleting this account.");
+      return;
+    }
+  };
+
+  const handleExecuteDeleteUser = () => {
+    if (!deleteConfirmUser || deleteErrorMsg) return;
+
+    // Call storage adapter to purge from storage and firestore
+    storageAdapter.deleteUser(deleteConfirmUser.userId, currentUser);
+
+    const updated = usersList.filter((u) => u.userId !== deleteConfirmUser.userId);
+    onUpdateUsersList(updated);
+
+    setDeleteSuccessMsg(`Permanently deleted staff record for ${deleteConfirmUser.name} (${deleteConfirmUser.userId}).`);
+    setTimeout(() => {
+      setDeleteSuccessMsg(null);
+      setDeleteConfirmUser(null);
+    }, 1500);
   };
 
   const handleToggleUserStatus = (userId: string) => {
@@ -357,7 +484,7 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
         <div className="flex items-center gap-3 shrink-0">
           <div className="bg-white/10 backdrop-blur-xs border border-white/10 px-3.5 py-2 rounded-xl text-center">
             <span className="text-[10px] text-slate-300 block font-semibold uppercase tracking-wider">Active Staff</span>
-            <span className="text-lg font-black text-amber-400">{usersList.filter(u => u.status !== 'INACTIVE').length} / {usersList.length}</span>
+            <span className="text-lg font-black text-amber-400">{visibleUsersList.filter(u => u.status !== 'INACTIVE').length} / {visibleUsersList.length}</span>
           </div>
           <div className="bg-white/10 backdrop-blur-xs border border-white/10 px-3.5 py-2 rounded-xl text-center">
             <span className="text-[10px] text-slate-300 block font-semibold uppercase tracking-wider">Notices</span>
@@ -381,7 +508,7 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
               }`}
             >
               <Users className="w-4 h-4 text-indigo-600" />
-              <span>Staff Directory &amp; Role Access ({usersList.length})</span>
+              <span>Staff Directory &amp; Role Access ({visibleUsersList.length})</span>
             </button>
 
             <button
@@ -454,99 +581,193 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
 
               {/* Add User Drawer / Form */}
               {isAddUserOpen && (
-                <form onSubmit={handleCreateUser} className="bg-indigo-50/70 p-4 rounded-2xl border border-indigo-200 space-y-3 animate-in fade-in duration-200">
-                  <div className="flex items-center justify-between">
+                <form onSubmit={handleCreateUser} className="bg-indigo-50/80 p-4 rounded-2xl border border-indigo-200 space-y-4 animate-in fade-in duration-200 shadow-xs">
+                  <div className="flex items-center justify-between border-b border-indigo-200/80 pb-2.5">
                     <h3 className="font-black text-indigo-950 text-sm flex items-center gap-1.5">
-                      <UserPlus className="w-4 h-4 text-indigo-600" /> Provision New Organization Staff
+                      <UserPlus className="w-4 h-4 text-indigo-600" /> Provision New Organization Staff Account
                     </h3>
                     <button
                       type="button"
-                      onClick={() => setIsAddUserOpen(false)}
-                      className="text-indigo-600 hover:text-indigo-900 font-bold text-xs cursor-pointer"
+                      onClick={() => {
+                        setIsAddUserOpen(false);
+                        setNewUserValidationErr(null);
+                      }}
+                      className="text-indigo-600 hover:text-indigo-900 font-bold text-xs cursor-pointer flex items-center gap-1"
                     >
-                      Cancel
+                      <X className="w-4 h-4" />
+                      <span>Cancel</span>
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {newUserValidationErr && (
+                    <div className="p-3 bg-rose-100 border border-rose-300 text-rose-900 rounded-xl font-bold text-xs flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>{newUserValidationErr}</span>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                     <div>
-                      <label className="block font-bold text-indigo-950 mb-1">Full Name *</label>
+                      <label className="block font-bold text-indigo-950 mb-1">Full Staff Name *</label>
                       <input
                         type="text"
                         value={newUserName}
                         onChange={(e) => setNewUserName(e.target.value)}
                         placeholder="e.g. Ramesh Verma"
-                        className="w-full bg-white border border-indigo-200 rounded-lg p-2 font-medium text-slate-800"
+                        className="w-full bg-white border border-indigo-200 rounded-xl p-2.5 font-semibold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                         required
                       />
                     </div>
 
                     <div>
-                      <label className="block font-bold text-indigo-950 mb-1">Login Username</label>
+                      <label className="block font-bold text-indigo-950 mb-1">
+                        Login Username * <span className="text-[10px] text-indigo-600 font-normal">(Unique)</span>
+                      </label>
                       <input
                         type="text"
                         value={newUserUsername}
-                        onChange={(e) => setNewUserUsername(e.target.value)}
+                        onChange={(e) => {
+                          setNewUserUsername(e.target.value);
+                          setNewUserValidationErr(null);
+                        }}
                         placeholder="e.g. ramesh.verma"
-                        className="w-full bg-white border border-indigo-200 rounded-lg p-2 font-medium text-slate-800"
+                        className="w-full bg-white border border-indigo-200 rounded-xl p-2.5 font-semibold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                        required
                       />
                     </div>
 
                     <div>
-                      <label className="block font-bold text-indigo-950 mb-1">Operational Role Title</label>
+                      <label className="block font-bold text-indigo-950 mb-1">Designation / Role Title *</label>
                       <input
                         type="text"
                         value={newUserRoleTitle}
                         onChange={(e) => setNewUserRoleTitle(e.target.value)}
                         placeholder="e.g. Store Keeper / Purchase Assistant"
-                        className="w-full bg-white border border-indigo-200 rounded-lg p-2 font-medium text-slate-800"
+                        className="w-full bg-white border border-indigo-200 rounded-xl p-2.5 font-semibold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                        required
                       />
                     </div>
 
                     <div>
-                      <label className="block font-bold text-indigo-950 mb-1">System Governance Role</label>
+                      <label className="block font-bold text-indigo-950 mb-1">System Governance Level *</label>
                       <select
                         value={newUserSystemRole}
                         onChange={(e) => setNewUserSystemRole(e.target.value as any)}
-                        className="w-full bg-white border border-indigo-200 rounded-lg p-2 font-medium text-slate-800 cursor-pointer"
+                        className="w-full bg-white border border-indigo-200 rounded-xl p-2.5 font-bold text-slate-900 cursor-pointer focus:ring-2 focus:ring-indigo-500 outline-none"
                       >
-                        <option value="OPERATIONAL_USER">OPERATIONAL_USER (Staff)</option>
-                        <option value="PROCESS_MANAGER">PROCESS_MANAGER (Approval HOD)</option>
-                        <option value="DEPT_ADMIN">DEPT_ADMIN (Store/Purchase Manager)</option>
-                        <option value="ADMIN">ADMIN (Daily Operational Administrator)</option>
-                        <option value="SUPER_ADMIN">SUPER_ADMIN (Master Control)</option>
+                        <option value="OPERATIONAL_USER">OPERATIONAL_USER (Field / Site Staff)</option>
+                        <option value="PROCESS_MANAGER">PROCESS_MANAGER (Approver / HOD)</option>
+                        <option value="DEPT_ADMIN">DEPT_ADMIN (Store / Purchase Head)</option>
+                        <option value="ADMIN">ADMIN (Operational Administrator)</option>
+                        {currentUser?.userId === 'USR-000' && (
+                          <option value="SUPER_ADMIN">SUPER_ADMIN (Full Control)</option>
+                        )}
                       </select>
                     </div>
 
                     <div>
-                      <label className="block font-bold text-indigo-950 mb-1">Official Email</label>
+                      <label className="block font-bold text-indigo-950 mb-1">
+                        Mobile Phone Number * <span className="text-[10px] text-indigo-600 font-normal">(10 Digits)</span>
+                      </label>
                       <input
-                        type="email"
-                        value={newUserEmail}
-                        onChange={(e) => setNewUserEmail(e.target.value)}
-                        placeholder="ramesh@barbrik.in"
-                        className="w-full bg-white border border-indigo-200 rounded-lg p-2 font-medium text-slate-800"
+                        type="text"
+                        value={newUserPhone}
+                        onChange={(e) => {
+                          setNewUserPhone(e.target.value);
+                          setNewUserValidationErr(null);
+                        }}
+                        placeholder="e.g. 9827100099"
+                        className="w-full bg-white border border-indigo-200 rounded-xl p-2.5 font-semibold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                        required
                       />
                     </div>
 
                     <div>
-                      <label className="block font-bold text-indigo-950 mb-1">WhatsApp Contact</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="font-bold text-indigo-950">WhatsApp Contact</label>
+                        <label className="flex items-center gap-1 text-[10px] font-bold text-indigo-700 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={newUserSameAsMobile}
+                            onChange={(e) => setNewUserSameAsMobile(e.target.checked)}
+                            className="rounded border-indigo-300 text-indigo-600"
+                          />
+                          <span>Same as Mobile</span>
+                        </label>
+                      </div>
                       <input
                         type="text"
-                        value={newUserPhone}
-                        onChange={(e) => setNewUserPhone(e.target.value)}
-                        placeholder="9827100000"
-                        className="w-full bg-white border border-indigo-200 rounded-lg p-2 font-medium text-slate-800"
+                        value={newUserSameAsMobile ? newUserPhone : newUserWhatsappPhone}
+                        onChange={(e) => {
+                          setNewUserWhatsappPhone(e.target.value);
+                          setNewUserValidationErr(null);
+                        }}
+                        disabled={newUserSameAsMobile}
+                        placeholder="e.g. 9827100099"
+                        className="w-full bg-white border border-indigo-200 rounded-xl p-2.5 font-semibold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-slate-100 disabled:text-slate-500"
                       />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-indigo-950 mb-1">
+                        Official Email * <span className="text-[10px] text-indigo-600 font-normal">(Unique)</span>
+                      </label>
+                      <input
+                        type="email"
+                        value={newUserEmail}
+                        onChange={(e) => {
+                          setNewUserEmail(e.target.value);
+                          setNewUserValidationErr(null);
+                        }}
+                        placeholder="e.g. ramesh@barbrik.in"
+                        className="w-full bg-white border border-indigo-200 rounded-xl p-2.5 font-semibold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-indigo-950 mb-1">Site / Base Location</label>
+                      <input
+                        type="text"
+                        value={newUserSite}
+                        onChange={(e) => setNewUserSite(e.target.value)}
+                        placeholder="e.g. Siladehi Site"
+                        className="w-full bg-white border border-indigo-200 rounded-xl p-2.5 font-semibold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-indigo-950 mb-1">Initial Password &amp; Approval PIN</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          value={newUserPassword}
+                          onChange={(e) => setNewUserPassword(e.target.value)}
+                          placeholder="pass123"
+                          className="w-full bg-white border border-indigo-200 rounded-xl p-2.5 font-mono text-xs font-bold text-slate-900"
+                        />
+                        <input
+                          type="text"
+                          maxLength={4}
+                          value={newUserPin}
+                          onChange={(e) => setNewUserPin(e.target.value.replace(/\D/g, ''))}
+                          placeholder="1234"
+                          className="w-full bg-white border border-indigo-200 rounded-xl p-2.5 font-mono text-xs font-bold text-slate-900"
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex justify-end pt-2">
+                  <div className="flex items-center justify-between pt-2 border-t border-indigo-200/80">
+                    <p className="text-[11px] text-indigo-800 font-medium">
+                      Automatically validates distinct Username, Mobile No, WhatsApp No, and Official Email.
+                    </p>
                     <button
                       type="submit"
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg cursor-pointer"
+                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5 transition-colors"
                     >
-                      Save &amp; Activate Staff Account
+                      <UserPlus className="w-4 h-4" />
+                      <span>Save &amp; Activate Staff Account</span>
                     </button>
                   </div>
                 </form>
@@ -585,8 +806,11 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                             </td>
 
                             <td className="p-3 text-[11px] text-slate-600">
-                              <div>{user.phone || '9827100000'}</div>
-                              <div className="text-[10px] text-slate-400">{user.email}</div>
+                              <div className="font-semibold text-slate-900">{user.phone || '9827100000'}</div>
+                              {user.whatsappPhone && user.whatsappPhone !== user.phone && (
+                                <div className="text-[10px] text-emerald-700 font-medium">WA: {user.whatsappPhone}</div>
+                              )}
+                              <div className="text-[10px] text-slate-400 font-mono">{user.email}</div>
                             </td>
 
                             <td className="p-3">
@@ -617,6 +841,43 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
 
                             <td className="p-3 pr-4 text-right whitespace-nowrap">
                               <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                {/* READ: View Full Profile */}
+                                <button
+                                  type="button"
+                                  onClick={() => setViewProfileUser(user)}
+                                  className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold rounded-lg border border-blue-200 cursor-pointer text-[11px] flex items-center gap-1"
+                                  title="View Complete Staff Profile & Access Summary"
+                                >
+                                  <Eye className="w-3 h-3 text-blue-600" />
+                                  <span>View</span>
+                                </button>
+
+                                {/* UPDATE: Edit Staff & Role */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenRoleManager(user)}
+                                  className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold rounded-lg border border-indigo-300 cursor-pointer text-[11px] flex items-center gap-1"
+                                  title="Edit Staff Credentials, Role, Phone & Email"
+                                >
+                                  <Edit3 className="w-3 h-3 text-indigo-600" />
+                                  <span>Edit</span>
+                                </button>
+
+                                {/* UPDATE: Module Permissions */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedStaffForPermissions(user.userId);
+                                    setActiveTab('PERMISSIONS');
+                                  }}
+                                  className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold rounded-lg border border-amber-300 cursor-pointer text-[11px] flex items-center gap-1"
+                                  title="Configure Granular Module Visibility & Edit Rights"
+                                >
+                                  <Sliders className="w-3 h-3 text-amber-700" />
+                                  <span>Permissions</span>
+                                </button>
+
+                                {/* UPDATE: Password / PIN */}
                                 <button
                                   type="button"
                                   onClick={() => handleOpenPasswordReset(user)}
@@ -627,49 +888,39 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                                   <span>Password</span>
                                 </button>
 
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenRoleManager(user)}
-                                  className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold rounded-lg border border-indigo-300 cursor-pointer text-[11px] flex items-center gap-1"
-                                  title="Manage System Role, Department & Job Title"
-                                >
-                                  <Edit3 className="w-3 h-3 text-indigo-600" />
-                                  <span>Role</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedStaffForPermissions(user.userId);
-                                    setActiveTab('PERMISSIONS');
-                                  }}
-                                  className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold rounded-lg border border-amber-300 cursor-pointer text-[11px] flex items-center gap-1"
-                                  title="Configure Module Visibility, Edit and Delete Permissions"
-                                >
-                                  <Sliders className="w-3 h-3 text-amber-700" />
-                                  <span>Permissions</span>
-                                </button>
-
+                                {/* IMPERSONATE: View As */}
                                 <button
                                   type="button"
                                   onClick={() => onImpersonateUser(user)}
-                                  className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-lg border border-blue-200 cursor-pointer text-[11px] flex items-center gap-1"
+                                  className="px-2 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold rounded-lg border border-teal-200 cursor-pointer text-[11px] flex items-center gap-1"
                                   title="Login As This User (Session Impersonation)"
                                 >
-                                  <Eye className="w-3 h-3 text-blue-600" />
+                                  <UserCheck className="w-3 h-3 text-teal-600" />
                                   <span>View As</span>
                                 </button>
 
+                                {/* STATUS: Toggle Active / Inactive */}
                                 <button
                                   type="button"
                                   onClick={() => handleToggleUserStatus(user.userId)}
                                   className={`px-2 py-1 font-bold rounded-lg border cursor-pointer text-[11px] ${
                                     isInactive
                                       ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
-                                      : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
+                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
                                   }`}
                                 >
                                   {isInactive ? 'Re-activate' : 'Deactivate'}
+                                </button>
+
+                                {/* DELETE: Delete Staff Member */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenDeleteConfirm(user)}
+                                  className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold rounded-lg border border-rose-300 cursor-pointer text-[11px] flex items-center gap-1"
+                                  title="Permanently Delete Staff Account"
+                                >
+                                  <Trash2 className="w-3 h-3 text-rose-600" />
+                                  <span>Delete</span>
                                 </button>
                               </div>
                             </td>
@@ -1286,18 +1537,350 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
         </div>
       )}
 
-      {/* MODAL: Role & Access Manager */}
-      {roleManagerUser && (
+      {/* MODAL: READ - View Full Staff Profile */}
+      {viewProfileUser && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center text-sm shrink-0">
+                  {viewProfileUser.name.charAt(0)}
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm">{viewProfileUser.name}</h3>
+                  <p className="text-[11px] text-slate-300 font-mono">@{viewProfileUser.username || viewProfileUser.userId} • {viewProfileUser.userId}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewProfileUser(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              {/* Primary Attributes */}
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Operational Title</span>
+                  <span className="font-extrabold text-slate-900">{viewProfileUser.role}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Department</span>
+                  <span className="font-extrabold text-slate-900">{viewProfileUser.departmentName || 'Operations'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">System Level</span>
+                  <span className="font-black text-indigo-700">{viewProfileUser.systemRole || 'STAFF'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Site Location</span>
+                  <span className="font-extrabold text-slate-900">{viewProfileUser.siteLocation || 'Siladehi Site'}</span>
+                </div>
+              </div>
+
+              {/* Contact Information */}
+              <div className="space-y-2">
+                <h4 className="font-black text-slate-900 text-xs flex items-center gap-1.5 border-b border-slate-100 pb-1">
+                  <Phone className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Contact Credentials</span>
+                </h4>
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+                    <span className="text-slate-400 text-[10px] block">Mobile Phone:</span>
+                    <span className="font-bold text-slate-800">{viewProfileUser.phone || '9827100000'}</span>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+                    <span className="text-slate-400 text-[10px] block">WhatsApp Contact:</span>
+                    <span className="font-bold text-emerald-800">{viewProfileUser.whatsappPhone || viewProfileUser.phone || '9827100000'}</span>
+                  </div>
+                  <div className="col-span-2 p-2 bg-slate-50 rounded-lg border border-slate-100">
+                    <span className="text-slate-400 text-[10px] block">Official Email Address:</span>
+                    <span className="font-bold text-indigo-900">{viewProfileUser.email}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Security Credentials */}
+              <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1">
+                <div className="font-bold text-amber-950 flex items-center gap-1.5 text-xs">
+                  <KeyRound className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Authentication Credentials</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] pt-1">
+                  <span>Web Password: <strong className="font-mono bg-white px-1.5 py-0.5 rounded border border-amber-300">{viewProfileUser.password || 'pass123'}</strong></span>
+                  <span>Approval PIN: <strong className="font-mono bg-white px-1.5 py-0.5 rounded border border-amber-300">{viewProfileUser.approvalPin || '1234'}</strong></span>
+                </div>
+              </div>
+
+              {/* Module Permissions Summary */}
+              <div className="space-y-1.5">
+                <h4 className="font-black text-slate-900 text-xs flex items-center gap-1.5 border-b border-slate-100 pb-1">
+                  <Sliders className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Module Access Summary</span>
+                </h4>
+                <div className="flex flex-wrap gap-1">
+                  {SYSTEM_MODULES.map((m) => {
+                    const perm = getUserModulePermission(viewProfileUser, m.id);
+                    if (!perm.visible) return null;
+                    return (
+                      <span key={m.id} className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-900 border border-indigo-200">
+                        {m.name} {perm.canEdit ? '(Edit)' : '(Read)'}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewProfileUser(null);
+                    handleOpenRoleManager(viewProfileUser);
+                  }}
+                  className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 font-bold rounded-xl border border-indigo-200 cursor-pointer flex items-center gap-1"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Edit Profile</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setViewProfileUser(null)}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-950 text-white font-bold rounded-xl cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DELETE - Safety Delete Confirmation */}
+      {deleteConfirmUser && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-rose-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-rose-950 text-white p-4 flex items-center justify-between border-b border-rose-900">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-rose-500/20 text-rose-300 rounded-xl">
+                  <ShieldAlert className="w-5 h-5 text-rose-400" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-rose-100">Permanently Delete Staff Member</h3>
+                  <p className="text-[10px] text-rose-300">Irreversible Storage &amp; Account Purge</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmUser(null)}
+                className="text-rose-300 hover:text-white p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              {deleteSuccessMsg && (
+                <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{deleteSuccessMsg}</span>
+                </div>
+              )}
+
+              {deleteErrorMsg ? (
+                <div className="p-3 bg-amber-50 border border-amber-300 text-amber-950 rounded-xl space-y-1">
+                  <div className="font-extrabold flex items-center gap-1.5 text-amber-900">
+                    <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Action Blocked By Governance Safeguard</span>
+                  </div>
+                  <p className="text-[11px] text-amber-900 leading-relaxed">
+                    {deleteErrorMsg}
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-rose-50/70 p-3.5 rounded-xl border border-rose-200 text-rose-950 space-y-2">
+                  <p className="font-bold text-xs">
+                    Are you sure you want to delete staff account <strong className="underline">{deleteConfirmUser.name}</strong>?
+                  </p>
+                  <div className="bg-white p-2.5 rounded-lg border border-rose-200 space-y-1 text-[11px]">
+                    <div>User ID: <strong className="font-mono">{deleteConfirmUser.userId}</strong></div>
+                    <div>Username: <strong className="font-mono">@{deleteConfirmUser.username}</strong></div>
+                    <div>Designation: <strong>{deleteConfirmUser.role}</strong></div>
+                    <div>Email: <strong>{deleteConfirmUser.email}</strong></div>
+                  </div>
+                  <p className="text-[10px] text-rose-700 leading-tight">
+                    This will remove the user profile from local persistence and Firestore database. Active workflow tasks assigned to this user should be reassigned first.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmUser(null)}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                {!deleteErrorMsg && (
+                  <button
+                    type="button"
+                    onClick={handleExecuteDeleteUser}
+                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Confirm &amp; Delete Account</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Password Reset */}
+      {passwordResetUser && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-amber-500/20 text-amber-400 rounded-lg">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm">Reset Password &amp; Security Credentials</h3>
+                  <p className="text-[11px] text-slate-400">User: {passwordResetUser.name} ({passwordResetUser.username})</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPasswordResetUser(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePasswordReset} className="p-5 space-y-4">
+              {passwordResetSuccessMsg && (
+                <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{passwordResetSuccessMsg}</span>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    New Web Password *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPasswordText ? "text" : "password"}
+                      value={newPasswordValue}
+                      onChange={(e) => setNewPasswordValue(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 pr-10 text-sm font-mono font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-amber-500 outline-none"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordText(!showPasswordText)}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showPasswordText ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const randomPass = 'pass' + Math.floor(1000 + Math.random() * 9000);
+                        setNewPasswordValue(randomPass);
+                      }}
+                      className="text-[10px] font-bold text-indigo-600 hover:underline cursor-pointer"
+                    >
+                      Auto-generate random password
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    Approval 4-Digit Security PIN *
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={4}
+                    value={newPinValue}
+                    onChange={(e) => setNewPinValue(e.target.value.replace(/\D/g, ''))}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-mono font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-amber-500 outline-none"
+                    placeholder="1234"
+                    required
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Used for authorising stage transitions &amp; approvals in FMS/IMS.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  Copy credentials to clipboard to share directly with staff member:
+                  <div className="mt-1 font-mono font-bold text-[10px] bg-white p-1.5 rounded border border-amber-300 select-all flex items-center justify-between">
+                    <span>User: {passwordResetUser.username} | Pass: {newPasswordValue} | PIN: {newPinValue}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`User: ${passwordResetUser.username}\nPass: ${newPasswordValue}\nPIN: ${newPinValue}`);
+                        setPasswordResetCopied(true);
+                        setTimeout(() => setPasswordResetCopied(false), 2000);
+                      }}
+                      className="ml-2 text-amber-800 hover:text-amber-950 underline cursor-pointer shrink-0 font-sans"
+                    >
+                      {passwordResetCopied ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setPasswordResetUser(null)}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Save New Password</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: UPDATE - Edit Staff Details & Role Access Manager */}
+      {roleManagerUser && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="bg-indigo-950 text-white p-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="p-2 bg-indigo-500/20 text-indigo-300 rounded-lg">
                   <ShieldCheck className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-sm">Role &amp; System Access Manager</h3>
-                  <p className="text-[11px] text-indigo-200">Staff: {roleManagerUser.name} ({roleManagerUser.userId})</p>
+                  <h3 className="font-extrabold text-sm">Edit Staff Profile &amp; System Authorization</h3>
+                  <p className="text-[11px] text-indigo-200">Staff ID: {roleManagerUser.userId}</p>
                 </div>
               </div>
               <button
@@ -1317,7 +1900,43 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                 </div>
               )}
 
+              {editValidationErr && (
+                <div className="p-3 bg-rose-100 border border-rose-300 text-rose-900 rounded-xl font-bold text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{editValidationErr}</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    Full Staff Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    Login Username * <span className="text-[10px] text-indigo-600 font-normal">(Unique)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editUsername}
+                    onChange={(e) => {
+                      setEditUsername(e.target.value);
+                      setEditValidationErr(null);
+                    }}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    required
+                  />
+                </div>
+
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-extrabold text-slate-700 mb-1">
                     System Level Authorization *
@@ -1331,7 +1950,9 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                     <option value="PROCESS_MANAGER">PROCESS_MANAGER (Process Coordinators &amp; Approvers)</option>
                     <option value="DEPT_ADMIN">DEPT_ADMIN (Department Head)</option>
                     <option value="ADMIN">ADMIN (Operational Administrator)</option>
-                    <option value="SUPER_ADMIN">SUPER_ADMIN (Full Governance)</option>
+                    {currentUser?.userId === 'USR-000' && (
+                      <option value="SUPER_ADMIN">SUPER_ADMIN (Full Governance Control)</option>
+                    )}
                   </select>
                 </div>
 
@@ -1379,7 +2000,7 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
 
                 <div>
                   <label className="block text-xs font-extrabold text-slate-700 mb-1">
-                    Site Location *
+                    Site / Base Location *
                   </label>
                   <input
                     type="text"
@@ -1393,27 +2014,51 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
 
                 <div>
                   <label className="block text-xs font-extrabold text-slate-700 mb-1">
-                    WhatsApp Mobile
+                    Mobile Phone Number *
                   </label>
                   <input
                     type="text"
                     value={editPhone}
-                    onChange={(e) => setEditPhone(e.target.value)}
+                    onChange={(e) => {
+                      setEditPhone(e.target.value);
+                      setEditValidationErr(null);
+                    }}
+                    placeholder="e.g. 9827100000"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    WhatsApp Contact
+                  </label>
+                  <input
+                    type="text"
+                    value={editWhatsappPhone}
+                    onChange={(e) => {
+                      setEditWhatsappPhone(e.target.value);
+                      setEditValidationErr(null);
+                    }}
                     placeholder="e.g. 9827100000"
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
                   />
                 </div>
 
-                <div className="sm:col-span-2">
+                <div>
                   <label className="block text-xs font-extrabold text-slate-700 mb-1">
-                    Official Email
+                    Official Email *
                   </label>
                   <input
                     type="email"
                     value={editEmail}
-                    onChange={(e) => setEditEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEditEmail(e.target.value);
+                      setEditValidationErr(null);
+                    }}
                     placeholder="user@barbrik.in"
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    required
                   />
                 </div>
               </div>
@@ -1431,7 +2076,7 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
                 >
                   <Save className="w-4 h-4" />
-                  <span>Update Role &amp; Permissions</span>
+                  <span>Update Profile &amp; Access</span>
                 </button>
               </div>
             </form>

@@ -36,7 +36,7 @@ import {
   Search,
   Lock
 } from 'lucide-react';
-import { FmsInstance, UserProfile, Priority, FmsStageFieldConfig, isUserSuperAdmin } from '../../types';
+import { FmsInstance, UserProfile, Priority, FmsStageFieldConfig, isUserSuperAdmin, isUserAdminOrSuperAdmin, getUserModulePermission } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { downloadCsv } from '../../utils/csvExporter';
 import { FilePreviewModal } from '../common/FilePreviewModal';
@@ -79,6 +79,7 @@ export const FmsDetailModal: React.FC<FmsDetailModalProps> = ({
   onSelectFlow 
 }) => {
   const isSuperAdmin = isUserSuperAdmin(currentUser);
+  const canDelete = isSuperAdmin || isUserAdminOrSuperAdmin(currentUser) || getUserModulePermission(currentUser, 'fms').canDelete;
   const [modalStageFilter, setModalStageFilter] = useState<'MY_STAGES' | 'ALL_STAGES'>('ALL_STAGES');
   const [isEditing, setIsEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -496,7 +497,7 @@ export const FmsDetailModal: React.FC<FmsDetailModalProps> = ({
                 <span>{isEditing ? 'Cancel Edit' : 'Edit Flow Details'}</span>
               </button>
             )}
-            {isSuperAdmin && (
+            {canDelete && (
               confirmDelete ? (
                 <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1">
                   <span className="text-xs font-bold text-rose-700">Delete record?</span>
@@ -527,7 +528,7 @@ export const FmsDetailModal: React.FC<FmsDetailModalProps> = ({
                   type="button"
                   onClick={() => setConfirmDelete(true)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 shadow-2xs transition-colors cursor-pointer"
-                  title="Delete FMS Record (Super Admin)"
+                  title="Delete FMS Record"
                 >
                   <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                   <span>Delete Record</span>

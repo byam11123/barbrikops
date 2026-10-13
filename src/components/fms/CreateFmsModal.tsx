@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, GitBranch, AlertCircle, Plus, Check, CreditCard, ShoppingCart, Boxes, Truck, PackageCheck, FileText, UserCheck, Wrench, Cog, FileSpreadsheet, Sparkles, Link2, RotateCcw, Trash2, Lock } from 'lucide-react';
-import { FmsInstance, Priority, UserProfile, FmsTemplateDefinition, FmsStageTemplate, isUserSuperAdmin } from '../../types';
+import { FmsInstance, Priority, UserProfile, FmsTemplateDefinition, FmsStageTemplate, isUserSuperAdmin, isUserAdminOrSuperAdmin } from '../../types';
 import { generateCounterTrackingId, generateUniqueCounterTrackingId, getWorkflowIdTitle } from '../../utils/fmsUtils';
 import { 
   FMS_CHECK_STOCK_STAGES, 
@@ -134,6 +134,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
 
   const allExistingFlows = storageAdapter.getFmsFlows();
   const isSuperAdmin = isUserSuperAdmin(currentUser);
+  const isAdminOrSuperAdmin = isUserAdminOrSuperAdmin(currentUser);
 
   const handleSelectCustomTemplate = (tplId: string) => {
     setSelectedCustomTemplateId(tplId);
@@ -1248,8 +1249,8 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
 
               return (
                 <div className="space-y-4">
-                  {/* Primary Workflow Identifier (Auto-Generated Immutable Code - Visible only to Super Admin) */}
-                  {isSuperAdmin && (
+                  {/* Primary Workflow Identifier (Auto-Generated Immutable Code - Visible to Super Admin & Administrative User) */}
+                  {(isSuperAdmin || isAdminOrSuperAdmin) && (
                     <div className="bg-slate-50/80 p-3 rounded-xl border border-indigo-200/90 shadow-2xs space-y-1.5">
                       <label className="block text-xs font-bold text-indigo-950 uppercase tracking-wide">
                         {getWorkflowIdTitle(tpl.name, tpl.referenceLabel)}
@@ -2033,9 +2034,9 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
             );
           })()}
 
-          {/* Visual Roadmap Preview of Future Sequential & Conditional Stages (Super Admin Only) */}
+          {/* Visual Roadmap Preview of Future Sequential & Conditional Stages (Super Admin & Admin) */}
           {(() => {
-            if (!isSuperAdmin) return null;
+            if (!isSuperAdmin && !isAdminOrSuperAdmin) return null;
             const fullTemplateStages = getFullTemplateStagesForCurrentWorkflow();
             if (!fullTemplateStages || fullTemplateStages.length <= 1) return null;
 

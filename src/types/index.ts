@@ -25,6 +25,7 @@ export interface UserProfile {
   departmentName: string;
   departmentKeys?: string[];
   phone: string;
+  whatsappPhone?: string;
   email: string;
   avatarUrl?: string;
   siteLocation?: string;
@@ -88,18 +89,19 @@ export function getUserModulePermission(
   if (user.permissions && user.permissions[moduleId]) {
     return user.permissions[moduleId];
   }
-  // Default fallback behavior:
-  // My Work and My Scoreboard are visible to everyone
+  // Core user modules are visible to everyone
   if (moduleId === 'summary' || moduleId === 'mis') {
     return { visible: true, canEdit: true, canDelete: false };
   }
-  // Department Admin & Process Managers have standard operational access by default
-  if (user.systemRole === 'DEPT_ADMIN' || user.systemRole === 'PROCESS_MANAGER') {
-    if (['fms', 'delegation', 'checklist', 'ims', 'fms-audit'].includes(moduleId)) {
-      return { visible: true, canEdit: true, canDelete: false };
-    }
+  // Administrative control & governance modules are restricted to Admins by default
+  if (moduleId === 'registry' || moduleId === 'audit' || moduleId === 'super-admin') {
+    return { visible: false, canEdit: false, canDelete: false };
   }
-  // Regular staff default: hidden unless granted
+  // Standard operational modules (FMS, Records, Delegation, Checklist, Inventory)
+  // are visible by default to operational staff with standard edit ability, while delete requires Admin
+  if (['fms', 'delegation', 'checklist', 'ims', 'fms-audit'].includes(moduleId)) {
+    return { visible: true, canEdit: true, canDelete: false };
+  }
   return { visible: false, canEdit: false, canDelete: false };
 }
 
@@ -370,6 +372,14 @@ export interface FmsInstance {
   dprDate?: string;
   dprPreparedBy?: string;
   dprSiteName?: string;
+  // Beneficiary Approval specific fields:
+  beneficiarySheetNo?: string;
+  beneficiaryName?: string;
+  beneficiaryAccountNo?: string;
+  beneficiaryIfsc?: string;
+  beneficiaryBankName?: string;
+  beneficiaryPurpose?: string;
+  cancelledChequeUrl?: string;
 }
 
 // IMS (Inventory Management System)

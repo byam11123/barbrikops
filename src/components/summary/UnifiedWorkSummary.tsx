@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import { downloadCsv } from '../../utils/csvExporter';
 import { CustomSelect } from '../common/CustomSelect';
-import { ChecklistItem, DelegationTask, FmsInstance, UserProfile, ProcessRemark, FmsStageDefinition, isUserSuperAdmin } from '../../types';
+import { ChecklistItem, DelegationTask, FmsInstance, UserProfile, ProcessRemark, FmsStageDefinition, isUserSuperAdmin, isUserAdminOrSuperAdmin } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { 
   FMS_CHECK_STOCK_STAGES, 
@@ -220,13 +220,15 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   const [assigneeFilter, setAssigneeFilter] = useState<string>('ALL');
 
   const isSuperAdmin = isUserSuperAdmin(currentUser);
+  const isAdminOrSuperAdmin = isUserAdminOrSuperAdmin(currentUser);
+  const canCoordinate = isSuperAdmin || isAdminOrSuperAdmin;
 
-  // Process Coordinator Desk Mode (Super Admin or Process Coordinator only)
-  const isRituSahu = isSuperAdmin || currentUser.name.toLowerCase().includes('ritu') || currentUser.role.toLowerCase().includes('process coordinator');
-  const [localPcDeskActive, setLocalPcDeskActive] = useState<boolean>(isSuperAdmin && isRituSahu);
-  const pcDeskActive = isSuperAdmin ? (propPcDeskActive !== undefined ? propPcDeskActive : localPcDeskActive) : false;
+  // Process Coordinator Desk Mode (Super Admin, Administrative User, or Process Coordinator)
+  const isRituSahu = canCoordinate || currentUser.name.toLowerCase().includes('ritu') || currentUser.role.toLowerCase().includes('process coordinator');
+  const [localPcDeskActive, setLocalPcDeskActive] = useState<boolean>(canCoordinate && isRituSahu);
+  const pcDeskActive = canCoordinate ? (propPcDeskActive !== undefined ? propPcDeskActive : localPcDeskActive) : false;
   const setPcDeskActive = (val: boolean) => {
-    if (!isSuperAdmin) return;
+    if (!canCoordinate) return;
     if (onTogglePcDesk) onTogglePcDesk(val);
     else setLocalPcDeskActive(val);
   };
@@ -317,17 +319,17 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   };
 
   const isMineChecklist = (c: ChecklistItem) => {
-    if (pcDeskActive) return true; // Process Coordinator sees ALL tasks
+    if (pcDeskActive || isAdminOrSuperAdmin) return true; // Super Admin & Administrative User (2nd Owner) see ALL tasks
     return isDirectlyAssignedChecklist(c);
   };
 
   const isMineDelegation = (d: DelegationTask) => {
-    if (pcDeskActive) return true; // Process Coordinator sees ALL tasks
+    if (pcDeskActive || isAdminOrSuperAdmin) return true; // Super Admin & Administrative User (2nd Owner) see ALL tasks
     return isDirectlyAssignedDelegation(d);
   };
 
   const isMineFmsStage = (stageDef: any, stageExec?: any) => {
-    if (pcDeskActive) return true; // Process Coordinator sees ALL active stages
+    if (pcDeskActive || isAdminOrSuperAdmin) return true; // Super Admin & Administrative User (2nd Owner) see ALL active stages
     return isDirectlyAssignedFms(stageDef, stageExec);
   };
 
@@ -1226,7 +1228,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1.5 flex-wrap">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {renderItemQuickActions(item, true)}
-                    {isSuperAdmin && (
+                    {canCoordinate && (
                       <button
                         onClick={() => {
                           const targetId = item.sourceModule === 'FMS' ? item.rawItem.flow.id : item.sourceId;
@@ -1245,7 +1247,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                         <MessageSquare className="w-3 h-3" /> <span>Note</span>
                       </button>
                     )}
-                    {isSuperAdmin && onNudgeItem && (
+                    {canCoordinate && onNudgeItem && (
                       <button
                         onClick={() => {
                           const targetId = item.sourceModule === 'FMS' ? item.rawItem.flow.id : item.sourceId;
@@ -1440,7 +1442,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                     <div className="flex items-center gap-1">
                       {renderItemQuickActions(item, false)}
 
-                      {isSuperAdmin && (
+                      {canCoordinate && (
                         <button
                           onClick={() => {
                             const targetId = item.sourceModule === 'FMS' ? item.rawItem.flow.id : item.sourceId;
@@ -1462,7 +1464,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                     </div>
 
                     <div className="flex items-center gap-1">
-                      {isSuperAdmin && onNudgeItem && (
+                      {canCoordinate && onNudgeItem && (
                         <button
                           onClick={() => {
                             const targetId = item.sourceModule === 'FMS' ? item.rawItem.flow.id : item.sourceId;
@@ -1863,8 +1865,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                             <Eye className="w-4 h-4 text-slate-600" />
                           </button>
 
-                          {/* Process Note Remark Button - Super Admin Only */}
-                          {isSuperAdmin && (
+                          {/* Process Note Remark Button - Super Admin & Administrative User */}
+                          {canCoordinate && (
                             <button
                               onClick={() => {
                                 const targetId = item.sourceModule === 'FMS'
@@ -1886,8 +1888,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                             </button>
                           )}
 
-                          {/* Optional Nudge Button for open items - Super Admin Only */}
-                          {isSuperAdmin && onNudgeItem && !item.isCompleted && (
+                          {/* Optional Nudge Button for open items - Super Admin & Administrative User */}
+                          {canCoordinate && onNudgeItem && !item.isCompleted && (
                             <button
                               onClick={() => {
                                 const targetId = item.sourceModule === 'FMS'

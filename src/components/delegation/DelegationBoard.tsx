@@ -20,10 +20,12 @@ import {
   X,
   Info,
   Send,
-  Download
+  Download,
+  Trash2
 } from 'lucide-react';
 import { downloadCsv } from '../../utils/csvExporter';
-import { DelegationTask, UserProfile, ProcessRemark, isUserSuperAdmin, hasModulePermission } from '../../types';
+import { DelegationTask, UserProfile, ProcessRemark, isUserSuperAdmin, isUserAdminOrSuperAdmin, hasModulePermission, getUserModulePermission } from '../../types';
+import { storageAdapter } from '../../services/storageAdapter';
 import { ViewScope } from '../layout/Header';
 import { matchTaskDepartment, getDepartmentBranchLabel } from '../../services/stageAssignment';
 
@@ -33,6 +35,7 @@ interface DelegationBoardProps {
   viewScope: ViewScope;
   onToggleScope: (scope: ViewScope) => void;
   onUpdateTask: (task: DelegationTask) => void;
+  onDeleteTask?: (taskId: string) => void;
   onNewTask?: () => void;
   onReviseTask: (task: DelegationTask) => void;
   onAddProcessRemark?: (
@@ -53,6 +56,7 @@ export const DelegationBoard: React.FC<DelegationBoardProps> = ({
   viewScope,
   onToggleScope,
   onUpdateTask,
+  onDeleteTask,
   onNewTask,
   onReviseTask,
   onAddProcessRemark,
@@ -66,6 +70,12 @@ export const DelegationBoard: React.FC<DelegationBoardProps> = ({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const isSuperAdmin = isUserSuperAdmin(currentUser);
+  const isAdminOrSuperAdmin = isUserAdminOrSuperAdmin(currentUser);
+  const canViewAllOrg = isSuperAdmin || isAdminOrSuperAdmin;
+  const canDelete = isSuperAdmin || isAdminOrSuperAdmin || getUserModulePermission(currentUser, 'delegation').canDelete;
+
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
 
   // Modal states for View Context and Add Remark
   const [viewDetailTask, setViewDetailTask] = useState<DelegationTask | null>(null);
@@ -88,7 +98,7 @@ export const DelegationBoard: React.FC<DelegationBoardProps> = ({
   };
 
   const myTasksTotal = tasks.filter(isMyTask);
-  const effectiveScope = isSuperAdmin ? viewScope : 'USER_ONLY';
+  const effectiveScope = canViewAllOrg ? viewScope : 'USER_ONLY';
 
   const filteredTasks = tasks.filter((task) => {
     // 1. User Scope Filtering - non-superadmin only sees own tasks
@@ -158,6 +168,28 @@ export const DelegationBoard: React.FC<DelegationBoardProps> = ({
       }
     });
     setSelectedIds([]);
+  };
+
+  const handleDeleteSingle = (taskId: string) => {
+    if (onDeleteTask) {
+      onDeleteTask(taskId);
+    } else {
+      storageAdapter.deleteDelegationTask(taskId, currentUser);
+    }
+    setConfirmDeleteId(null);
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return;
+    selectedIds.forEach((id) => {
+      if (onDeleteTask) {
+        onDeleteTask(id);
+      } else {
+        storageAdapter.deleteDelegationTask(id, currentUser);
+      }
+    });
+    setSelectedIds([]);
+    setBulkDeleteConfirm(false);
   };
 
   const handleWeekShift = (task: DelegationTask) => {
@@ -371,8 +403,8 @@ export const DelegationBoard: React.FC<DelegationBoardProps> = ({
       {/* Control bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
         <div className="flex flex-wrap items-center gap-3">
-          {/* User scope selector as dropdown - Super Admin Only */}
-          {isSuperAdmin && (
+          {/* User scope selector as dropdown - Super Admin & Administrative User */}
+          {canViewAllOrg && (
             <div className="flex items-center bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs gap-1.5">
               <User className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
               <select
@@ -412,7 +444,7 @@ export const DelegationBoard: React.FC<DelegationBoardProps> = ({
             </select>
           </div>
 
-          {isSuperAdmin && viewScope === 'ALL_ORG' && (
+          {canViewAllOrg && viewScope === 'ALL_ORG' && (
             <div className="flex items-center gap-2">
               <select
                 aria-label="Filter by assignee"
@@ -467,8 +499,42 @@ export const DelegationBoard: React.FC<DelegationBoardProps> = ({
               <CheckCircle2 className="w-3.5 h-3.5" />
               Bulk Mark Done ({selectedIds.length})
             </button>
+            {canDelete && (
+              bulkDeleteConfirm ? (
+                <div className="flex items-center gap-1.5 bg-rose-900/90 border border-rose-500 rounded-lg px-2.5 py-1">
+                  <span className="text-[11px] font-bold text-rose-200">Delete {selectedIds.length} tasks?</span>
+                  <button
+                    type="button"
+                    onClick={handleBulkDelete}
+                    className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-bold cursor-pointer transition-colors"
+                  >
+                    Yes, Delete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBulkDeleteConfirm(false)}
+                    className="px-2 py-0.5 bg-white/20 hover:bg-white/30 text-white rounded text-[11px] cursor-pointer transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setBulkDeleteConfirm(true)}
+                  className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition-colors cursor-pointer"
+                  title="Delete all selected tasks"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Selected ({selectedIds.length})</span>
+                </button>
+              )
+            )}
             <button
-              onClick={() => setSelectedIds([])}
+              onClick={() => {
+                setSelectedIds([]);
+                setBulkDeleteConfirm(false);
+              }}
               className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold border border-white/20 cursor-pointer"
             >
               Cancel Selection
@@ -655,6 +721,39 @@ export const DelegationBoard: React.FC<DelegationBoardProps> = ({
                           >
                             <MessageSquare className="w-3.5 h-3.5" />
                           </button>
+
+                          {/* Delete Task */}
+                          {canDelete && (
+                            confirmDeleteId === task.id ? (
+                              <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteSingle(task.id)}
+                                  className="px-1.5 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer"
+                                  title="Confirm deletion"
+                                >
+                                  Del
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteId(null)}
+                                  className="px-1.5 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-[10px] cursor-pointer"
+                                  title="Cancel"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteId(task.id)}
+                                className="p-1.5 hover:bg-rose-50 text-rose-500 hover:text-rose-700 rounded-lg transition-colors cursor-pointer"
+                                title="Delete Task"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )
+                          )}
                         </div>
                       </td>
                     </tr>

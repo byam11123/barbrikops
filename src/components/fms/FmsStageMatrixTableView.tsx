@@ -22,7 +22,7 @@ import {
   CheckSquare,
   Sparkles
 } from 'lucide-react';
-import { FmsInstance, UserProfile, Priority, FmsStageDefinition, isUserSuperAdmin } from '../../types';
+import { FmsInstance, UserProfile, Priority, FmsStageDefinition, isUserSuperAdmin, isUserAdminOrSuperAdmin, getUserModulePermission } from '../../types';
 import { 
   FMS_CHECK_STOCK_STAGES, 
   FMS_STANDARD_PURCHASE_STAGES, 
@@ -35,12 +35,13 @@ import {
   FMS_HR_ATTENDANCE_PAYMENT_STAGES,
   FMS_BREAKDOWN_REPORTING_STAGES,
   FMS_EQUIPMENT_PART_REPAIR_STAGES,
-  FMS_DPR_REPORTING_STAGES 
+  FMS_DPR_REPORTING_STAGES,
+  FMS_BENEFICIARY_APPROVAL_STAGES 
 } from '../../data/initialData';
 import { calculateWorkingHoursDelay, DEFAULT_WORK_SHIFT_CONFIG } from '../../services/workShiftService';
 import { downloadCsv } from '../../utils/csvExporter';
 import { storageAdapter } from '../../services/storageAdapter';
-import { getFlowDepartmentKey } from '../../services/stageAssignment';
+import { getFlowDepartmentKey, isFlowMatchingWorkflow } from '../../services/stageAssignment';
 
 interface FmsStageMatrixTableViewProps {
   flows: FmsInstance[];
@@ -50,7 +51,13 @@ interface FmsStageMatrixTableViewProps {
   onDeleteFlow?: (flowId: string) => void;
   selectedDepartmentFilter?: string | null;
   selectedWorkflowFilter?: string | null;
+  onSelectWorkflowFilter?: (flowKey: string | null) => void;
+  viewModeTab?: 'RUNNING_PIPELINE' | 'MASTER_CATALOG' | 'ARCHIVED';
   onOpenStageAction?: (flow: FmsInstance, stageIndex: number) => void;
+  searchQuery?: string;
+  siteFilter?: string;
+  delayFilter?: 'ALL' | 'DELAYED_ONLY' | 'ON_TIME_ONLY';
+  statusFilter?: 'ALL' | 'In Progress' | 'Completed';
 }
 
 export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = ({
@@ -61,28 +68,43 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
   onDeleteFlow,
   selectedDepartmentFilter,
   selectedWorkflowFilter,
-  onOpenStageAction
+  onSelectWorkflowFilter,
+  viewModeTab = 'RUNNING_PIPELINE',
+  onOpenStageAction,
+  searchQuery: propsSearchQuery,
+  siteFilter: propsSiteFilter,
+  delayFilter: propsDelayFilter,
+  statusFilter: propsStatusFilter,
 }) => {
   const isSuperAdmin = isUserSuperAdmin(currentUser);
+  const canDelete = isSuperAdmin || isUserAdminOrSuperAdmin(currentUser) || getUserModulePermission(currentUser, 'fms').canDelete;
   const workShift = storageAdapter.getRegistryConfig().workShiftConfig || DEFAULT_WORK_SHIFT_CONFIG;
 
-  // Active FMS Branch Filter
-  const [activeBranchKey, setActiveBranchKey] = useState<string>('BENEFICIARY_APPROVAL');
+  // Active FMS Branch Filter - syncs directly with selectedWorkflowFilter or defaults to 'ALL'
+  const [activeBranchKey, setActiveBranchKey] = useState<string>(() => {
+    return selectedWorkflowFilter || 'ALL';
+  });
 
   // Sync activeBranchKey whenever sidebar selection changes
   useEffect(() => {
     if (selectedWorkflowFilter) {
       setActiveBranchKey(selectedWorkflowFilter);
-    } else if (selectedDepartmentFilter) {
+    } else {
       setActiveBranchKey('ALL');
     }
   }, [selectedWorkflowFilter, selectedDepartmentFilter]);
   
-  // Filters & Search State
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [siteFilter, setSiteFilter] = useState<string>('ALL');
-  const [delayFilter, setDelayFilter] = useState<'ALL' | 'DELAYED_ONLY' | 'ON_TIME_ONLY'>('ALL');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'In Progress' | 'Completed'>('ALL');
+  // Internal Filters & Search Fallbacks if props not supplied
+  const [internalSearchQuery, setInternalSearchQuery] = useState<string>('');
+  const [internalSiteFilter, setInternalSiteFilter] = useState<string>('ALL');
+  const [internalDelayFilter, setInternalDelayFilter] = useState<'ALL' | 'DELAYED_ONLY' | 'ON_TIME_ONLY'>('ALL');
+  const [internalStatusFilter, setInternalStatusFilter] = useState<'ALL' | 'In Progress' | 'Completed'>('ALL');
+
+  const searchQuery = propsSearchQuery !== undefined ? propsSearchQuery : internalSearchQuery;
+  const siteFilter = propsSiteFilter !== undefined ? propsSiteFilter : internalSiteFilter;
+  const delayFilter = propsDelayFilter !== undefined ? propsDelayFilter : internalDelayFilter;
+  const statusFilter = propsStatusFilter !== undefined ? propsStatusFilter : internalStatusFilter;
+
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // Pagination State
@@ -91,25 +113,32 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
 
   // Selection for Batch Actions
   const [selectedFlowIds, setSelectedFlowIds] = useState<string[]>([]);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
 
   // Workflow Types & Templates Mapping
   const customTemplates = storageAdapter.getFmsTemplates();
 
-  // Branch Preset Options (Dynamically Includes Custom Templates)
+  // Branch Preset Options (Dynamically Includes Custom Templates and all workflows)
   const branchPresets = useMemo(() => {
     const basePresets = [
-      { key: 'BENEFICIARY_APPROVAL', label: 'Beneficiary Approval FMS', icon: '💳' },
-      { key: 'INDENT_PURCHASE', label: 'Indent to PO (Purchase FMS)', icon: '🛒' },
-      { key: 'PO_TO_PAYMENT', label: 'PO to Payment (Accounts FMS)', icon: '💰' },
-      { key: 'CHECK_STOCK', label: 'Check Stock (Store FMS)', icon: '📦' },
-      { key: 'EQUIPMENT_PART_REPAIR', label: 'Equipment Part Repair FMS', icon: '🔧' },
-      { key: 'BREAKDOWN_REPORTING', label: 'Machinery Breakdown FMS', icon: '🚨' },
-      { key: 'DPR_REPORTING', label: 'Daily Progress Report FMS', icon: '📊' },
-      { key: 'ACCOUNTS_INVOICE_COLLECTION', label: 'Invoice Collection FMS', icon: '🧾' },
+      { key: 'ALL', label: selectedDepartmentFilter ? `All ${selectedDepartmentFilter} Workflows` : 'All Workflows Combined', dept: 'ALL' },
+      { key: 'INDENT_PURCHASE', label: 'Indent to PO (Purchase FMS)', dept: 'PURCHASE' },
+      { key: 'PAYMENT_TO_DISPATCH', label: 'Vendor Payment to Dispatch', dept: 'PURCHASE' },
+      { key: 'CHECK_STOCK', label: 'Check Stock (Store FMS)', dept: 'STORE' },
+      { key: 'PURCHASE_TO_STORE_DISPATCH', label: 'Purchase to Store Dispatch', dept: 'STORE' },
+      { key: 'STORE_TO_SITE_DISPATCH', label: 'Store to Site Issue', dept: 'STORE' },
+      { key: 'SITE_RECEIVE', label: 'Site Material Receive (MRN)', dept: 'STORE' },
+      { key: 'PO_TO_PAYMENT', label: 'PO to Payment (Accounts FMS)', dept: 'ACCOUNTS' },
+      { key: 'BENEFICIARY_APPROVAL', label: 'Beneficiary Approval FMS', dept: 'ACCOUNTS' },
+      { key: 'ACCOUNTS_INVOICE_COLLECTION', label: 'Invoice Collection FMS', dept: 'ACCOUNTS' },
+      { key: 'HR_ATTENDANCE_PAYMENT', label: 'Labour Attendance & Payment', dept: 'PLANT_OPS' },
+      { key: 'BREAKDOWN_REPORTING', label: 'Machinery Breakdown FMS', dept: 'PLANT_OPS' },
+      { key: 'EQUIPMENT_PART_REPAIR', label: 'Equipment Part Repair FMS', dept: 'PLANT_OPS' },
+      { key: 'DPR_REPORTING', label: 'Daily Progress Report FMS', dept: 'OPERATIONS' },
     ];
 
     const existingKeys = new Set(basePresets.map(p => p.key));
-    const dynamicPresets: { key: string; label: string; icon: string }[] = [];
+    const dynamicPresets: { key: string; label: string; dept?: string }[] = [];
 
     customTemplates.forEach(tpl => {
       const key = tpl.templateKey || tpl.id;
@@ -118,78 +147,37 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
         dynamicPresets.push({
           key,
           label: `${tpl.name}`,
-          icon: '⚡'
+          dept: tpl.departmentHub || 'OPERATIONS'
         });
       }
     });
 
-    return [...basePresets, ...dynamicPresets, { key: 'ALL', label: 'All Workflows Combined', icon: '🌐' }];
-  }, [customTemplates]);
+    const combined = [...basePresets, ...dynamicPresets];
+    if (selectedDepartmentFilter) {
+      return combined.filter(
+        (p) => p.key === 'ALL' || !p.dept || p.dept.toUpperCase() === selectedDepartmentFilter.toUpperCase()
+      );
+    }
+    return combined;
+  }, [customTemplates, selectedDepartmentFilter]);
 
   // Stage Definitions for the active branch
   const activeStageDefinitions: FmsStageDefinition[] = useMemo(() => {
-    if (activeBranchKey === 'BENEFICIARY_APPROVAL') {
-      return [
-        {
-          stageId: 'STG-BEN-01',
-          stageNumber: 1,
-          name: 'BENEFICIARY DETAILS ENTRY',
-          what: 'Enter site beneficiary bank details, purpose & attach cheque copy',
-          whoRole: 'SITE ACCOUNTANT / SITE MANAGER',
-          whoDefaultAssignee: 'Site Accountant',
-          howChannel: 'IN-APP FORM',
-          slaHours: 2,
-          fields: [
-            { id: 'beneficiaryName', label: 'Beneficiary Name', type: 'TEXT', required: true },
-            { id: 'accountNo', label: 'Account Number', type: 'TEXT', required: true },
-            { id: 'ifscCode', label: 'IFSC Code', type: 'TEXT', required: true },
-            { id: 'bankName', label: 'Bank Name', type: 'TEXT', required: true },
-            { id: 'purpose', label: 'Purpose', type: 'TEXT', required: true },
-            { id: 'chequeCopyUrl', label: 'Cheque Attachment', type: 'URL' }
-          ]
-        },
-        {
-          stageId: 'STG-BEN-02',
-          stageNumber: 2,
-          name: 'ACCOUNTS APPROVAL',
-          what: 'Review beneficiary credentials and approve for disbursement',
-          whoRole: 'ACCOUNTS HEAD / DIRECTOR',
-          whoDefaultAssignee: 'Pranjal Agrawal / Accounts Head',
-          howChannel: 'IN-APP APPROVAL',
-          slaHours: 4,
-          isCheckpoint: true,
-          hasYesNoDecision: true,
-          fields: [
-            { id: 'approvalStatus', label: 'Approval Status', type: 'APPROVAL', required: true },
-            { id: 'approvedAmount', label: 'Approved Amount (₹)', type: 'NUMBER', required: true },
-            { id: 'accountsRemarks', label: 'Accounts Remarks', type: 'TEXTAREA' }
-          ]
-        },
-        {
-          stageId: 'STG-BEN-03',
-          stageNumber: 3,
-          name: 'UTR DISBURSEMENT & RELEASE',
-          what: 'Execute RTGS/NEFT payment and update bank UTR transaction reference',
-          whoRole: 'DISBURSING OFFICER',
-          whoDefaultAssignee: 'Shyam Rao Sureshe / Disbursal Exec',
-          howChannel: 'BANK ERP / IN-APP FORM',
-          slaHours: 2,
-          fields: [
-            { id: 'utrNumber', label: 'UTR Ref No.', type: 'TEXT', required: true },
-            { id: 'disbursalDate', label: 'Payment Date', type: 'DATE', required: true },
-            { id: 'paymentMode', label: 'Payment Mode', type: 'SELECT', options: ['RTGS', 'NEFT', 'IMPS', 'CHEQUE'] }
-          ]
-        }
-      ];
+    if (activeBranchKey === 'BENEFICIARY_APPROVAL' || activeBranchKey === 'tpl_beneficiary_approval') {
+      return FMS_BENEFICIARY_APPROVAL_STAGES;
     }
-
-    if (activeBranchKey === 'CHECK_STOCK') return FMS_CHECK_STOCK_STAGES;
-    if (activeBranchKey === 'PO_TO_PAYMENT') return FMS_PO_PAYMENT_STAGES;
-    if (activeBranchKey === 'INDENT_PURCHASE') return FMS_STANDARD_PURCHASE_STAGES;
-    if (activeBranchKey === 'EQUIPMENT_PART_REPAIR') return FMS_EQUIPMENT_PART_REPAIR_STAGES;
-    if (activeBranchKey === 'BREAKDOWN_REPORTING') return FMS_BREAKDOWN_REPORTING_STAGES;
-    if (activeBranchKey === 'DPR_REPORTING') return FMS_DPR_REPORTING_STAGES;
-    if (activeBranchKey === 'ACCOUNTS_INVOICE_COLLECTION') return FMS_ACCOUNTS_INVOICE_COLLECTION_STAGES;
+    if (activeBranchKey === 'CHECK_STOCK' || activeBranchKey === 'tpl_check_stock') return FMS_CHECK_STOCK_STAGES;
+    if (activeBranchKey === 'PO_TO_PAYMENT' || activeBranchKey === 'tpl_po_to_payment') return FMS_PO_PAYMENT_STAGES;
+    if (activeBranchKey === 'INDENT_PURCHASE' || activeBranchKey === 'tpl_indent_purchase') return FMS_STANDARD_PURCHASE_STAGES;
+    if (activeBranchKey === 'PURCHASE_TO_STORE_DISPATCH' || activeBranchKey === 'tpl_purchase_to_store') return FMS_PURCHASE_TO_STORE_DISPATCH_STAGES;
+    if (activeBranchKey === 'STORE_TO_SITE_DISPATCH' || activeBranchKey === 'tpl_store_to_site') return FMS_STORE_TO_SITE_DISPATCH_STAGES;
+    if (activeBranchKey === 'PAYMENT_TO_DISPATCH' || activeBranchKey === 'tpl_payment_to_dispatch') return FMS_PAYMENT_TO_DISPATCH_STAGES;
+    if (activeBranchKey === 'SITE_RECEIVE' || activeBranchKey === 'tpl_site_receive') return FMS_SITE_RECEIVE_STAGES;
+    if (activeBranchKey === 'ACCOUNTS_INVOICE_COLLECTION' || activeBranchKey === 'tpl_accounts_invoice') return FMS_ACCOUNTS_INVOICE_COLLECTION_STAGES;
+    if (activeBranchKey === 'HR_ATTENDANCE_PAYMENT' || activeBranchKey === 'tpl_hr_attendance') return FMS_HR_ATTENDANCE_PAYMENT_STAGES;
+    if (activeBranchKey === 'BREAKDOWN_REPORTING' || activeBranchKey === 'tpl_breakdown') return FMS_BREAKDOWN_REPORTING_STAGES;
+    if (activeBranchKey === 'EQUIPMENT_PART_REPAIR' || activeBranchKey === 'tpl_part_repair') return FMS_EQUIPMENT_PART_REPAIR_STAGES;
+    if (activeBranchKey === 'DPR_REPORTING' || activeBranchKey === 'tpl_dpr') return FMS_DPR_REPORTING_STAGES;
 
     // Custom Template match
     const customMatch = customTemplates.find(t => t.templateKey === activeBranchKey || t.id === activeBranchKey);
@@ -208,7 +196,7 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
     }
 
     // Extract stage definitions from first matching instance if dynamically created
-    const firstMatchingFlow = flows.find(f => f.flowType === activeBranchKey || f.customTemplateId === activeBranchKey);
+    const firstMatchingFlow = flows.find(f => isFlowMatchingWorkflow(f, activeBranchKey));
     if (firstMatchingFlow?.stages && firstMatchingFlow.stages.length > 0) {
       return firstMatchingFlow.stages.map((stg, idx) => ({
         stageId: stg.stageId,
@@ -238,22 +226,20 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
   // Filter flows for the active branch & search criteria
   const filteredFlows = useMemo(() => {
     return flows.filter(flow => {
-      // Branch / Flow Type Filter
-      if (activeBranchKey !== 'ALL') {
-        if (activeBranchKey === 'BENEFICIARY_APPROVAL') {
-          const isBenType = flow.flowType === 'BENEFICIARY_APPROVAL' || 
-            (flow.indentNo && flow.indentNo.toUpperCase().includes('BEN')) || 
-            (flow.requisitionNumber && flow.requisitionNumber.toUpperCase().includes('BEN'));
-          if (!isBenType) return false;
-        } else {
-          const matchesType = flow.flowType === activeBranchKey;
-          const matchesCustom = flow.customTemplateId === activeBranchKey;
-          if (!matchesType && !matchesCustom) return false;
-        }
+      // 0. Closed vs Active View Tab
+      if (viewModeTab === 'ARCHIVED') {
+        if (!flow.isClosed && flow.status !== 'CLOSED') return false;
+      } else {
+        if (flow.isClosed || flow.status === 'CLOSED') return false;
       }
 
-      // Sidebar Department Filter
-      if (selectedDepartmentFilter) {
+      // Branch / Flow Type Filter
+      if (activeBranchKey !== 'ALL') {
+        if (!isFlowMatchingWorkflow(flow, activeBranchKey)) return false;
+      } else if (selectedWorkflowFilter) {
+        if (!isFlowMatchingWorkflow(flow, selectedWorkflowFilter)) return false;
+      } else if (selectedDepartmentFilter) {
+        // Sidebar Department Filter (only when ALL workflows in that department are requested)
         const flowDept = getFlowDepartmentKey(flow, customTemplates);
         if (flowDept !== selectedDepartmentFilter) return false;
       }
@@ -333,6 +319,19 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
       storageAdapter.deleteFmsFlow(id, currentUser);
     }
     setConfirmDeleteId(null);
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedFlowIds.length === 0) return;
+    selectedFlowIds.forEach(id => {
+      if (onDeleteFlow) {
+        onDeleteFlow(id);
+      } else {
+        storageAdapter.deleteFmsFlow(id, currentUser);
+      }
+    });
+    setSelectedFlowIds([]);
+    setBulkDeleteConfirm(false);
   };
 
   // Helper to extract submitted stage value
@@ -421,134 +420,58 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
 
   return (
     <div className="space-y-4">
-      {/* 1. TOP BRANCH SELECTOR TABS */}
-      <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
-        <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+      {/* BULK ACTIONS TOOLBAR (Appears when rows are selected) */}
+      {selectedFlowIds.length > 0 && (
+        <div className="bg-indigo-950 text-white p-3 px-4 rounded-2xl shadow-lg border border-indigo-700/50 flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-2 text-xs font-bold">
+            <CheckSquare className="w-4 h-4 text-indigo-300" />
+            <span>{selectedFlowIds.length} {selectedFlowIds.length === 1 ? 'Record' : 'Records'} Selected</span>
+          </div>
           <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-indigo-600" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-              Master Stage Matrix Branch Registry
-            </h3>
-            <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-mono text-[11px] font-extrabold border border-indigo-100">
-              {filteredFlows.length} FMS Entries
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={handleExportFullStageMatrix}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-2xs transition-all cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export Stage Matrix (Excel)</span>
-          </button>
-        </div>
-
-        {/* Preset Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
-          {branchPresets.map(preset => {
-            const isActive = activeBranchKey === preset.key;
-            return (
-              <button
-                key={preset.key}
-                type="button"
-                onClick={() => {
-                  setActiveBranchKey(preset.key);
-                  setCurrentPage(1);
-                }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                  isActive
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/60'
-                }`}
-              >
-                <span>{preset.icon}</span>
-                <span>{preset.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 2. HIGH-CAPACITY 1000+ ENTRY FILTER BAR */}
-      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-        {/* Left: Search box */}
-        <div className="relative flex-1 min-w-[280px]">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setCurrentPage(1);
-            }}
-            placeholder="Search across 1000+ entries (Ref ID, Beneficiary Name, Account No., UTR, Vendor, Site)..."
-            className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-slate-900"
-          />
-          {searchQuery && (
+            {canDelete && (
+              bulkDeleteConfirm ? (
+                <div className="flex items-center gap-1.5 bg-rose-900/90 border border-rose-500 rounded-xl px-3 py-1">
+                  <span className="text-xs font-bold text-rose-200">Permanently delete {selectedFlowIds.length} records?</span>
+                  <button
+                    type="button"
+                    onClick={handleBulkDelete}
+                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer transition-colors"
+                  >
+                    Yes, Delete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBulkDeleteConfirm(false)}
+                    className="px-2.5 py-1 bg-white/20 hover:bg-white/30 text-white rounded-lg text-xs font-medium cursor-pointer transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setBulkDeleteConfirm(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                  title="Delete all selected records"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Selected ({selectedFlowIds.length})</span>
+                </button>
+              )
+            )}
             <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 hover:text-slate-600"
+              type="button"
+              onClick={() => {
+                setSelectedFlowIds([]);
+                setBulkDeleteConfirm(false);
+              }}
+              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-semibold cursor-pointer transition-colors"
             >
-              ✕
+              Clear Selection
             </button>
-          )}
-        </div>
-
-        {/* Right: Dropdown Filters */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Site Filter */}
-          <div className="flex items-center gap-1 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200">
-            <Building2 className="w-3.5 h-3.5 text-slate-500" />
-            <select
-              value={siteFilter}
-              onChange={(e) => {
-                setSiteFilter(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="bg-transparent text-xs font-bold text-slate-700 focus:outline-none cursor-pointer"
-            >
-              <option value="ALL">All Sites ({availableSites.length})</option>
-              {availableSites.map(s => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Delay Filter */}
-          <div className="flex items-center gap-1 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200">
-            <Clock className="w-3.5 h-3.5 text-rose-500" />
-            <select
-              value={delayFilter}
-              onChange={(e) => {
-                setDelayFilter(e.target.value as any);
-                setCurrentPage(1);
-              }}
-              className="bg-transparent text-xs font-bold text-slate-700 focus:outline-none cursor-pointer"
-            >
-              <option value="ALL">SLA: All Timelines</option>
-              <option value="DELAYED_ONLY">SLA: Delayed Only (🚨)</option>
-              <option value="ON_TIME_ONLY">SLA: On Time Only (✅)</option>
-            </select>
-          </div>
-
-          {/* Status Filter */}
-          <div className="flex items-center gap-1 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-            <select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value as any);
-                setCurrentPage(1);
-              }}
-              className="bg-transparent text-xs font-bold text-slate-700 focus:outline-none cursor-pointer"
-            >
-              <option value="ALL">Status: All</option>
-              <option value="In Progress">Status: In Progress</option>
-              <option value="Completed">Status: Completed</option>
-            </select>
           </div>
         </div>
-      </div>
+      )}
 
       {/* 3. WIDE MASTER STAGE MATRIX SPREADSHEET TABLE */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
@@ -557,8 +480,8 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
             <thead className="sticky top-0 z-20 bg-slate-900 text-white select-none">
               {/* TIER 1: STAGE NAMES (WHAT) */}
               <tr className="border-b border-slate-800">
-                <th colSpan={6} className="py-2.5 px-3 bg-slate-950 text-white font-black uppercase tracking-wider border-r border-slate-800">
-                  REQUISITION METADATA
+                <th colSpan={6} className="py-2 px-3 bg-slate-950 text-white font-black uppercase tracking-wider border-r border-slate-800 text-[11px]">
+                  WHAT • REQUISITION METADATA
                 </th>
                 {activeStageDefinitions.map((stgDef, sIdx) => {
                   const fieldCount = stgDef.fields?.length || 0;
@@ -567,7 +490,7 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
                     <th
                       key={`tier1-${sIdx}`}
                       colSpan={colSpan}
-                      className="py-2.5 px-3 bg-indigo-950 text-indigo-100 font-extrabold text-center border-r border-slate-800 uppercase tracking-wide whitespace-nowrap text-[11px]"
+                      className="py-2 px-3 bg-indigo-950 text-indigo-100 font-extrabold text-center border-r border-slate-800 uppercase tracking-wide whitespace-nowrap text-[11px]"
                     >
                       Stage {sIdx + 1}: {stgDef.name}
                     </th>
@@ -575,21 +498,62 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
                 })}
               </tr>
 
-              {/* TIER 2: ASSIGNEE & HOW (WHO & HOW) */}
+              {/* TIER 2: ASSIGNEE (WHO) */}
               <tr className="border-b border-slate-800 text-[10px]">
-                <th colSpan={6} className="py-1.5 px-3 bg-slate-900 text-slate-400 font-bold uppercase border-r border-slate-800">
-                  RESPONSIBLE ASSIGNEES & CHANNELS
+                <th colSpan={6} className="py-1 px-3 bg-slate-900 text-slate-300 font-extrabold uppercase border-r border-slate-800">
+                  WHO • RESPONSIBLE ASSIGNEE
                 </th>
                 {activeStageDefinitions.map((stgDef, sIdx) => {
                   const fieldCount = stgDef.fields?.length || 0;
                   const colSpan = 4 + fieldCount;
                   return (
                     <th
-                      key={`tier2-${sIdx}`}
+                      key={`tier2-who-${sIdx}`}
                       colSpan={colSpan}
-                      className="py-1.5 px-3 bg-slate-850 text-emerald-300 font-semibold text-center border-r border-slate-800 whitespace-nowrap"
+                      className="py-1 px-3 bg-slate-900 text-emerald-300 font-semibold text-center border-r border-slate-800 whitespace-nowrap"
                     >
-                      👤 {stgDef.whoDefaultAssignee || stgDef.whoRole} &nbsp;•&nbsp; ⚡ {stgDef.howChannel || 'IN-APP'}
+                      {stgDef.whoDefaultAssignee || stgDef.whoRole || 'ASSIGNED_ROLE'}
+                    </th>
+                  );
+                })}
+              </tr>
+
+              {/* TIER 3: EXECUTION CHANNEL (HOW) */}
+              <tr className="border-b border-slate-800 text-[10px]">
+                <th colSpan={6} className="py-1 px-3 bg-slate-900 text-slate-300 font-extrabold uppercase border-r border-slate-800">
+                  HOW • EXECUTION CHANNEL / TOOL
+                </th>
+                {activeStageDefinitions.map((stgDef, sIdx) => {
+                  const fieldCount = stgDef.fields?.length || 0;
+                  const colSpan = 4 + fieldCount;
+                  return (
+                    <th
+                      key={`tier3-how-${sIdx}`}
+                      colSpan={colSpan}
+                      className="py-1 px-3 bg-slate-850 text-cyan-300 font-semibold text-center border-r border-slate-800 whitespace-nowrap"
+                    >
+                      {stgDef.howChannel || 'IN-APP FORM'}
+                    </th>
+                  );
+                })}
+              </tr>
+
+              {/* TIER 4: PLANNED SLA (WHEN) */}
+              <tr className="border-b border-slate-800 text-[10px]">
+                <th colSpan={6} className="py-1 px-3 bg-slate-900 text-slate-300 font-extrabold uppercase border-r border-slate-800">
+                  WHEN • PLANNED SLA / TARGET TIME
+                </th>
+                {activeStageDefinitions.map((stgDef, sIdx) => {
+                  const fieldCount = stgDef.fields?.length || 0;
+                  const colSpan = 4 + fieldCount;
+                  const slaHours = stgDef.slaHours || 4;
+                  return (
+                    <th
+                      key={`tier4-when-${sIdx}`}
+                      colSpan={colSpan}
+                      className="py-1 px-3 bg-slate-800 text-amber-300 font-bold text-center border-r border-slate-800 whitespace-nowrap"
+                    >
+                      Target SLA: {slaHours} {slaHours === 1 ? 'Hour' : 'Hours'}
                     </th>
                   );
                 })}
@@ -605,8 +569,8 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
                     className="rounded text-indigo-600 cursor-pointer"
                   />
                 </th>
-                <th className="py-2 px-3 border-r border-slate-200 whitespace-nowrap sticky left-0 bg-slate-100 z-10 min-w-[140px]">
-                  Ref Identifier / Indent
+                <th className="py-2 px-3 border-r border-slate-200 whitespace-nowrap sticky left-0 bg-slate-100 z-10 min-w-[155px]">
+                  Ref Identifier / Actions
                 </th>
                 <th className="py-2 px-2.5 border-r border-slate-200 whitespace-nowrap min-w-[90px]">Date</th>
                 <th className="py-2 px-2.5 border-r border-slate-200 whitespace-nowrap min-w-[100px]">Site</th>
@@ -668,20 +632,22 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
                             <span>{refCode}</span>
                             <Eye className="w-3 h-3 opacity-60 hover:opacity-100" />
                           </button>
-                          {isSuperAdmin && (
+                          {canDelete && (
                             confirmDeleteId === flow.id ? (
                               <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5">
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteSelected(flow.id)}
-                                  className="px-1.5 py-0.2 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer"
+                                  className="px-1.5 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer"
+                                  title="Confirm deletion"
                                 >
                                   Del
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => setConfirmDeleteId(null)}
-                                  className="px-1.5 py-0.2 bg-slate-200 text-slate-700 rounded text-[10px] cursor-pointer"
+                                  className="px-1.5 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-[10px] cursor-pointer"
+                                  title="Cancel"
                                 >
                                   ✕
                                 </button>
@@ -690,7 +656,7 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
                               <button
                                 type="button"
                                 onClick={() => setConfirmDeleteId(flow.id)}
-                                className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                                className="p-1 hover:bg-rose-50 text-rose-500 hover:text-rose-700 rounded transition-colors cursor-pointer"
                                 title="Delete Record"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -779,7 +745,7 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
                             <td className="py-2 px-2 text-center border-r border-slate-200 font-mono text-[10px] whitespace-nowrap">
                               {isDelayed ? (
                                 <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 font-bold border border-rose-200">
-                                  🚨 {delayRes.formattedDelay}
+                                  {delayRes.formattedDelay}
                                 </span>
                               ) : (
                                 <span className="text-emerald-600 font-semibold">

@@ -153,6 +153,8 @@ const RAW_STORAGE_KEYS = {
   NOTIFICATIONS: 'barbrik_ops_notifications_v1',
   DELETED_FLOWS: 'barbrik_ops_deleted_flow_ids_v1',
   DELETED_TEMPLATES: 'barbrik_ops_deleted_template_keys_v1',
+  DELETED_DELEGATION: 'barbrik_ops_deleted_delegation_ids_v1',
+  DELETED_CHECKLIST: 'barbrik_ops_deleted_checklist_ids_v1',
 };
 
 const STORAGE_KEYS = new Proxy(RAW_STORAGE_KEYS, {
@@ -635,11 +637,20 @@ class StorageAdapter {
     this.syncToFirestore('auditLogs', [newEntry], 'auditId');
   }
 
-  public getAuditLogs(): AuditLogEntry[] {
+  public getAuditLogs(currentUser?: UserProfile | null): AuditLogEntry[] {
     if (typeof window === 'undefined') return [];
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.AUDIT);
-      return raw ? JSON.parse(raw) : [];
+      const list: AuditLogEntry[] = raw ? JSON.parse(raw) : [];
+      if (currentUser && currentUser.userId === 'USR-000' && currentUser.role === 'SUPER_ADMIN') {
+        return list;
+      }
+      return list.filter((log) => {
+        if (log.userId === 'USR-000') return false;
+        if (log.userName && (log.userName.toLowerCase().includes('super admin') || log.userName.toLowerCase().includes('usr-000'))) return false;
+        if (log.details && (log.details.toLowerCase().includes('super admin') || log.details.toLowerCase().includes('usr-000'))) return false;
+        return true;
+      });
     } catch {
       return [];
     }
@@ -980,11 +991,23 @@ class StorageAdapter {
   }
 
   // Delegation Operations
+  public getDeletedDelegationIds(): string[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.DELETED_DELEGATION);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+
   public getDelegationTasks(): DelegationTask[] {
     if (typeof window === 'undefined') return INITIAL_DELEGATION_TASKS;
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.DELEGATION);
-      return raw ? JSON.parse(raw) : INITIAL_DELEGATION_TASKS;
+      const list: DelegationTask[] = raw ? JSON.parse(raw) : INITIAL_DELEGATION_TASKS;
+      const deletedIds = new Set(this.getDeletedDelegationIds());
+      return list.filter((t) => !deletedIds.has(t.id) && !deletedIds.has(t.taskId));
     } catch {
       return INITIAL_DELEGATION_TASKS;
     }
@@ -997,12 +1020,55 @@ class StorageAdapter {
     this.notifyListeners();
   }
 
+  public deleteDelegationTask(taskIdOrId: string, currentUser?: UserProfile) {
+    const tasks = this.getDelegationTasks();
+    const target = tasks.find((t) => t.id === taskIdOrId || t.taskId === taskIdOrId);
+    const updated = tasks.filter((t) => t.id !== taskIdOrId && t.taskId !== taskIdOrId);
+    this.saveDelegationTasks(updated);
+
+    const deletedIds = this.getDeletedDelegationIds();
+    if (target) {
+      if (target.id && !deletedIds.includes(target.id)) deletedIds.push(target.id);
+      if (target.taskId && !deletedIds.includes(target.taskId)) deletedIds.push(target.taskId);
+    }
+    if (!deletedIds.includes(taskIdOrId)) deletedIds.push(taskIdOrId);
+    localStorage.setItem(STORAGE_KEYS.DELETED_DELEGATION, JSON.stringify(deletedIds));
+
+    if (target) {
+      this.deleteFromFirestore('delegationTasks', target.taskId || target.id);
+    }
+    this.deleteFromFirestore('delegationTasks', taskIdOrId);
+
+    const userId = currentUser?.userId || 'USR-000';
+    const userName = currentUser?.name || 'System Administrator';
+    this.logAudit({
+      userId,
+      userName,
+      module: 'DELEGATION',
+      action: 'DELETE',
+      entityId: target?.taskId || taskIdOrId,
+      details: `Permanently deleted delegation task #${target?.taskId || taskIdOrId}: "${target?.task || ''}"`,
+    });
+  }
+
   // Checklist Operations
+  public getDeletedChecklistIds(): string[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.DELETED_CHECKLIST);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+
   public getChecklistItems(): ChecklistItem[] {
     if (typeof window === 'undefined') return INITIAL_CHECKLIST_ITEMS;
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.CHECKLIST);
-      return raw ? JSON.parse(raw) : INITIAL_CHECKLIST_ITEMS;
+      const list: ChecklistItem[] = raw ? JSON.parse(raw) : INITIAL_CHECKLIST_ITEMS;
+      const deletedIds = new Set(this.getDeletedChecklistIds());
+      return list.filter((i) => !deletedIds.has(i.id) && !deletedIds.has(i.taskId));
     } catch {
       return INITIAL_CHECKLIST_ITEMS;
     }
@@ -1013,6 +1079,37 @@ class StorageAdapter {
     localStorage.setItem(STORAGE_KEYS.CHECKLIST, JSON.stringify(items));
     this.syncToFirestore('checklistItems', items, 'id');
     this.notifyListeners();
+  }
+
+  public deleteChecklistItem(idOrTaskId: string, currentUser?: UserProfile) {
+    const items = this.getChecklistItems();
+    const target = items.find((i) => i.id === idOrTaskId || i.taskId === idOrTaskId);
+    const updated = items.filter((i) => i.id !== idOrTaskId && i.taskId !== idOrTaskId);
+    this.saveChecklistItems(updated);
+
+    const deletedIds = this.getDeletedChecklistIds();
+    if (target) {
+      if (target.id && !deletedIds.includes(target.id)) deletedIds.push(target.id);
+      if (target.taskId && !deletedIds.includes(target.taskId)) deletedIds.push(target.taskId);
+    }
+    if (!deletedIds.includes(idOrTaskId)) deletedIds.push(idOrTaskId);
+    localStorage.setItem(STORAGE_KEYS.DELETED_CHECKLIST, JSON.stringify(deletedIds));
+
+    if (target) {
+      this.deleteFromFirestore('checklistItems', target.id || target.taskId);
+    }
+    this.deleteFromFirestore('checklistItems', idOrTaskId);
+
+    const userId = currentUser?.userId || 'USR-000';
+    const userName = currentUser?.name || 'System Administrator';
+    this.logAudit({
+      userId,
+      userName,
+      module: 'CHECKLIST',
+      action: 'DELETE',
+      entityId: target?.taskId || idOrTaskId,
+      details: `Permanently deleted checklist item #${target?.taskId || idOrTaskId}: "${target?.task || ''}"`,
+    });
   }
 
   // IMS Inventory Operations
@@ -1461,12 +1558,19 @@ class StorageAdapter {
           deduped.push(u);
         }
       }
+      const normalized = deduped.map((u) => ({
+        ...u,
+        whatsappPhone: u.whatsappPhone || u.phone || '9827100000',
+      }));
       if (!data || deduped.length !== rawList.length) {
-        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(deduped));
+        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(normalized));
       }
-      return deduped;
+      return normalized;
     } catch (e) {
-      return USERS;
+      return USERS.map((u) => ({
+        ...u,
+        whatsappPhone: u.whatsappPhone || u.phone,
+      }));
     }
   }
 
@@ -1475,6 +1579,28 @@ class StorageAdapter {
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
     this.syncToFirestore('users', users, 'userId');
     this.notifyListeners();
+  }
+
+  public deleteUser(userId: string, currentUser?: UserProfile): UserProfile[] {
+    if (typeof window === 'undefined') return [];
+    const existing = this.getUsers();
+    const target = existing.find((u) => u.userId === userId);
+    const updated = existing.filter((u) => u.userId !== userId);
+    this.saveUsers(updated);
+    this.deleteFromFirestore('users', userId);
+    this.notifyListeners();
+
+    const userName = currentUser?.name || 'Super Administrator';
+    const currentUserId = currentUser?.userId || 'USR-000';
+    this.logAudit({
+      userId: currentUserId,
+      userName,
+      module: 'REGISTRY',
+      action: 'DELETE',
+      entityId: userId,
+      details: `Permanently deleted staff account for ${target?.name || userId} (@${target?.username || ''}) - Role: ${target?.role || 'Staff'}`
+    });
+    return updated;
   }
 
   // Notice Board Management

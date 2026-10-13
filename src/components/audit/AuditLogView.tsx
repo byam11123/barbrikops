@@ -1,16 +1,32 @@
 import React, { useState } from 'react';
 import { History, Search, Filter, ShieldCheck, Clock, User, FileText } from 'lucide-react';
-import { AuditLogEntry } from '../../types';
+import { AuditLogEntry, UserProfile } from '../../types';
 
 interface AuditLogViewProps {
   logs: AuditLogEntry[];
+  currentUser?: UserProfile;
 }
 
-export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs }) => {
+export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, currentUser }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [moduleFilter, setModuleFilter] = useState<string>('ALL');
 
-  const filteredLogs = logs.filter((log) => {
+  const isSuperAdminViewer = currentUser && currentUser.userId === 'USR-000' && currentUser.role === 'SUPER_ADMIN';
+
+  const visibleLogs = logs.filter((log) => {
+    if (!isSuperAdminViewer) {
+      if (
+        log.userId === 'USR-000' ||
+        (log.userName && (log.userName.toLowerCase().includes('super admin') || log.userName.toLowerCase().includes('usr-000'))) ||
+        (log.details && (log.details.toLowerCase().includes('super admin') || log.details.toLowerCase().includes('usr-000')))
+      ) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const filteredLogs = visibleLogs.filter((log) => {
     if (moduleFilter !== 'ALL' && log.module !== moduleFilter) return false;
     if (searchQuery.trim() !== '') {
       const q = searchQuery.toLowerCase();

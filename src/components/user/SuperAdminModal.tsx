@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { UserProfile, NoticeBoardItem, UserRole } from '../../types';
 import { USERS, INITIAL_NOTICE_BOARD } from '../../data/initialData';
+import { validateStaffUniqueness } from '../../utils/staffValidation';
 
 interface SuperAdminModalProps {
   isOpen: boolean;
@@ -142,6 +143,25 @@ export const SuperAdminModal: React.FC<SuperAdminModalProps> = ({
     e.preventDefault();
     if (!roleManagerUser) return;
 
+    // Validate uniqueness for Username, Mobile, WhatsApp, and Email
+    const validation = validateStaffUniqueness({
+      username: roleManagerUser.username || '',
+      phone: editPhone,
+      email: editEmail,
+      excludeUserId: roleManagerUser.userId,
+      usersList,
+    });
+
+    if (!validation.isValid) {
+      const firstErr = 
+        validation.errors.username || 
+        validation.errors.phone || 
+        validation.errors.email || 
+        'Validation error';
+      setRoleManagerSuccessMsg(`Validation Error: ${firstErr}`);
+      return;
+    }
+
     const updated = usersList.map((u) => {
       if (u.userId === roleManagerUser.userId) {
         return {
@@ -180,17 +200,34 @@ export const SuperAdminModal: React.FC<SuperAdminModalProps> = ({
     e.preventDefault();
     if (!newUserName.trim()) return;
 
+    const username = newUserUsername.trim() || newUserName.trim().toLowerCase().replace(/\s+/g, '.');
+    const phone = newUserPhone.trim() || '9827100000';
+    const email = newUserEmail.trim() || `${username}@barbrik.in`;
+
+    const validation = validateStaffUniqueness({
+      username,
+      phone,
+      email,
+      usersList,
+    });
+
+    if (!validation.isValid) {
+      const firstErr = validation.errors.username || validation.errors.phone || validation.errors.email || 'Validation error';
+      alert(`Cannot create staff member: ${firstErr}`);
+      return;
+    }
+
     const created: UserProfile = {
       userId: `USR-${Date.now().toString().slice(-4)}`,
       name: newUserName.trim(),
-      username: newUserUsername.trim() || newUserName.trim().toLowerCase().replace(/\s+/g, '.'),
+      username,
       password: 'pass123',
       role: newUserRoleTitle,
       systemRole: newUserSystemRole,
       departmentId: 'DEPT-STORE',
       departmentName: 'Central Operations',
-      email: newUserEmail.trim() || `${newUserName.trim().toLowerCase().replace(/\s+/g, '.')}@barbrik.in`,
-      phone: newUserPhone.trim() || '9827100000',
+      email,
+      phone,
       siteLocation: newUserSite,
       status: 'ACTIVE',
       approvalPin: '1234',

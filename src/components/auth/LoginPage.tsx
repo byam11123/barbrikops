@@ -34,13 +34,16 @@ interface LoginPageProps {
   onLoginSuccess: (user: UserProfile) => void;
   noticeItems?: NoticeBoardItem[];
   customSlides?: DynamicShowcaseSlide[];
+  usersList?: UserProfile[];
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({
   onLoginSuccess,
   noticeItems,
   customSlides = DEFAULT_SHOWCASE_SLIDES,
+  usersList,
 }) => {
+  const availableUsers = (usersList && usersList.length > 0) ? usersList : USERS;
   // Convert noticeItems to dynamic slides if provided
   const allSlides: DynamicShowcaseSlide[] = React.useMemo(() => {
     if (!noticeItems || noticeItems.length === 0) return customSlides;
@@ -130,7 +133,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
     setTimeout(() => {
       // Search matching user by phone, email, or username
-      const foundUser = USERS.find((u) => {
+      const foundUser = availableUsers.find((u) => {
         const uPhone = (u.phone || '').replace(/\D/g, '');
         const uEmail = (u.email || '').toLowerCase();
         const uUsername = (u.username || '').toLowerCase();
@@ -493,7 +496,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {USERS.slice(0, 4).map((u) => (
+                {availableUsers.slice(0, 4).map((u) => (
                   <button
                     key={u.userId}
                     type="button"

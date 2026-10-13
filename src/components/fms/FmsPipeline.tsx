@@ -6,6 +6,8 @@ import {
   CheckCircle2, 
   CheckSquare,
   ChevronRight, 
+  ChevronDown,
+  Building2,
   ExternalLink, 
   Filter, 
   Plus, 
@@ -43,7 +45,7 @@ import { downloadCsv } from '../../utils/csvExporter';
 import { downloadFmsHorizontalMatrixExcel, downloadFmsExcelTemplate } from '../../services/fmsExcelService';
 import { FmsMasterCatalogView } from './FmsMasterCatalogView';
 import { FmsStageMatrixTableView } from './FmsStageMatrixTableView';
-import { FmsInstance, FmsStageExecution, FmsStageDefinition, Priority, UserProfile, isUserSuperAdmin } from '../../types';
+import { FmsInstance, FmsStageExecution, FmsStageDefinition, Priority, UserProfile, isUserSuperAdmin, isUserAdminOrSuperAdmin, getUserModulePermission } from '../../types';
 import { 
   FMS_CHECK_STOCK_STAGES, 
   FMS_STANDARD_PURCHASE_STAGES, 
@@ -58,7 +60,7 @@ import {
   FMS_EQUIPMENT_PART_REPAIR_STAGES,
   FMS_DPR_REPORTING_STAGES 
 } from '../../data/initialData';
-import { isUserResponsibleForStage, isFlowAwaitingUserAction, getFmsDomainCategory, getFlowDepartmentKey, getDepartmentBranchLabel } from '../../services/stageAssignment';
+import { isUserResponsibleForStage, isFlowAwaitingUserAction, getFmsDomainCategory, getFlowDepartmentKey, getDepartmentBranchLabel, isFlowMatchingWorkflow } from '../../services/stageAssignment';
 import { storageAdapter } from '../../services/storageAdapter';
 import { 
   calculateWorkingHoursDelay, 
@@ -85,6 +87,7 @@ interface FmsPipelineProps {
   onClearDepartmentFilter?: () => void;
   selectedWorkflowFilter?: string | null;
   onClearWorkflowFilter?: () => void;
+  onSelectWorkflowFilter?: (workflowKey: string | null) => void;
 }
 
 export function parseDateTimeStr(str: string | undefined): Date | null {
@@ -192,11 +195,14 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
   onClearDepartmentFilter,
   selectedWorkflowFilter = null,
   onClearWorkflowFilter,
+  onSelectWorkflowFilter,
 }) => {
-  const [domainFilter, setDomainFilter] = useState<'ALL' | 'PROCUREMENT' | 'FINANCE_ACCOUNTS' | 'SITE_LOGISTICS' | 'HR_EQUIPMENT'>('ALL');
   const [pipelineTypeFilter, setPipelineTypeFilter] = useState<string>('ALL');
   const [filterSite, setFilterSite] = useState<string>('ALL');
   const [filterPriority, setFilterPriority] = useState<string>('ALL');
+  const [delayFilter, setDelayFilter] = useState<'ALL' | 'DELAYED_ONLY' | 'ON_TIME_ONLY'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'In Progress' | 'Completed'>('ALL');
+  const [exportDropdownOpen, setExportDropdownOpen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedFlowId, setSelectedFlowId] = useState<string>(flows[0]?.id || '');
   const [viewMode, setViewMode] = useState<'FOCUS_FEED' | 'KANBAN' | 'TIMELINE' | 'MATRIX' | 'STAGE_MATRIX'>('STAGE_MATRIX');
@@ -209,6 +215,9 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
   const [confirmDeleteRecordId, setConfirmDeleteRecordId] = useState<string | null>(null);
 
   const isSuperAdmin = isUserSuperAdmin(currentUser);
+  const isAdminOrSuperAdmin = isUserAdminOrSuperAdmin(currentUser);
+  const canDelete = isSuperAdmin || isAdminOrSuperAdmin || getUserModulePermission(currentUser, 'fms').canDelete;
+  const [confirmBatchDeleteMatrix, setConfirmBatchDeleteMatrix] = useState(false);
 
   const handleDeleteRecord = (flowId: string) => {
     if (onDeleteFlow) {
@@ -223,13 +232,13 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
   const [stageFilterMode, setStageFilterMode] = useState<'MY_STAGES' | 'ALL_STAGES'>('MY_STAGES');
 
   useEffect(() => {
-    if (!isSuperAdmin) {
+    if (!isAdminOrSuperAdmin) {
       setStageFilterMode('MY_STAGES');
       setViewModeTab('RUNNING_PIPELINE');
     } else {
       setStageFilterMode(viewScope === 'USER_ONLY' ? 'MY_STAGES' : 'ALL_STAGES');
     }
-  }, [viewScope, isSuperAdmin]);
+  }, [viewScope, isAdminOrSuperAdmin]);
 
   // Helper to check if a specific stage definition belongs to currentUser
   const isMyStage = (def: FmsStageDefinition, stageExec?: FmsStageExecution): boolean => {
@@ -254,21 +263,13 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
       if (f.isClosed || f.status === 'CLOSED') return false;
     }
 
-    // Department Filter from Sidebar
-    if (selectedDepartmentFilter) {
+    // Individual Workflow Filter from Sidebar Sub-Branch or Tab
+    if (selectedWorkflowFilter) {
+      if (!isFlowMatchingWorkflow(f, selectedWorkflowFilter)) return false;
+    } else if (selectedDepartmentFilter) {
+      // Department Filter from Sidebar (when no specific workflow is selected)
       const flowDept = getFlowDepartmentKey(f, customTemplates);
       if (flowDept !== selectedDepartmentFilter) return false;
-    }
-    // Individual Workflow Filter from Sidebar Sub-Branch
-    if (selectedWorkflowFilter) {
-      const matchesFlowType = f.flowType === selectedWorkflowFilter;
-      const matchesCustomTemplate = f.customTemplateId === selectedWorkflowFilter;
-      if (!matchesFlowType && !matchesCustomTemplate) return false;
-    }
-    // 0. Domain Filter
-    if (domainFilter !== 'ALL') {
-      const cat = getFmsDomainCategory(f.flowType);
-      if (cat.domainKey !== domainFilter) return false;
     }
     // Sub-pipeline filter if selected
     if (pipelineTypeFilter !== 'ALL' && f.flowType !== pipelineTypeFilter) {
@@ -282,6 +283,16 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
     if (filterSite !== 'ALL' && f.siteName !== filterSite) return false;
     // 3. Priority Filter
     if (filterPriority !== 'ALL' && f.priority !== filterPriority) return false;
+    // 3b. Status Filter
+    if (statusFilter !== 'ALL' && f.status !== statusFilter) return false;
+    // 3c. SLA Delay Filter
+    const workShiftConfig = storageAdapter.getRegistryConfig().workShiftConfig || DEFAULT_WORK_SHIFT_CONFIG;
+    const hasAnyDelay = f.stages?.some(stg => {
+      const delayRes = calculateWorkingHoursDelay(stg.plannedDateTime, stg.actualDateTime, workShiftConfig);
+      return delayRes.isDelayed;
+    });
+    if (delayFilter === 'DELAYED_ONLY' && !hasAnyDelay) return false;
+    if (delayFilter === 'ON_TIME_ONLY' && hasAnyDelay) return false;
     // 4. Search Filter
     if (searchQuery.trim() !== '') {
       const q = searchQuery.toLowerCase();
@@ -760,14 +771,11 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
     } else {
       if (f.isClosed || f.status === 'CLOSED') return false;
     }
-    if (selectedDepartmentFilter) {
+    if (selectedWorkflowFilter) {
+      if (!isFlowMatchingWorkflow(f, selectedWorkflowFilter)) return false;
+    } else if (selectedDepartmentFilter) {
       const flowDept = getFlowDepartmentKey(f, customTemplates);
       if (flowDept !== selectedDepartmentFilter) return false;
-    }
-    if (selectedWorkflowFilter) {
-      const matchesFlowType = f.flowType === selectedWorkflowFilter;
-      const matchesCustomTemplate = f.customTemplateId === selectedWorkflowFilter;
-      if (!matchesFlowType && !matchesCustomTemplate) return false;
     }
     return true;
   });
@@ -843,7 +851,7 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
             <span>Archived / Closed FMS ({closedFlowsCount})</span>
           </button>
 
-          {isSuperAdmin && (
+          {isAdminOrSuperAdmin && (
             <button
               type="button"
               onClick={() => setViewModeTab('MASTER_CATALOG')}
@@ -872,7 +880,7 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
         )}
       </div>
 
-      {isSuperAdmin && viewModeTab === 'MASTER_CATALOG' ? (
+      {isAdminOrSuperAdmin && viewModeTab === 'MASTER_CATALOG' ? (
         <FmsMasterCatalogView
           currentUser={currentUser}
           onOpenTemplateStudio={onOpenTemplateStudio}
@@ -1003,75 +1011,114 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
         </div>
       </div>
 
-      {/* Top action & filter bar */}
-      <div className="space-y-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-        {(selectedDepartmentFilter || selectedWorkflowFilter) && (
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 px-3.5 py-2.5 bg-indigo-50/80 border border-indigo-200/80 rounded-xl text-xs">
-            <div className="flex items-center gap-2 text-indigo-950 font-semibold flex-wrap">
-              <GitBranch className="w-4 h-4 text-indigo-600 shrink-0" />
-              {selectedDepartmentFilter && (
-                <span>
-                  Department: <strong className="text-indigo-700">{getDepartmentBranchLabel(selectedDepartmentFilter)}</strong>
-                </span>
-              )}
-              {selectedDepartmentFilter && selectedWorkflowFilter && (
-                <span className="text-slate-400">›</span>
-              )}
-              {selectedWorkflowFilter && (() => {
-                const matchedTpl = storageAdapter.getAllMasterTemplates().find(
-                  (t) => t.templateKey === selectedWorkflowFilter || t.id === selectedWorkflowFilter
-                );
-                const wfName = matchedTpl?.name || selectedWorkflowFilter.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-                return (
-                  <span className="bg-indigo-600 text-white font-bold px-2 py-0.5 rounded-md shadow-2xs">
-                    {wfName} Workflow
-                  </span>
-                );
-              })()}
-              <span className="text-slate-500 font-normal">
-                ({filteredFlows.length} Requisitions in this workflow)
+      {/* UNIFIED SINGLE FMS HEADER TOOLBAR */}
+      <div className="space-y-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+        {/* Tier 1: Department Breadcrumb & Master Workflow Branch Selector */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 px-3.5 py-2 bg-slate-50 border border-slate-200/80 rounded-xl text-xs">
+          <div className="flex items-center gap-2 text-slate-800 font-bold flex-wrap">
+            <GitBranch className="w-4 h-4 text-indigo-600 shrink-0" />
+            {selectedDepartmentFilter && (
+              <span>
+                Department: <strong className="text-indigo-700">{getDepartmentBranchLabel(selectedDepartmentFilter)}</strong>
               </span>
+            )}
+            {selectedDepartmentFilter && <span className="text-slate-400">›</span>}
+
+            {/* Workflow Branch Selector Dropdown */}
+            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-slate-300 shadow-2xs">
+              <label htmlFor="top-branch-select" className="text-[11px] font-extrabold uppercase text-indigo-900 whitespace-nowrap">
+                Branch Workflow:
+              </label>
+              <select
+                id="top-branch-select"
+                value={selectedWorkflowFilter || 'ALL'}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (onSelectWorkflowFilter) {
+                    onSelectWorkflowFilter(val === 'ALL' ? null : val);
+                  }
+                }}
+                className="text-xs font-extrabold bg-transparent text-slate-900 focus:outline-none cursor-pointer"
+              >
+                <option value="ALL">
+                  {selectedDepartmentFilter ? `All ${getDepartmentBranchLabel(selectedDepartmentFilter)} Workflows` : 'All Workflows Combined'}
+                </option>
+                <option value="INDENT_PURCHASE">Indent to PO (Purchase FMS)</option>
+                <option value="PAYMENT_TO_DISPATCH">Vendor Payment to Dispatch</option>
+                <option value="CHECK_STOCK">Check Stock (Store FMS)</option>
+                <option value="PURCHASE_TO_STORE_DISPATCH">Purchase to Store Dispatch</option>
+                <option value="STORE_TO_SITE_DISPATCH">Store to Site Issue</option>
+                <option value="SITE_RECEIVE">Site Material Receive (MRN)</option>
+                <option value="PO_TO_PAYMENT">PO to Payment (Accounts FMS)</option>
+                <option value="BENEFICIARY_APPROVAL">Beneficiary Approval FMS</option>
+                <option value="ACCOUNTS_INVOICE_COLLECTION">Invoice Collection FMS</option>
+                <option value="HR_ATTENDANCE_PAYMENT">Labour Attendance &amp; Payment</option>
+                <option value="BREAKDOWN_REPORTING">Machinery Breakdown FMS</option>
+                <option value="EQUIPMENT_PART_REPAIR">Equipment Part Repair FMS</option>
+                <option value="DPR_REPORTING">Daily Progress Report FMS</option>
+                {customTemplates.map((tpl) => (
+                  <option key={tpl.id} value={tpl.templateKey || tpl.id}>
+                    {tpl.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            <div className="flex items-center gap-3 shrink-0">
-              {selectedWorkflowFilter && onClearWorkflowFilter && (
-                <button
-                  type="button"
-                  onClick={onClearWorkflowFilter}
-                  className="text-xs font-bold text-indigo-700 hover:text-indigo-900 bg-white px-2 py-1 rounded border border-indigo-200 cursor-pointer shadow-2xs"
-                >
-                  All {selectedDepartmentFilter ? getDepartmentBranchLabel(selectedDepartmentFilter) : ''} Workflows
-                </button>
-              )}
-              {selectedDepartmentFilter && onClearDepartmentFilter && (
-                <button
-                  type="button"
-                  onClick={onClearDepartmentFilter}
-                  className="text-xs font-bold text-slate-600 hover:text-slate-900 underline cursor-pointer"
-                >
-                  All Departments
-                </button>
-              )}
-            </div>
+            <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-mono text-[11px] font-extrabold border border-indigo-100">
+              {filteredFlows.length} FMS Entries
+            </span>
           </div>
-        )}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-          {/* Left side: Search & unboxed filters */}
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search Indent / PO / Vendor..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg w-48 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
 
+          <div className="flex items-center gap-2 shrink-0">
+            {selectedWorkflowFilter && onClearWorkflowFilter && (
+              <button
+                type="button"
+                onClick={onClearWorkflowFilter}
+                className="text-[11px] font-bold text-indigo-700 hover:text-indigo-900 bg-white px-2 py-0.5 rounded border border-indigo-200 cursor-pointer shadow-2xs"
+              >
+                Reset Workflow Filter
+              </button>
+            )}
+            {selectedDepartmentFilter && onClearDepartmentFilter && (
+              <button
+                type="button"
+                onClick={onClearDepartmentFilter}
+                className="text-[11px] font-bold text-slate-600 hover:text-slate-900 underline cursor-pointer"
+              >
+                All Departments
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Tier 2: Search, Filters, View Mode Switcher, and Export Menu */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Left: Search input */}
+          <div className="relative flex-1 min-w-[240px]">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search Indent / PO / Vendor / Beneficiary / Site..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-8 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-slate-900 shadow-2xs"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Center: Dropdown Filters */}
+          <div className="flex flex-wrap items-center gap-2">
             {/* Site Filter */}
-            <div className="flex items-center gap-1 bg-white px-2.5 py-1.5 rounded-lg border border-slate-200">
-              <Filter className="w-3.5 h-3.5 text-slate-500" />
+            <div className="flex items-center gap-1 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-300">
+              <Building2 className="w-3.5 h-3.5 text-slate-500" />
               <select
                 aria-label="Filter by site"
                 value={filterSite}
@@ -1085,139 +1132,136 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
               </select>
             </div>
 
-            {/* Relocated All Hubs Dropdown next to Site Filter */}
-            <div className="flex items-center bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 gap-2">
-              <Layers className="w-3.5 h-3.5 text-slate-500" />
+
+            {/* SLA Delay Filter */}
+            <div className="flex items-center gap-1 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-300">
+              <Clock className="w-3.5 h-3.5 text-rose-500" />
               <select
-                value={domainFilter}
-                onChange={(e) => {
-                  const val = e.target.value as any;
-                  setDomainFilter(val);
-                  setPipelineTypeFilter('ALL');
-                }}
-                title="Filter by Hub / Department"
-                className="text-xs font-bold bg-transparent border-none text-slate-700 hover:text-slate-900 focus:outline-none cursor-pointer"
+                value={delayFilter}
+                onChange={(e) => setDelayFilter(e.target.value as any)}
+                className="bg-transparent text-xs font-bold text-slate-700 focus:outline-none cursor-pointer"
               >
-                <option value="ALL">All Hubs ({flows.length})</option>
-                <option value="PROCUREMENT">Procurement</option>
-                <option value="FINANCE_ACCOUNTS">Accounts &amp; Finance</option>
-                <option value="SITE_LOGISTICS">Site Logistics</option>
-                <option value="HR_EQUIPMENT">Plant &amp; Operations</option>
+                <option value="ALL">SLA: All Timelines</option>
+                <option value="DELAYED_ONLY">SLA: Delayed Only</option>
+                <option value="ON_TIME_ONLY">SLA: On Time Only</option>
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <div className="flex items-center gap-1 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-300">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="bg-transparent text-xs font-bold text-slate-700 focus:outline-none cursor-pointer"
+              >
+                <option value="ALL">Status: All</option>
+                <option value="In Progress">Status: In Progress</option>
+                <option value="Completed">Status: Completed</option>
               </select>
             </div>
           </div>
 
-          {/* Right side: View toggles & Relocated Action button */}
-          <div className="flex items-center justify-between sm:justify-end gap-3">
-            {/* View Mode Toggle Buttons */}
-            <div className="flex items-center bg-white p-0.5 rounded-lg border border-slate-200 shadow-2xs gap-0.5">
+          {/* Right: View Mode Toggle Group + Single Consolidated Export Menu */}
+          <div className="flex items-center gap-2">
+            {/* View Mode Toggle Buttons (Icon-Only) */}
+            <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 gap-0.5">
               <button
+                type="button"
                 onClick={() => setViewMode('STAGE_MATRIX')}
-                className={`px-3 py-1 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+                className={`p-2 rounded-lg transition-all cursor-pointer ${
                   viewMode === 'STAGE_MATRIX'
                     ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                 }`}
                 title="Master Stage Matrix View (Stage-by-Stage Field Table)"
               >
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                <span>Master Stage Matrix</span>
+                <FileSpreadsheet className="w-4 h-4" />
               </button>
               <button
+                type="button"
                 onClick={() => setViewMode('MATRIX')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1 cursor-pointer ${
+                className={`p-2 rounded-lg transition-all cursor-pointer ${
                   viewMode === 'MATRIX'
                     ? 'bg-slate-800 text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                 }`}
-                title="Horizontal Summary Matrix (1000+)"
+                title="Horizontal Summary Matrix View"
               >
-                <Table className="w-3.5 h-3.5" />
-                <span>Summary Matrix</span>
+                <Table className="w-4 h-4" />
               </button>
               <button
+                type="button"
                 onClick={() => setViewMode('FOCUS_FEED')}
-                className={`p-1.5 rounded-md transition-all ${
+                className={`p-2 rounded-lg transition-all cursor-pointer ${
                   viewMode === 'FOCUS_FEED'
                     ? 'bg-slate-800 text-white shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                 }`}
-                title="Standard Cards"
+                title="Standard Cards View"
               >
                 <Zap className="w-4 h-4" />
               </button>
               <button
+                type="button"
                 onClick={() => setViewMode('KANBAN')}
-                className={`p-1.5 rounded-md transition-all ${
+                className={`p-2 rounded-lg transition-all cursor-pointer ${
                   viewMode === 'KANBAN'
                     ? 'bg-slate-800 text-white shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                 }`}
-                title="Operations Kanban"
+                title="Operations Kanban View"
               >
                 <ClipboardList className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Download Shared Spreadsheet (.xlsx) Button */}
-            <button
-              onClick={() => {
-                const title = pipelineTypeFilter === 'INDENT_PURCHASE'
-                  ? 'INDENT TO PO (PURCHASE DEPARTMENT FMS)'
-                  : pipelineTypeFilter === 'PO_TO_PAYMENT'
-                  ? 'PO TO PAYMENT (ACCOUNTS DEPARTMENT FMS)'
-                  : pipelineTypeFilter === 'CHECK_STOCK'
-                  ? 'CHECK STOCK (STORE DEPARTMENT FMS)'
-                  : 'FMS HORIZONTAL MULTI-STAGE TRACKER';
-                downloadFmsHorizontalMatrixExcel(filteredFlows, title);
-              }}
-              title="Download exact horizontal multi-stage spreadsheet with WHAT, WHO, HOW, WHEN: Planned, Actual, Status & - hh:mm:ss Delay"
-              className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs shadow-2xs transition-colors shrink-0 cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-200" />
-              <span>Download Shared Spreadsheet (.xlsx)</span>
-            </button>
-
-            {/* FMS Creation Template (.xlsx) Button */}
-            <button
-              onClick={() => downloadFmsExcelTemplate()}
-              title="Download Excel template to define new workflows with stages & custom fields"
-              className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-lg text-xs transition-colors shrink-0 border border-indigo-200 cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5 text-indigo-600" />
-              <span>FMS Creation Template (.xlsx)</span>
-            </button>
-
-            {/* Export Filtered Data CSV Button */}
-            <button
-              onClick={handleExportFilteredCsv}
-              title="Export currently filtered FMS table data to CSV"
-              className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-lg text-xs transition-colors shrink-0 border border-slate-300 cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5 text-slate-600" />
-              <span>Export CSV</span>
-            </button>
-
-            {/* Template Studio Button */}
-            {onOpenTemplateStudio && (
+            {/* Single Consolidated Export Menu */}
+            <div className="relative">
               <button
-                onClick={() => onOpenTemplateStudio()}
-                title="Design custom FMS workflows, stages, and stage form fields"
-                className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-lg text-xs transition-colors shrink-0 border border-indigo-200 cursor-pointer"
+                type="button"
+                onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-all shrink-0 shadow-2xs cursor-pointer"
+                title="Export FMS Data Options"
               >
-                <Zap className="w-3.5 h-3.5 text-indigo-600" />
-                <span>Template Studio</span>
+                <Download className="w-3.5 h-3.5" />
+                <span>Export</span>
+                <ChevronDown className="w-3 h-3 opacity-80" />
               </button>
-            )}
 
-            {/* Relocated New FMS Workflow Button right next to view switchers */}
-            <button
-              onClick={onCreateFlow}
-              className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors shrink-0 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>+ New FMS Workflow</span>
-            </button>
+              {exportDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={() => setExportDropdownOpen(false)} />
+                  <div className="absolute right-0 mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-xl z-30 py-1.5 text-xs text-slate-700 animate-in fade-in zoom-in-95">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleExportFilteredCsv();
+                        setExportDropdownOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2 font-bold text-slate-800 cursor-pointer"
+                    >
+                      <FileText className="w-4 h-4 text-indigo-600" />
+                      <span>Export Filtered CSV (.csv)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const activeTitle = selectedWorkflowFilter
+                          ? `${selectedWorkflowFilter.toUpperCase()} WORKFLOW`
+                          : 'ALL FMS WORKFLOWS';
+                        downloadFmsHorizontalMatrixExcel(filteredFlows, activeTitle);
+                        setExportDropdownOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2 font-bold text-slate-800 cursor-pointer border-t border-slate-100"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                      <span>Export Stage Matrix (.xlsx)</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -1232,7 +1276,13 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
           onDeleteFlow={onDeleteFlow}
           selectedDepartmentFilter={selectedDepartmentFilter}
           selectedWorkflowFilter={selectedWorkflowFilter}
+          onSelectWorkflowFilter={onSelectWorkflowFilter}
+          viewModeTab={viewModeTab}
           onOpenStageAction={onOpenStageAction}
+          searchQuery={searchQuery}
+          siteFilter={filterSite}
+          delayFilter={delayFilter}
+          statusFilter={statusFilter}
         />
       )}
 
@@ -1268,6 +1318,18 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
             }
           });
           setMatrixSelectedIds([]);
+        };
+
+        const handleBatchDeleteMatrix = () => {
+          matrixSelectedIds.forEach(id => {
+            if (onDeleteFlow) {
+              onDeleteFlow(id);
+            } else {
+              storageAdapter.deleteFmsFlow(id, currentUser);
+            }
+          });
+          setMatrixSelectedIds([]);
+          setConfirmBatchDeleteMatrix(false);
         };
 
         // Stages for horizontal matrix
@@ -1353,53 +1415,7 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
               </div>
             </div>
 
-            {/* Operating Shift & Calendar Parameters Banner */}
-            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 rounded-xl border border-indigo-900/60 shadow-xs space-y-2.5">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-indigo-800/40 pb-2">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <h3 className="text-xs font-extrabold tracking-wide uppercase text-indigo-100">
-                    {activeWorkflowTitle}
-                  </h3>
-                </div>
-                <span className="text-[11px] font-mono font-semibold text-indigo-300">
-                  {horizontalStages.length} Stages • {filteredFlows.length} Requisitions Loaded
-                </span>
-              </div>
 
-              {/* Shift Badges Bar */}
-              <div className="flex flex-wrap items-center gap-2.5 text-xs">
-                <div className="flex items-center gap-1.5 bg-white/10 px-2.5 py-1 rounded-lg border border-white/10">
-                  <Clock className="w-3.5 h-3.5 text-amber-300" />
-                  <span className="text-slate-300 text-[11px]">Day Shift:</span>
-                  <span className="font-bold text-white text-[11px] font-mono">{shift.shiftStartTime || '09:30'} – {shift.shiftEndTime || '18:30'}</span>
-                </div>
-
-                <div className="flex items-center gap-1.5 bg-white/10 px-2.5 py-1 rounded-lg border border-white/10">
-                  <Coffee className="w-3.5 h-3.5 text-orange-300" />
-                  <span className="text-slate-300 text-[11px]">Lunch Break:</span>
-                  <span className="font-bold text-white text-[11px] font-mono">{shift.lunchStartTime || '13:30'} – {shift.lunchEndTime || '14:30'} (Paused)</span>
-                </div>
-
-                <div className="flex items-center gap-1.5 bg-white/10 px-2.5 py-1 rounded-lg border border-white/10">
-                  <CalendarDays className="w-3.5 h-3.5 text-cyan-300" />
-                  <span className="text-slate-300 text-[11px]">Work Week:</span>
-                  <span className="font-bold text-white text-[11px]">Mon – Sat (Sunday Off)</span>
-                </div>
-
-                <div className="flex items-center gap-1.5 bg-rose-500/20 px-2.5 py-1 rounded-lg border border-rose-500/30">
-                  <Timer className="w-3.5 h-3.5 text-rose-300" />
-                  <span className="text-rose-200 text-[11px]">Delay Format:</span>
-                  <span className="font-bold text-rose-300 font-mono text-[11px]">- hh:mm:ss</span>
-                </div>
-
-                <div className="flex items-center gap-1.5 bg-emerald-500/20 px-2.5 py-1 rounded-lg border border-emerald-500/30">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
-                  <span className="text-emerald-200 text-[11px]">Google Forms:</span>
-                  <span className="font-bold text-emerald-300 text-[11px]">100% In-App Web Execution</span>
-                </div>
-              </div>
-            </div>
 
             {/* Batch Action Floating Bar */}
             {matrixSelectedIds.length > 0 && (
@@ -1416,8 +1432,42 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     Mass Advance Checked ({matrixSelectedIds.length})
                   </button>
+                  {canDelete && (
+                    confirmBatchDeleteMatrix ? (
+                      <div className="flex items-center gap-1.5 bg-rose-900/90 border border-rose-500 rounded-lg px-2.5 py-1">
+                        <span className="text-[11px] font-bold text-rose-200">Delete {matrixSelectedIds.length} items?</span>
+                        <button
+                          type="button"
+                          onClick={handleBatchDeleteMatrix}
+                          className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-bold cursor-pointer transition-colors"
+                        >
+                          Yes, Delete
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmBatchDeleteMatrix(false)}
+                          className="px-2 py-0.5 bg-white/20 hover:bg-white/30 text-white rounded text-[11px] cursor-pointer transition-colors"
+                        >
+                          No
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmBatchDeleteMatrix(true)}
+                        className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition-colors cursor-pointer"
+                        title="Delete selected items"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete Checked ({matrixSelectedIds.length})
+                      </button>
+                    )
+                  )}
                   <button
-                    onClick={() => setMatrixSelectedIds([])}
+                    onClick={() => {
+                      setMatrixSelectedIds([]);
+                      setConfirmBatchDeleteMatrix(false);
+                    }}
                     className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold cursor-pointer"
                   >
                     Cancel
@@ -1540,7 +1590,7 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                                   >
                                     {refCode}
                                   </button>
-                                  {isSuperAdmin && (
+                                  {canDelete && (
                                     confirmDeleteRecordId === flow.id ? (
                                       <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5">
                                         <button
@@ -1562,8 +1612,8 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                                       <button
                                         type="button"
                                         onClick={() => setConfirmDeleteRecordId(flow.id)}
-                                        className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
-                                        title="Delete FMS Record (Super Admin)"
+                                        className="p-1 hover:bg-rose-50 text-rose-500 hover:text-rose-700 rounded transition-colors cursor-pointer"
+                                        title="Delete Record"
                                       >
                                         <Trash2 className="w-3.5 h-3.5" />
                                       </button>
@@ -1905,7 +1955,7 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                                   >
                                     <Eye className="w-4 h-4" />
                                   </button>
-                                  {isSuperAdmin && (
+                                  {canDelete && (
                                     confirmDeleteRecordId === flow.id ? (
                                       <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5">
                                         <span className="text-[10px] font-bold text-rose-700">Delete?</span>
@@ -1928,8 +1978,8 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                                       <button
                                         type="button"
                                         onClick={() => setConfirmDeleteRecordId(flow.id)}
-                                        className="p-1.5 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                                        title="Delete FMS Record (Super Admin)"
+                                        className="p-1.5 hover:bg-rose-50 rounded-lg text-rose-500 hover:text-rose-700 transition-colors cursor-pointer"
+                                        title="Delete Record"
                                       >
                                         <Trash2 className="w-4 h-4" />
                                       </button>
@@ -2049,24 +2099,55 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                 </div>
               )}
 
-              <div className="flex items-center justify-between pt-1">
-                {flow.status !== 'Completed' && isFlowAwaitingUserAction(flow, currentUser) && (
+              <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                <div className="flex items-center gap-1.5">
+                  {flow.status !== 'Completed' && isFlowAwaitingUserAction(flow, currentUser) && (
+                    <button
+                      onClick={() => onOpenStageAction ? onOpenStageAction(flow, flow.currentStageIndex) : handleAdvanceCurrentStage(flow)}
+                      className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded text-[10px] cursor-pointer"
+                    >
+                      Advance Step →
+                    </button>
+                  )}
                   <button
-                    onClick={() => onOpenStageAction ? onOpenStageAction(flow, flow.currentStageIndex) : handleAdvanceCurrentStage(flow)}
-                    className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded text-[10px] cursor-pointer"
+                    onClick={() => {
+                      setSelectedFlowId(flow.id);
+                      setViewMode('FOCUS_FEED');
+                    }}
+                    className="px-2 py-0.5 text-slate-500 hover:text-slate-800 rounded text-[10px] font-semibold cursor-pointer"
                   >
-                    Advance Step →
+                    Detail
                   </button>
+                </div>
+                {canDelete && (
+                  confirmDeleteRecordId === flow.id ? (
+                    <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteRecord(flow.id)}
+                        className="px-1.5 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer"
+                      >
+                        Del
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteRecordId(null)}
+                        className="px-1.5 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-[10px] cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteRecordId(flow.id)}
+                      className="p-1 hover:bg-rose-50 text-rose-500 hover:text-rose-700 rounded transition-colors cursor-pointer"
+                      title="Delete Record"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )
                 )}
-                <button
-                  onClick={() => {
-                    setSelectedFlowId(flow.id);
-                    setViewMode('FOCUS_FEED');
-                  }}
-                  className="px-2 py-0.5 text-slate-500 hover:text-slate-800 rounded text-[10px] font-semibold"
-                >
-                  Detail
-                </button>
               </div>
             </div>
           );
@@ -2550,7 +2631,7 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                     <FileText className="w-3.5 h-3.5 text-slate-500" />
                     <span>Audit Breakdown</span>
                   </button>
-                  {isSuperAdmin && (
+                  {canDelete && (
                     confirmDeleteRecordId === activeFlow.id ? (
                       <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1">
                         <span className="text-xs font-bold text-rose-700">Delete record?</span>
@@ -2574,7 +2655,7 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                         type="button"
                         onClick={() => setConfirmDeleteRecordId(activeFlow.id)}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer"
-                        title="Delete FMS Record (Super Admin)"
+                        title="Delete Record"
                       >
                         <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                         <span>Delete Record</span>

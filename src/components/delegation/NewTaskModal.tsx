@@ -1,17 +1,21 @@
 import React, { useState } from 'react';
 import { X, ListTodo, AlertCircle, Check } from 'lucide-react';
-import { DelegationTask, Priority } from '../../types';
+import { DelegationTask, Priority, UserProfile } from '../../types';
 import { USERS } from '../../data/initialData';
 import { DelegationInputSchema } from '../../services/storageAdapter';
+
+import { filterUsersForViewer } from '../../utils/staffValidation';
 
 interface NewTaskModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCreate: (task: DelegationTask) => void;
+  currentUser?: UserProfile;
 }
 
-export const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onCreate }) => {
-  const [selectedUserId, setSelectedUserId] = useState<string>(USERS[0].userId);
+export const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onCreate, currentUser }) => {
+  const assignableUsers = filterUsersForViewer(USERS, currentUser);
+  const [selectedUserId, setSelectedUserId] = useState<string>(assignableUsers[0]?.userId || USERS[0].userId);
   const [taskDesc, setTaskDesc] = useState<string>('');
   const [targetDate, setTargetDate] = useState<string>('');
   const [priority, setPriority] = useState<Priority>('Normal');
@@ -23,7 +27,7 @@ export const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onC
     e.preventDefault();
     setError(null);
 
-    const user = USERS.find((u) => u.userId === selectedUserId) || USERS[0];
+    const user = assignableUsers.find((u) => u.userId === selectedUserId) || assignableUsers[0] || USERS[0];
     const rolePhone = `${user.name.toUpperCase()} (${user.role}) - ${user.phone}`;
     // Generate 7 character random hash matching Sheet 2 format (e.g. vhdlgas, nfs3wfn)
     const randomHash = Math.random().toString(36).substring(2, 9).toLowerCase();
@@ -96,7 +100,7 @@ export const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onC
               onChange={(e) => setSelectedUserId(e.target.value)}
               className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
             >
-              {USERS.map((u) => (
+              {assignableUsers.map((u) => (
                 <option key={u.userId} value={u.userId}>
                   {u.name} — {u.role} ({u.phone})
                 </option>

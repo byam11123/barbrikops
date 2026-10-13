@@ -23,7 +23,7 @@ import {
   FolderOpen,
   Trash2
 } from 'lucide-react';
-import { FmsInstance, FmsStageExecution, UserProfile, isUserSuperAdmin } from '../../types';
+import { FmsInstance, FmsStageExecution, UserProfile, isUserSuperAdmin, isUserAdminOrSuperAdmin, getUserModulePermission } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { downloadCsv } from '../../utils/csvExporter';
 import { FilePreviewModal } from '../common/FilePreviewModal';
@@ -43,6 +43,7 @@ export const FmsAuditLedgerView: React.FC<FmsAuditLedgerViewProps> = ({
   onDeleteFlow,
 }) => {
   const isSuperAdmin = isUserSuperAdmin(currentUser);
+  const canDelete = isSuperAdmin || isUserAdminOrSuperAdmin(currentUser) || getUserModulePermission(currentUser, 'fms').canDelete;
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedFlowType, setSelectedFlowType] = useState<string>('ALL');
@@ -541,7 +542,7 @@ export const FmsAuditLedgerView: React.FC<FmsAuditLedgerViewProps> = ({
                         </button>
                       )}
 
-                      {isSuperAdmin && (
+                      {canDelete && (
                         confirmDeleteId === flow.id ? (
                           <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1">
                             <span className="text-xs font-bold text-rose-700">Delete record?</span>
@@ -572,7 +573,7 @@ export const FmsAuditLedgerView: React.FC<FmsAuditLedgerViewProps> = ({
                             type="button"
                             onClick={() => setConfirmDeleteId(flow.id)}
                             className="px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
-                            title="Delete FMS Record (Super Admin)"
+                            title="Delete FMS Record"
                           >
                             <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                             <span>Delete</span>

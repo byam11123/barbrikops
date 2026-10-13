@@ -49,6 +49,7 @@ import {
   isUserSuperAdmin,
   isUserAdminOrSuperAdmin,
   hasModulePermission,
+  getUserModulePermission,
   AppNotification
 } from './types';
 import { 
@@ -68,7 +69,7 @@ import {
   FMS_PAYMENT_TO_DISPATCH_STAGES,
   FMS_SITE_RECEIVE_STAGES
 } from './data/initialData';
-import { isFlowAwaitingUserAction } from './services/stageAssignment';
+import { isFlowAwaitingUserAction, getDepartmentForWorkflow } from './services/stageAssignment';
 import { storageAdapter } from './services/storageAdapter';
 
 export default function App() {
@@ -81,6 +82,7 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => storageAdapter.getAuthUser() !== null);
   const [currentUser, setCurrentUser] = useState<UserProfile>(() => storageAdapter.getAuthUser() || USERS[0]);
   const isSuperAdmin = isUserSuperAdmin(currentUser);
+  const isAdminOrSuperAdmin = isUserAdminOrSuperAdmin(currentUser);
   const [isMyProfileOpen, setIsMyProfileOpen] = useState<boolean>(false);
   const [isSuperAdminOpen, setIsSuperAdminOpen] = useState<boolean>(false);
 
@@ -91,6 +93,27 @@ export default function App() {
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [pcDeskActive, setPcDeskActive] = useState<boolean>(false);
+  const [impersonatorAdmin, setImpersonatorAdmin] = useState<UserProfile | null>(null);
+
+  const handleImpersonateUser = (targetUser: UserProfile) => {
+    if ((isSuperAdmin || isAdminOrSuperAdmin) && !impersonatorAdmin) {
+      setImpersonatorAdmin(currentUser);
+    }
+    const latestUser = usersList.find((u) => u.userId === targetUser.userId) || targetUser;
+    handleUserChange(latestUser);
+    setActiveTab('summary');
+    showToast(`Viewing session as ${latestUser.name} (${latestUser.role})`);
+  };
+
+  const handleExitImpersonation = () => {
+    if (impersonatorAdmin) {
+      const originalAdmin = usersList.find((u) => u.userId === impersonatorAdmin.userId) || impersonatorAdmin;
+      setImpersonatorAdmin(null);
+      handleUserChange(originalAdmin);
+      setActiveTab('super-admin');
+      showToast(`Returned to ${originalAdmin.name} session`);
+    }
+  };
 
   // Data states
   const [flows, setFlows] = useState<FmsInstance[]>([]);
@@ -159,6 +182,7 @@ export default function App() {
     setIsAuthenticated(false);
     setIsMyProfileOpen(false);
     setIsSuperAdminOpen(false);
+    setImpersonatorAdmin(null);
     showToast('Signed out of session.');
   };
 
@@ -555,7 +579,7 @@ export default function App() {
       return;
     }
     if (tab === 'super-admin') {
-      if (isSuperAdmin) {
+      if (isSuperAdmin || isAdminOrSuperAdmin || hasModulePermission(currentUser, 'super-admin', 'view')) {
         setActiveTab('super-admin');
       }
       return;
@@ -586,7 +610,25 @@ export default function App() {
     if (isSuperAdmin) return;
     if (activeTab === 'profile') return;
     if (activeTab === 'super-admin') {
-      setActiveTab('profile');
+      if (!isAdminOrSuperAdmin && !hasModulePermission(currentUser, 'super-admin', 'view')) {
+        if (hasModulePermission(currentUser, 'summary', 'view')) {
+          setActiveTab('summary');
+        } else if (hasModulePermission(currentUser, 'mis', 'view')) {
+          setActiveTab('mis');
+        } else {
+          setActiveTab('profile');
+        }
+      }
+      return;
+    }
+    if (activeTab === 'fms' && !isAdminOrSuperAdmin && !hasModulePermission(currentUser, 'fms', 'view')) {
+      if (hasModulePermission(currentUser, 'summary', 'view')) {
+        setActiveTab('summary');
+      } else if (hasModulePermission(currentUser, 'mis', 'view')) {
+        setActiveTab('mis');
+      } else {
+        setActiveTab('profile');
+      }
       return;
     }
     if (!hasModulePermission(currentUser, activeTab, 'view')) {
@@ -598,32 +640,30 @@ export default function App() {
         setActiveTab('delegation');
       } else if (hasModulePermission(currentUser, 'checklist', 'view')) {
         setActiveTab('checklist');
-      } else if (hasModulePermission(currentUser, 'fms', 'view')) {
-        setActiveTab('fms');
       } else if (hasModulePermission(currentUser, 'ims', 'view')) {
         setActiveTab('ims');
       } else {
         setActiveTab('profile');
       }
     }
-  }, [currentUser, activeTab, isSuperAdmin]);
+  }, [currentUser, activeTab, isSuperAdmin, isAdminOrSuperAdmin]);
 
   const handleUserChange = (newUser: UserProfile) => {
     const latestUser = usersList.find((u) => u.userId === newUser.userId) || newUser;
     setCurrentUser(latestUser);
     storageAdapter.saveAuthUser(latestUser);
-    const newIsSuper = isUserSuperAdmin(latestUser);
-    if (!newIsSuper) {
+    const newIsAdminOrSuper = isUserAdminOrSuperAdmin(latestUser);
+    if (!newIsAdminOrSuper) {
       setViewScope('USER_ONLY');
       setPcDeskActive(false);
       setActiveTab((prev) => {
         if (prev === 'profile') return prev;
+        if (prev === 'fms') return 'summary';
         if (hasModulePermission(latestUser, prev, 'view')) return prev;
         if (hasModulePermission(latestUser, 'summary', 'view')) return 'summary';
         if (hasModulePermission(latestUser, 'mis', 'view')) return 'mis';
         if (hasModulePermission(latestUser, 'delegation', 'view')) return 'delegation';
         if (hasModulePermission(latestUser, 'checklist', 'view')) return 'checklist';
-        if (hasModulePermission(latestUser, 'fms', 'view')) return 'fms';
         if (hasModulePermission(latestUser, 'ims', 'view')) return 'ims';
         return 'profile';
       });
@@ -632,11 +672,7 @@ export default function App() {
       const isPc = latestUser.role.toLowerCase().includes('process coordinator') || latestUser.name.toLowerCase().includes('ritu sahu');
       setPcDeskActive(isPc);
       setViewScope('ALL_ORG');
-      if (isPc) {
-        showToast(`Switched active profile to ${latestUser.name} (${latestUser.role}). Scope automatically expanded to view ALL user data across all departments!`);
-      } else {
-        showToast(`Switched active profile to ${latestUser.name} (${latestUser.role})`);
-      }
+      showToast(`Switched active profile to ${latestUser.name} (${latestUser.role}) — Organization Mode Active`);
     }
   };
 
@@ -1229,8 +1265,9 @@ export default function App() {
   };
 
   const handleDeleteFlow = (flowId: string) => {
-    if (!isSuperAdmin) {
-      showToast('Permission denied. Only Super Admin can delete FMS records.');
+    const canDelete = isSuperAdmin || isUserAdminOrSuperAdmin(currentUser) || getUserModulePermission(currentUser, 'fms').canDelete;
+    if (!canDelete) {
+      showToast('Permission denied. Admin or Super Admin permission required to delete FMS records.');
       return;
     }
     const targetFlow = flows.find((f) => f.id === flowId || f.flowId === flowId);
@@ -1249,7 +1286,7 @@ export default function App() {
     if (selectedFmsDetail && (selectedFmsDetail.id === idToDelete || selectedFmsDetail.flowId === codeToDelete)) {
       setSelectedFmsDetail(null);
     }
-    showToast(`FMS Record ${codeToDelete} permanently deleted by Super Admin.`);
+    showToast(`FMS Record ${codeToDelete || idToDelete} deleted successfully.`);
   };
 
   const handleDeleteTemplate = (templateKey: string) => {
@@ -1357,6 +1394,19 @@ export default function App() {
     showToast(`Task #${updatedTask.taskId} updated successfully.`);
   };
 
+  const handleDeleteDelegationTask = (taskId: string) => {
+    const canDelete = isSuperAdmin || isUserAdminOrSuperAdmin(currentUser) || getUserModulePermission(currentUser, 'delegation').canDelete;
+    if (!canDelete) {
+      showToast('Permission denied. Admin or Super Admin permission required to delete delegation tasks.');
+      return;
+    }
+    storageAdapter.deleteDelegationTask(taskId, currentUser);
+    const updated = delegationTasks.filter((t) => t.id !== taskId && t.taskId !== taskId);
+    setDelegationTasks(updated);
+    setAuditLogs(storageAdapter.getAuditLogs());
+    showToast(`Delegation task #${taskId} permanently deleted.`);
+  };
+
   // Checklist Handlers
   const handleCreateChecklistItem = (newItem: ChecklistItem) => {
     const updated = [newItem, ...checklistItems];
@@ -1388,6 +1438,19 @@ export default function App() {
     });
     setAuditLogs(storageAdapter.getAuditLogs());
     showToast(`Checklist task #${updatedItem.taskId} marked as ${updatedItem.status}!`);
+  };
+
+  const handleDeleteChecklistItem = (id: string) => {
+    const canDelete = isSuperAdmin || isUserAdminOrSuperAdmin(currentUser) || getUserModulePermission(currentUser, 'checklist').canDelete;
+    if (!canDelete) {
+      showToast('Permission denied. Admin or Super Admin permission required to delete checklist items.');
+      return;
+    }
+    storageAdapter.deleteChecklistItem(id, currentUser);
+    const updated = checklistItems.filter((i) => i.id !== id && i.taskId !== id);
+    setChecklistItems(updated);
+    setAuditLogs(storageAdapter.getAuditLogs());
+    showToast(`Checklist item permanently deleted.`);
   };
 
   const handleBatchGenerateNextCycle = () => {
@@ -1606,13 +1669,15 @@ export default function App() {
     return (
       <LoginPage
         onLoginSuccess={(u) => {
-          storageAdapter.saveAuthUser(u);
-          setCurrentUser(u);
+          const freshUser = usersList.find((usr) => usr.userId === u.userId) || u;
+          storageAdapter.saveAuthUser(freshUser);
+          setCurrentUser(freshUser);
           setIsAuthenticated(true);
-          setViewScope(isUserAdminOrSuperAdmin(u) ? 'ALL_ORG' : 'USER_ONLY');
-          showToast(`Welcome back, ${u.name}!`);
+          setViewScope(isUserAdminOrSuperAdmin(freshUser) ? 'ALL_ORG' : 'USER_ONLY');
+          showToast(`Welcome back, ${freshUser.name}!`);
         }}
         noticeItems={noticeBoardItems}
+        usersList={usersList}
       />
     );
   }
@@ -1631,6 +1696,8 @@ export default function App() {
       <Header
         currentUser={currentUser}
         usersList={usersList}
+        impersonatorAdmin={impersonatorAdmin}
+        onExitImpersonation={handleExitImpersonation}
         onUserChange={(newUser) => {
           handleUserChange(newUser);
           const deptName = (newUser.departmentName || newUser.role || '').toUpperCase();
@@ -1649,23 +1716,23 @@ export default function App() {
         registryConfig={registryConfig}
         activeTab={activeTab}
         onRefresh={loadAllData}
-        viewScope={isSuperAdmin ? viewScope : 'USER_ONLY'}
+        viewScope={isAdminOrSuperAdmin ? viewScope : 'USER_ONLY'}
         onToggleScope={handleToggleScope}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-        pcDeskActive={isSuperAdmin ? pcDeskActive : false}
-        onTogglePcDesk={isSuperAdmin ? () => {
+        pcDeskActive={isAdminOrSuperAdmin ? pcDeskActive : false}
+        onTogglePcDesk={isAdminOrSuperAdmin ? () => {
           const next = !pcDeskActive;
           setPcDeskActive(next);
           showToast(next ? "PC Desk Mode Enabled" : "PC Desk Mode Disabled");
         } : undefined}
         onOpenMobileMenu={() => setIsMobileDrawerOpen(true)}
         onOpenMyProfile={() => handleTabChange('profile')}
-        onOpenSuperAdmin={isSuperAdmin ? () => setActiveTab('super-admin') : undefined}
+        onOpenSuperAdmin={isAdminOrSuperAdmin ? () => setActiveTab('super-admin') : undefined}
         onLogout={handleLogout}
         onOpenGlobalSearch={() => setIsGlobalSearchOpen(true)}
         notifications={notifications.filter((n) => {
-          if (isSuperAdmin && viewScope === 'ALL_ORG') return true;
+          if (isAdminOrSuperAdmin && viewScope === 'ALL_ORG') return true;
           return (
             n.userId === currentUser.userId ||
             n.userId === currentUser.name ||
@@ -1681,22 +1748,31 @@ export default function App() {
         onRequestDesktopPermission={handleRequestDesktopPermission}
       />
 
+      {/* Impersonation Active Banner */}
+      {impersonatorAdmin && (
+        <div className="bg-amber-400 text-slate-950 px-4 py-1.5 flex items-center justify-between text-xs font-bold shrink-0 border-b border-amber-500 shadow-2xs z-30">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-slate-950 animate-pulse shrink-0" />
+            <span className="truncate">
+              Viewing as: <strong className="underline">{currentUser.name}</strong> ({currentUser.role}). Module visibility and access are scoped to this user.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleExitImpersonation}
+            className="px-2.5 py-1 bg-slate-950 hover:bg-slate-800 text-white rounded-md text-[11px] font-extrabold transition-colors cursor-pointer shrink-0 ml-2"
+          >
+            Exit View As (Return to {impersonatorAdmin.name})
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 flex overflow-hidden min-h-0">
         {/* Sidebar */}
         <Sidebar
           activeTab={activeTab}
           onTabChange={(tab) => {
             handleTabChange(tab);
-            if (tab === 'fms') {
-              setSelectedFmsDepartment(null);
-              setSelectedFmsWorkflowKey(null);
-            }
-            if (tab === 'checklist') {
-              setSelectedChecklistDepartment(null);
-            }
-            if (tab === 'delegation') {
-              setSelectedDelegationDepartment(null);
-            }
           }}
           badgeCounts={badgeCounts}
           isOpen={isSidebarOpen}
@@ -1750,8 +1826,8 @@ export default function App() {
                 onNavigateTab={(tab) => handleTabChange(tab)}
                 onAddProcessRemark={handleAddProcessRemark}
                 onNudgeItem={handleNudgeItem}
-                pcDeskActive={isSuperAdmin ? pcDeskActive : false}
-                onTogglePcDesk={isSuperAdmin ? (active) => setPcDeskActive(active) : undefined}
+                pcDeskActive={isAdminOrSuperAdmin ? pcDeskActive : false}
+                onTogglePcDesk={isAdminOrSuperAdmin ? (active) => setPcDeskActive(active) : undefined}
                 onCreateFmsFlow={(isSuperAdmin || hasModulePermission(currentUser, 'summary', 'edit')) ? () => setIsCreateFmsOpen(true) : undefined}
                 onOpenStageAction={(flow, stageIndex) => setStageActionTarget({ flow, stageIndex })}
               />
@@ -1764,7 +1840,7 @@ export default function App() {
                 checklistItems={checklistItems}
                 inventoryItems={inventoryItems}
                 currentUser={currentUser}
-                viewScope={isSuperAdmin ? viewScope : 'USER_ONLY'}
+                viewScope={isAdminOrSuperAdmin ? viewScope : 'USER_ONLY'}
                 onToggleScope={handleToggleScope}
                 onNavigateTab={(tab) => handleTabChange(tab)}
                 usersList={usersList}
@@ -1775,7 +1851,7 @@ export default function App() {
               <FmsPipeline
                 flows={flows}
                 currentUser={currentUser}
-                viewScope={isSuperAdmin ? viewScope : 'USER_ONLY'}
+                viewScope={isAdminOrSuperAdmin ? viewScope : 'USER_ONLY'}
                 onToggleScope={handleToggleScope}
                 onUpdateFlow={(flow) => {
                   const updated = flows.map((f) => (f.id === flow.id ? flow : f));
@@ -1797,6 +1873,15 @@ export default function App() {
                 }}
                 selectedWorkflowFilter={selectedFmsWorkflowKey}
                 onClearWorkflowFilter={() => setSelectedFmsWorkflowKey(null)}
+                onSelectWorkflowFilter={(flowKey) => {
+                  setSelectedFmsWorkflowKey(flowKey);
+                  if (flowKey) {
+                    const parentDept = getDepartmentForWorkflow(flowKey, storageAdapter.getFmsTemplates(), flows);
+                    if (parentDept) {
+                      setSelectedFmsDepartment(parentDept);
+                    }
+                  }
+                }}
               />
             )}
 
@@ -1813,9 +1898,10 @@ export default function App() {
               <DelegationBoard
                 tasks={delegationTasks}
                 currentUser={currentUser}
-                viewScope={isSuperAdmin ? viewScope : 'USER_ONLY'}
+                viewScope={isAdminOrSuperAdmin ? viewScope : 'USER_ONLY'}
                 onToggleScope={handleToggleScope}
                 onUpdateTask={handleUpdateDelegationTask}
+                onDeleteTask={handleDeleteDelegationTask}
                 onNewTask={(isSuperAdmin || hasModulePermission(currentUser, 'delegation', 'edit')) ? () => setIsNewTaskOpen(true) : undefined}
                 onReviseTask={(task) => setSelectedTaskForRevision(task)}
                 onAddProcessRemark={handleAddProcessRemark}
@@ -1829,9 +1915,10 @@ export default function App() {
               <ChecklistManager
                 items={checklistItems}
                 currentUser={currentUser}
-                viewScope={isSuperAdmin ? viewScope : 'USER_ONLY'}
+                viewScope={isAdminOrSuperAdmin ? viewScope : 'USER_ONLY'}
                 onToggleScope={handleToggleScope}
                 onUpdateItem={handleUpdateChecklistItem}
+                onDeleteItem={handleDeleteChecklistItem}
                 onNewItem={(isSuperAdmin || hasModulePermission(currentUser, 'checklist', 'edit')) ? () => setIsNewChecklistOpen(true) : undefined}
                 onBatchGenerateNextCycle={(isSuperAdmin || hasModulePermission(currentUser, 'checklist', 'edit')) ? handleBatchGenerateNextCycle : undefined}
                 onAddProcessRemark={handleAddProcessRemark}
@@ -1869,20 +1956,16 @@ export default function App() {
             )}
 
             {activeTab === 'audit' && (isSuperAdmin || hasModulePermission(currentUser, 'audit', 'view')) && (
-              <AuditLogView logs={auditLogs} />
+              <AuditLogView logs={auditLogs} currentUser={currentUser} />
             )}
 
-            {activeTab === 'super-admin' && isSuperAdmin && (
+            {activeTab === 'super-admin' && (isSuperAdmin || isAdminOrSuperAdmin) && (
               <SuperAdminGovernanceView
                 usersList={usersList}
                 onUpdateUsersList={handleUpdateUsersList}
                 noticeBoardItems={noticeBoardItems}
                 onUpdateNoticeBoard={handleUpdateNoticeBoard}
-                onImpersonateUser={(u) => {
-                  setCurrentUser(u);
-                  storageAdapter.saveAuthUser(u);
-                  showToast(`Now viewing portal as ${u.name}`);
-                }}
+                onImpersonateUser={handleImpersonateUser}
                 currentUser={currentUser}
               />
             )}
@@ -1953,6 +2036,7 @@ export default function App() {
         isOpen={isNewTaskOpen}
         onClose={() => setIsNewTaskOpen(false)}
         onCreate={handleCreateDelegationTask}
+        currentUser={currentUser}
       />
 
       <ReviseTaskModal
@@ -2022,10 +2106,10 @@ export default function App() {
         currentUser={currentUser}
         usersList={usersList}
         onUserChange={handleUserChange}
-        viewScope={isSuperAdmin ? viewScope : 'USER_ONLY'}
+        viewScope={isAdminOrSuperAdmin ? viewScope : 'USER_ONLY'}
         onToggleScope={handleToggleScope}
-        pcDeskActive={isSuperAdmin ? pcDeskActive : false}
-        onTogglePcDesk={isSuperAdmin ? () => {
+        pcDeskActive={isAdminOrSuperAdmin ? pcDeskActive : false}
+        onTogglePcDesk={isAdminOrSuperAdmin ? () => {
           const next = !pcDeskActive;
           setPcDeskActive(next);
           showToast(next ? "PC Desk Mode Enabled" : "PC Desk Mode Disabled");
@@ -2106,11 +2190,7 @@ export default function App() {
         onUpdateUsersList={handleUpdateUsersList}
         noticeBoardItems={noticeBoardItems}
         onUpdateNoticeBoard={handleUpdateNoticeBoard}
-        onImpersonateUser={(u) => {
-          setCurrentUser(u);
-          storageAdapter.saveAuthUser(u);
-          showToast(`Now viewing portal as ${u.name}`);
-        }}
+        onImpersonateUser={handleImpersonateUser}
       />
 
       {/* Global Universal Search Modal */}
@@ -2130,11 +2210,7 @@ export default function App() {
           setIsStockMovementOpen(true);
         }}
         onSelectDelegationTask={(task) => setSelectedTaskForRevision(task)}
-        onImpersonateUser={(u) => {
-          setCurrentUser(u);
-          storageAdapter.saveAuthUser(u);
-          showToast(`Now viewing portal as ${u.name}`);
-        }}
+        onImpersonateUser={handleImpersonateUser}
       />
     </div>
   );

@@ -20,7 +20,7 @@ import {
   Lock,
   Plus
 } from 'lucide-react';
-import { FmsInstance, FmsStageExecution, FmsStageFieldConfig, UserProfile, FmsStageTemplate, isUserSuperAdmin } from '../../types';
+import { FmsInstance, FmsStageExecution, FmsStageFieldConfig, UserProfile, FmsStageTemplate, isUserSuperAdmin, isUserAdminOrSuperAdmin } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { FileUploadField } from '../common/FileUploadField';
 import { FilePreviewModal } from '../common/FilePreviewModal';
@@ -908,10 +908,10 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
               </div>
             )}
 
-            {/* Upcoming Downstream Stage & Conditional Branch Preview Accordion (Super Admin Only) */}
+            {/* Upcoming Downstream Stage & Conditional Branch Preview Accordion (Super Admin & Admin) */}
             {(() => {
-              const isSuperAdmin = isUserSuperAdmin(currentUser);
-              if (!isSuperAdmin) return null;
+              const isAdminOrSuper = isUserSuperAdmin(currentUser) || isUserAdminOrSuperAdmin(currentUser);
+              if (!isAdminOrSuper) return null;
               const fullTemplateStages = getFullTemplateStagesForFlow();
               if (!fullTemplateStages || fullTemplateStages.length <= stageIndex + 1) return null;
 

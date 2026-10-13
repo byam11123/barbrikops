@@ -21,11 +21,13 @@ import {
   ExternalLink,
   AlertTriangle,
   ListTodo,
-  Download
+  Download,
+  Trash2
 } from 'lucide-react';
 import { downloadCsv } from '../../utils/csvExporter';
 import { CustomSelect } from '../common/CustomSelect';
-import { ChecklistItem, Frequency, UserProfile, ProcessRemark, isUserSuperAdmin, hasModulePermission } from '../../types';
+import { ChecklistItem, Frequency, UserProfile, ProcessRemark, isUserSuperAdmin, isUserAdminOrSuperAdmin, hasModulePermission, getUserModulePermission } from '../../types';
+import { storageAdapter } from '../../services/storageAdapter';
 import { ViewScope } from '../layout/Header';
 import { matchItemDepartment, getDepartmentBranchLabel } from '../../services/stageAssignment';
 
@@ -35,6 +37,7 @@ interface ChecklistManagerProps {
   viewScope: ViewScope;
   onToggleScope: (scope: ViewScope) => void;
   onUpdateItem: (item: ChecklistItem) => void;
+  onDeleteItem?: (id: string) => void;
   onNewItem?: () => void;
   onBatchGenerateNextCycle?: () => void;
   onAddProcessRemark?: (
@@ -54,6 +57,7 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
   viewScope,
   onToggleScope,
   onUpdateItem,
+  onDeleteItem,
   onNewItem,
   onBatchGenerateNextCycle,
   onAddProcessRemark,
@@ -67,6 +71,12 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const isSuperAdmin = isUserSuperAdmin(currentUser);
+  const isAdminOrSuperAdmin = isUserAdminOrSuperAdmin(currentUser);
+  const canViewAllOrg = isSuperAdmin || isAdminOrSuperAdmin;
+  const canDelete = isSuperAdmin || isAdminOrSuperAdmin || getUserModulePermission(currentUser, 'checklist').canDelete;
+
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
 
   // Modal states
   const [viewDetailItem, setViewDetailItem] = useState<ChecklistItem | null>(null);
@@ -92,7 +102,7 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
   };
 
   const myItemsTotal = items.filter(isMyItem);
-  const effectiveScope = isSuperAdmin ? viewScope : 'USER_ONLY';
+  const effectiveScope = canViewAllOrg ? viewScope : 'USER_ONLY';
 
   const filteredItems = items.filter((item) => {
     // 1. User Scope Filtering - non-superadmin only sees own tasks
@@ -224,6 +234,28 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
       }
     });
     setSelectedIds([]);
+  };
+
+  const handleDeleteSingle = (id: string) => {
+    if (onDeleteItem) {
+      onDeleteItem(id);
+    } else {
+      storageAdapter.deleteChecklistItem(id, currentUser);
+    }
+    setConfirmDeleteId(null);
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return;
+    selectedIds.forEach((id) => {
+      if (onDeleteItem) {
+        onDeleteItem(id);
+      } else {
+        storageAdapter.deleteChecklistItem(id, currentUser);
+      }
+    });
+    setSelectedIds([]);
+    setBulkDeleteConfirm(false);
   };
 
   const handleExportFilteredCsv = () => {
@@ -383,8 +415,8 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
       {/* Frequency Tabs & Filters */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
         <div className="flex flex-wrap items-center gap-2">
-          {/* User scope selector as dropdown - Super Admin Only */}
-          {isSuperAdmin && (
+          {/* User scope selector as dropdown - Super Admin & Administrative User */}
+          {canViewAllOrg && (
             <CustomSelect
               options={[
                 { value: 'USER_ONLY', label: `My Tasks (${myItemsTotal.length})` },
@@ -414,8 +446,8 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
             className="w-36"
           />
 
-          {/* Department filter (useful in ALL_ORG mode) - Super Admin Only */}
-          {isSuperAdmin && viewScope === 'ALL_ORG' && (
+          {/* Department filter (useful in ALL_ORG mode) */}
+          {canViewAllOrg && viewScope === 'ALL_ORG' && (
             <CustomSelect
               options={[
                 { value: 'ALL', label: 'All Depts' },
@@ -465,7 +497,7 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
             <Download className="w-3.5 h-3.5 text-slate-600" />
             <span>Export CSV ({filteredItems.length})</span>
           </button>
-          {isSuperAdmin && onBatchGenerateNextCycle && (
+          {(isSuperAdmin || isAdminOrSuperAdmin) && onBatchGenerateNextCycle && (
             <button
               onClick={onBatchGenerateNextCycle}
               title="Auto-generates next recurring maintenance cycle"
@@ -475,7 +507,7 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
               <span>Auto Roll Out Next Cycle</span>
             </button>
           )}
-          {(isSuperAdmin || hasModulePermission(currentUser, 'checklist', 'edit')) && onNewItem && (
+          {(isSuperAdmin || isAdminOrSuperAdmin || hasModulePermission(currentUser, 'checklist', 'edit')) && onNewItem && (
             <button
               onClick={onNewItem}
               className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors shrink-0 cursor-pointer"
@@ -502,8 +534,42 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
               <CheckCircle2 className="w-3.5 h-3.5" />
               Bulk Mark Done ({selectedIds.length})
             </button>
+            {canDelete && (
+              bulkDeleteConfirm ? (
+                <div className="flex items-center gap-1.5 bg-rose-900/90 border border-rose-500 rounded-lg px-2.5 py-1">
+                  <span className="text-[11px] font-bold text-rose-200">Delete {selectedIds.length} items?</span>
+                  <button
+                    type="button"
+                    onClick={handleBulkDelete}
+                    className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-bold cursor-pointer transition-colors"
+                  >
+                    Yes, Delete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBulkDeleteConfirm(false)}
+                    className="px-2 py-0.5 bg-white/20 hover:bg-white/30 text-white rounded text-[11px] cursor-pointer transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setBulkDeleteConfirm(true)}
+                  className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition-colors cursor-pointer"
+                  title="Delete all selected checklist items"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Selected ({selectedIds.length})</span>
+                </button>
+              )
+            )}
             <button
-              onClick={() => setSelectedIds([])}
+              onClick={() => {
+                setSelectedIds([]);
+                setBulkDeleteConfirm(false);
+              }}
               className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold border border-white/20 cursor-pointer"
             >
               Cancel Selection
@@ -696,6 +762,39 @@ export const ChecklistManager: React.FC<ChecklistManagerProps> = ({
                           >
                             <MessageSquare className="w-3.5 h-3.5" />
                           </button>
+
+                          {/* Delete Item */}
+                          {canDelete && (
+                            confirmDeleteId === item.id ? (
+                              <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteSingle(item.id)}
+                                  className="px-1.5 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer"
+                                  title="Confirm deletion"
+                                >
+                                  Del
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteId(null)}
+                                  className="px-1.5 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-[10px] cursor-pointer"
+                                  title="Cancel"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteId(item.id)}
+                                className="p-1.5 hover:bg-rose-50 text-rose-500 hover:text-rose-700 rounded-lg transition-colors cursor-pointer"
+                                title="Delete Item"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )
+                          )}
                         </div>
                       </td>
                     </tr>
