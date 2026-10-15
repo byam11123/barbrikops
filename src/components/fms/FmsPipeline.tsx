@@ -39,7 +39,8 @@ import {
   CalendarDays,
   Timer,
   Trash2,
-  Lock
+  Lock,
+  Scale
 } from 'lucide-react';
 import { downloadCsv } from '../../utils/csvExporter';
 import { downloadFmsHorizontalMatrixExcel, downloadFmsExcelTemplate } from '../../services/fmsExcelService';
@@ -88,6 +89,7 @@ interface FmsPipelineProps {
   selectedWorkflowFilter?: string | null;
   onClearWorkflowFilter?: () => void;
   onSelectWorkflowFilter?: (workflowKey: string | null) => void;
+  onOpenComparativeSheet?: (indentNo?: string) => void;
 }
 
 export function parseDateTimeStr(str: string | undefined): Date | null {
@@ -196,6 +198,7 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
   selectedWorkflowFilter = null,
   onClearWorkflowFilter,
   onSelectWorkflowFilter,
+  onOpenComparativeSheet,
 }) => {
   const [pipelineTypeFilter, setPipelineTypeFilter] = useState<string>('ALL');
   const [filterSite, setFilterSite] = useState<string>('ALL');
@@ -1262,6 +1265,19 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                 </>
               )}
             </div>
+
+            {/* Quick Launch Comparative Statement (CS Sheet) for Barbrik Project Ltd. */}
+            {onOpenComparativeSheet && (
+              <button
+                type="button"
+                onClick={() => onOpenComparativeSheet()}
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-xl text-xs transition-all shrink-0 shadow-2xs cursor-pointer"
+                title="Open Comparative Statement (CS Sheet) & Vendor Rate Comparison for Barbrik Project Ltd."
+              >
+                <Scale className="w-3.5 h-3.5" />
+                <span>CS Sheet</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

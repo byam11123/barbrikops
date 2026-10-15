@@ -23,10 +23,11 @@ import {
   Plus,
   RefreshCw,
   ShieldCheck,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Scale
 } from 'lucide-react';
 import { NavTab } from './Sidebar';
-import { UserProfile, FmsInstance, isUserSuperAdmin, isUserAdminOrSuperAdmin, hasModulePermission, ChecklistItem, DelegationTask } from '../../types';
+import { UserProfile, FmsInstance, isUserSuperAdmin, isUserAdmin, isUserAdminOrSuperAdmin, hasModulePermission, ChecklistItem, DelegationTask } from '../../types';
 import { USERS } from '../../data/initialData';
 import { ViewScope } from './Header';
 import { storageAdapter } from '../../services/storageAdapter';
@@ -94,7 +95,6 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
 }) => {
   const [collapsedDepts, setCollapsedDepts] = useState<Record<string, boolean>>({});
   const [collapsedSubSections, setCollapsedSubSections] = useState<Record<string, boolean>>({});
-  const [isAllFmsExpanded, setIsAllFmsExpanded] = useState<boolean>(false);
 
   const toggleSubSection = (subKey: string) => {
     setCollapsedSubSections((prev) => ({ ...prev, [subKey]: prev[subKey] === false ? true : false }));
@@ -153,8 +153,6 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
         [`${targetDept}-fms`]: false,
         [`nav-fms-${targetDept}`]: false
       }));
-
-      setIsAllFmsExpanded(true);
     }
   }, [selectedWorkflowKey, selectedDepartment, customTemplates, flows]);
 
@@ -285,7 +283,49 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
     },
   ];
 
-  const operationsNavItems: any[] = [];
+  const operationsNavItems: any[] = [
+    {
+      id: 'fms' as NavTab,
+      label: 'All FMS (Pipelines)',
+      icon: GitBranch,
+      badge: badgeCounts.fmsActive > 0 ? `${badgeCounts.fmsActive}` : undefined,
+      badgeColor: 'bg-amber-100 text-amber-800'
+    },
+    {
+      id: 'fms-audit' as NavTab,
+      label: 'FMS Records & Audit',
+      icon: FileSpreadsheet,
+    },
+    {
+      id: 'delegation' as NavTab,
+      label: 'Delegation Board',
+      icon: ListTodo,
+      badge: badgeCounts.delegationPending > 0 ? `${badgeCounts.delegationPending}` : undefined,
+      badgeColor: 'bg-rose-100 text-rose-800'
+    },
+    {
+      id: 'checklist' as NavTab,
+      label: 'Checklists (SOPs)',
+      icon: CheckSquare,
+      badge: badgeCounts.checklistPending > 0 ? `${badgeCounts.checklistPending}` : undefined,
+      badgeColor: 'bg-blue-100 text-blue-800'
+    },
+    {
+      id: 'ims' as NavTab,
+      label: 'Inventory & Stocks',
+      icon: Boxes,
+      badge: badgeCounts.lowStockCount > 0 ? `${badgeCounts.lowStockCount}` : undefined,
+      badgeColor: 'bg-orange-100 text-orange-800'
+    },
+  ];
+
+  const utilitiesNavItems: any[] = [
+    {
+      id: 'cs-sheet' as NavTab,
+      label: 'Comparative Statement',
+      icon: Scale,
+    },
+  ];
 
   const systemNavItems = [
     {
@@ -308,6 +348,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
   ];
 
   const isSuperAdmin = isUserSuperAdmin(currentUser);
+  const isAdmin = isUserAdmin(currentUser);
   const isAdminOrSuperAdmin = isUserAdminOrSuperAdmin(currentUser);
 
   type NavItemDef = {
@@ -322,15 +363,26 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
     if (item.id === 'super-admin') {
       return isSuperAdmin || isAdminOrSuperAdmin;
     }
-    if (item.id === 'fms') {
-      return isSuperAdmin || isAdminOrSuperAdmin || hasModulePermission(currentUser, 'fms', 'view');
+    if (isSuperAdmin) {
+      return true;
+    }
+    if (isAdmin) {
+      if (['fms', 'fms-audit', 'delegation', 'checklist', 'ims'].includes(item.id)) {
+        return false;
+      }
+      return true;
     }
     return hasModulePermission(currentUser, item.id, 'view');
   };
 
   const filteredUserNavItems = userNavItems.filter(filterItem);
   const filteredOperationsNavItems = operationsNavItems.filter(filterItem);
+  const filteredUtilitiesNavItems = utilitiesNavItems.filter(filterItem);
   const filteredSystemNavItems = systemNavItems.filter(filterItem);
+  const filteredDepartmentList = departmentList.filter((dept) => {
+    if (isSuperAdmin || isAdminOrSuperAdmin) return true;
+    return hasModulePermission(currentUser, `dept-${dept.key}`, 'view');
+  });
 
   const handleNavigate = (tab: NavTab) => {
     onTabChange(tab);
@@ -506,7 +558,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
             </div>
           )}
 
-          {/* Operations Modules */}
+          {/* Operations Modules - Super Admin Only */}
           {filteredOperationsNavItems.length > 0 && (
             <div className="pt-2 border-t border-slate-100">
               <span className="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
@@ -517,210 +569,93 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                   const Icon = item.icon;
                   const isItemActive = activeTab === item.id && (item.id !== 'fms' || (selectedDepartment === null && selectedWorkflowKey === null));
 
-                if (item.id === 'fms') {
                   return (
-                    <div key={item.id} className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <button
-                          onClick={() => {
-                            handleNavigate('fms');
-                            onSelectDepartmentFms?.(null);
-                          }}
-                          className={`flex-1 flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all ${
-                            isItemActive
-                              ? 'bg-indigo-600 text-white font-bold shadow-xs'
-                              : 'text-slate-700 hover:bg-slate-100 font-semibold'
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        handleNavigate(item.id);
+                        if (item.id === 'fms') {
+                          onSelectDepartmentFms?.(null);
+                        }
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all ${
+                        isItemActive
+                          ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                          : 'text-slate-700 hover:bg-slate-100 font-semibold'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 py-0.5">
+                        <Icon className={`w-4 h-4 shrink-0 ${isItemActive ? 'text-white' : 'text-slate-500'}`} />
+                        <span className="text-xs truncate">{item.label}</span>
+                      </div>
+                      {item.badge && (
+                        <span
+                          className={`text-[10px] font-mono shrink-0 font-bold px-2 py-0.5 rounded-full ${
+                            isItemActive 
+                              ? 'bg-white/20 text-white' 
+                              : item.badgeColor || 'bg-slate-100 text-slate-700'
                           }`}
                         >
-                          <div className="flex items-center gap-2.5 min-w-0 py-0.5">
-                            <Icon className={`w-4 h-4 shrink-0 ${isItemActive ? 'text-white' : 'text-slate-500'}`} />
-                            <span className="text-xs truncate">{item.label}</span>
-                          </div>
-                          {item.badge && (
-                            <span
-                              className={`text-[10px] font-mono shrink-0 font-bold px-2 py-0.5 rounded-full ${
-                                isItemActive 
-                                  ? 'bg-white/20 text-white' 
-                                  : item.badgeColor || 'bg-slate-100 text-slate-700'
-                              }`}
-                            >
-                              {item.badge}
-                            </span>
-                          )}
-                        </button>
-                        {isAdminOrSuperAdmin && (
-                          <button
-                            type="button"
-                            onClick={() => setIsAllFmsExpanded(!isAllFmsExpanded)}
-                            className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 ml-1 cursor-pointer transition-colors"
-                            title="Toggle All FMS department workflows sub-tree"
-                          >
-                            {isAllFmsExpanded ? (
-                              <ChevronDown className="w-4 h-4" />
-                            ) : (
-                              <ChevronRight className="w-4 h-4" />
-                            )}
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Department Sub-Branches & Individual FMS Workflow Sub-Tree - Super Admin & Admin */}
-                      {isAdminOrSuperAdmin && isAllFmsExpanded && (
-                        <div className="pl-3 pr-1 space-y-1.5 border-l-2 border-indigo-100 ml-3 my-1">
-                          {departmentList.map((dept) => {
-                            const isDeptActive = activeTab === 'fms' && selectedDepartment === dept.key && !selectedWorkflowKey;
-                            // Expanded by default so workflows are immediately visible and selectable
-                            const isDeptCollapsed = collapsedSubSections[`mob-fms-${dept.key}`] === true;
-
-                            return (
-                              <div key={`mob-dept-${dept.key}`} className="space-y-1">
-                                {/* Department Sub-Branch Header */}
-                                <div className="flex items-center justify-between">
-                                  <button
-                                    onClick={() => {
-                                      if (onSelectWorkflowFms) {
-                                        onSelectWorkflowFms(dept.key, null);
-                                      } else {
-                                        onSelectDepartmentFms?.(dept.key);
-                                        onTabChange('fms');
-                                      }
-                                      onClose();
-                                    }}
-                                    className={`flex-1 flex items-center justify-between px-2 py-1 rounded-md text-left transition-all ${
-                                      isDeptActive
-                                        ? 'bg-indigo-600 text-white font-bold shadow-xs'
-                                        : 'text-slate-700 hover:bg-slate-100 font-bold'
-                                    }`}
-                                  >
-                                    <div className="flex items-center gap-1.5 min-w-0">
-                                      {getDeptIcon(dept.key)}
-                                      <span className="text-[11px] truncate uppercase tracking-wider">{dept.label}</span>
-                                    </div>
-                                    {dept.fmsActiveCount > 0 && (
-                                      <span
-                                        className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded-full ${
-                                          isDeptActive ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
-                                        }`}
-                                      >
-                                        {dept.fmsActiveCount}
-                                      </span>
-                                    )}
-                                  </button>
-                                  {dept.workflows && dept.workflows.length > 0 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleSubSection(`mob-fms-${dept.key}`)}
-                                      className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 ml-0.5 cursor-pointer"
-                                      title="Toggle workflows"
-                                    >
-                                      {isDeptCollapsed ? (
-                                        <ChevronRight className="w-3 h-3" />
-                                      ) : (
-                                        <ChevronDown className="w-3 h-3" />
-                                      )}
-                                    </button>
-                                  )}
-                                </div>
-
-                                {/* Individual Workflow Sub-Tree */}
-                                {!isDeptCollapsed && dept.workflows && dept.workflows.length > 0 && (
-                                  <div className="pl-2 space-y-0.5 border-l border-indigo-100 ml-2">
-                                    {dept.workflows.map((wf) => {
-                                      const isWfActive = activeTab === 'fms' && selectedDepartment === dept.key && selectedWorkflowKey === wf.key;
-                                      return (
-                                        <button
-                                          key={`mob-wf-${dept.key}-${wf.key}`}
-                                          onClick={() => {
-                                            if (onSelectWorkflowFms) {
-                                              onSelectWorkflowFms(dept.key, wf.key);
-                                            } else {
-                                              onSelectDepartmentFms?.(dept.key);
-                                              onTabChange('fms');
-                                            }
-                                            onClose();
-                                          }}
-                                          title={`${wf.name} (${wf.activeCount} active, ${wf.totalCount} total)`}
-                                          className={`w-full flex items-center justify-between px-2 py-1 rounded text-left transition-all group cursor-pointer ${
-                                            isWfActive
-                                              ? 'bg-indigo-50 border border-indigo-300 text-indigo-900 font-bold shadow-2xs'
-                                              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                                          }`}
-                                        >
-                                          <div className="flex items-center gap-1.5 min-w-0">
-                                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                                              isWfActive ? 'bg-indigo-600 ring-2 ring-indigo-300' : 'bg-slate-300 group-hover:bg-slate-400'
-                                            }`} />
-                                            <span className={`text-[11px] truncate ${isWfActive ? 'text-indigo-900 font-bold' : 'font-medium'}`}>
-                                              {wf.name}
-                                            </span>
-                                          </div>
-                                          {wf.activeCount > 0 ? (
-                                            <span
-                                              className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded shrink-0 ${
-                                                isWfActive ? 'bg-indigo-200 text-indigo-950' : 'bg-amber-100 text-amber-800'
-                                              }`}
-                                            >
-                                              {wf.activeCount}
-                                            </span>
-                                          ) : (
-                                            <span className="text-[9px] font-mono text-slate-400 shrink-0">
-                                              {wf.totalCount}
-                                            </span>
-                                          )}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
+                          {item.badge}
+                        </span>
                       )}
-                    </div>
+                    </button>
                   );
-                }
+                })}
+              </div>
+            </div>
+          )}
 
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => handleNavigate(item.id)}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all ${
-                      isItemActive
-                        ? 'bg-indigo-600 text-white font-bold shadow-xs'
-                        : 'text-slate-700 hover:bg-slate-100 font-semibold'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0 py-0.5">
-                      <Icon className={`w-4 h-4 shrink-0 ${isItemActive ? 'text-white' : 'text-slate-500'}`} />
-                      <span className="text-xs truncate">{item.label}</span>
-                    </div>
-                    {item.badge && (
-                      <span
-                        className={`text-[10px] font-mono shrink-0 font-bold px-2 py-0.5 rounded-full ${
-                          isItemActive 
-                            ? 'bg-white/20 text-white' 
-                            : item.badgeColor || 'bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        {item.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-          </div>
-        </div>
-      )}
+          {/* Utilities & Tools Module */}
+          {filteredUtilitiesNavItems.length > 0 && (
+            <div className="pt-2 border-t border-slate-100">
+              <span className="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                Utilities &amp; Tools
+              </span>
+              <div className="space-y-1">
+                {filteredUtilitiesNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const isItemActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleNavigate(item.id)}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all ${
+                        isItemActive
+                          ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                          : 'text-slate-700 hover:bg-slate-100 font-semibold'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 py-0.5">
+                        <Icon className={`w-4 h-4 shrink-0 ${isItemActive ? 'text-white' : 'text-slate-500'}`} />
+                        <span className="text-xs truncate">{item.label}</span>
+                      </div>
+                      {item.badge && (
+                        <span
+                          className={`text-[10px] font-mono shrink-0 font-bold px-2 py-0.5 rounded-full ${
+                            isItemActive 
+                              ? 'bg-white/20 text-white' 
+                              : item.badgeColor || 'bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          {item.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
-          {/* Department Modules - Admin & Super Admin */}
-          {isAdminOrSuperAdmin && (
+          {/* Dynamic Department Modules - Individual Section */}
+          {filteredDepartmentList.length > 0 && (
             <div className="pt-2 border-t border-slate-100">
               <span className="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                 Department Modules
               </span>
               <div className="space-y-1">
-                {departmentList.map((dept) => {
+                {filteredDepartmentList.map((dept) => {
                   const isCollapsed = collapsedDepts[dept.key] !== false;
                   const isDeptFmsActive = activeTab === 'fms' && selectedDepartment === dept.key;
                   const isSubCollapsed = collapsedSubSections[`mob-${dept.key}-fms`] !== false;

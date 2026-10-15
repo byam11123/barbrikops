@@ -31,21 +31,68 @@ import {
   Phone,
   MessageSquare,
   Mail,
-  Info
+  Info,
+  CalendarCheck2,
+  BarChart3,
+  FileSpreadsheet,
+  ListTodo,
+  Boxes,
+  Scale,
+  ShoppingCart,
+  Warehouse,
+  Landmark,
+  Wrench,
+  History,
+  FolderTree
 } from 'lucide-react';
 import { 
   UserProfile, 
   NoticeBoardItem, 
   UserRole,
   SYSTEM_MODULES,
+  SYSTEM_MODULE_SECTIONS,
   ModulePermission,
   ModulePermissionMap,
   getUserModulePermission,
-  isUserSuperAdmin
+  isUserSuperAdmin,
+  isUserAdmin
 } from '../../types';
 import { USERS } from '../../data/initialData';
 import { validateStaffUniqueness, normalizePhone, filterUsersForViewer } from '../../utils/staffValidation';
 import { storageAdapter } from '../../services/storageAdapter';
+
+const getModuleIcon = (iconName?: string) => {
+  switch (iconName) {
+    case 'CalendarCheck2': return <CalendarCheck2 className="w-4 h-4 text-indigo-600 shrink-0" />;
+    case 'BarChart3': return <BarChart3 className="w-4 h-4 text-blue-600 shrink-0" />;
+    case 'GitBranch': return <GitBranch className="w-4 h-4 text-amber-600 shrink-0" />;
+    case 'FileSpreadsheet': return <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />;
+    case 'ListTodo': return <ListTodo className="w-4 h-4 text-rose-600 shrink-0" />;
+    case 'CheckSquare': return <CheckSquare className="w-4 h-4 text-blue-600 shrink-0" />;
+    case 'Boxes': return <Boxes className="w-4 h-4 text-orange-600 shrink-0" />;
+    case 'Scale': return <Scale className="w-4 h-4 text-teal-600 shrink-0" />;
+    case 'ShoppingCart': return <ShoppingCart className="w-4 h-4 text-amber-600 shrink-0" />;
+    case 'Warehouse': return <Warehouse className="w-4 h-4 text-blue-600 shrink-0" />;
+    case 'Landmark': return <Landmark className="w-4 h-4 text-emerald-600 shrink-0" />;
+    case 'Wrench': return <Wrench className="w-4 h-4 text-purple-600 shrink-0" />;
+    case 'FolderTree': return <FolderTree className="w-4 h-4 text-indigo-600 shrink-0" />;
+    case 'Sliders': return <Sliders className="w-4 h-4 text-slate-600 shrink-0" />;
+    case 'History': return <History className="w-4 h-4 text-slate-600 shrink-0" />;
+    case 'ShieldCheck': return <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />;
+    default: return <Layers className="w-4 h-4 text-slate-500 shrink-0" />;
+  }
+};
+
+const getSectionIcon = (key: string) => {
+  switch (key) {
+    case 'USER': return <CalendarCheck2 className="w-4 h-4 text-indigo-600 shrink-0" />;
+    case 'OPERATIONS': return <GitBranch className="w-4 h-4 text-amber-600 shrink-0" />;
+    case 'UTILITIES': return <Scale className="w-4 h-4 text-teal-600 shrink-0" />;
+    case 'DEPARTMENTS': return <Building2 className="w-4 h-4 text-purple-600 shrink-0" />;
+    case 'GOVERNANCE': return <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />;
+    default: return <Sliders className="w-4 h-4 text-slate-600 shrink-0" />;
+  }
+};
 
 interface SuperAdminGovernanceViewProps {
   usersList: UserProfile[];
@@ -65,12 +112,15 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
   currentUser,
 }) => {
   const visibleUsersList = filterUsersForViewer(usersList, currentUser);
+  const matrixTargetStaffList = visibleUsersList.filter(
+    (u) => !isUserSuperAdmin(u) && !isUserAdmin(u)
+  );
   const [activeTab, setActiveTab] = useState<'DIRECTORY' | 'PERMISSIONS' | 'REASSIGN' | 'NOTICES'>('DIRECTORY');
   const [search, setSearch] = useState('');
 
   // Permissions Matrix State
   const [selectedStaffForPermissions, setSelectedStaffForPermissions] = useState<string>(
-    visibleUsersList.find((u) => !isUserSuperAdmin(u))?.userId || visibleUsersList[0]?.userId || ''
+    matrixTargetStaffList[0]?.userId || visibleUsersList[0]?.userId || ''
   );
   const [permissionSuccessMsg, setPermissionSuccessMsg] = useState<string | null>(null);
 
@@ -356,7 +406,21 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
     onUpdateUsersList(updated);
   };
 
-  const selectedStaffObj = usersList.find((u) => u.userId === selectedStaffForPermissions);
+  const selectedStaffObj = visibleUsersList.find((u) => u.userId === selectedStaffForPermissions) || visibleUsersList[0];
+  const isViewerSuperAdmin = isUserSuperAdmin(currentUser);
+  const isSelectedStaffAdmin = selectedStaffObj?.systemRole === 'ADMIN' || selectedStaffObj?.role === 'ADMIN' || selectedStaffObj?.userId === 'USR-ADMIN-01';
+
+  // "all modules should visible to superadmin but for admin should visible only user modules, utilites & tools, department modules and system governance not operations modules"
+  const visibleMatrixSections = SYSTEM_MODULE_SECTIONS.filter((section) => {
+    if (section.sectionKey === 'OPERATIONS') {
+      // Operations Modules are strictly hidden for Admin viewer or when viewing Admin profile
+      if (!isViewerSuperAdmin || isSelectedStaffAdmin) return false;
+      return true;
+    }
+    return true;
+  });
+
+  const displayedMatrixModules = visibleMatrixSections.flatMap((s) => s.modules);
 
   const handleToggleModulePerm = (moduleId: string, field: 'visible' | 'canEdit' | 'canDelete') => {
     if (!selectedStaffObj) return;
@@ -390,15 +454,54 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
     setTimeout(() => setPermissionSuccessMsg(null), 3000);
   };
 
+  const handleToggleSectionPerm = (sectionKey: string, field: 'visible' | 'canEdit' | 'canDelete', targetValue: boolean) => {
+    if (!selectedStaffObj) return;
+    const section = SYSTEM_MODULE_SECTIONS.find((s) => s.sectionKey === sectionKey);
+    if (!section) return;
+
+    const updatedPermissions: ModulePermissionMap = { ...(selectedStaffObj.permissions || {}) };
+    section.modules.forEach((mod) => {
+      // Super admin safeguard
+      if (mod.id === 'super-admin' && isUserSuperAdmin(selectedStaffObj)) return;
+
+      const current = getUserModulePermission(selectedStaffObj, mod.id);
+      const nextPerm = { ...current, [field]: targetValue };
+      if (field === 'visible' && !targetValue) {
+        nextPerm.canEdit = false;
+        nextPerm.canDelete = false;
+      }
+      if ((field === 'canEdit' || field === 'canDelete') && targetValue) {
+        nextPerm.visible = true;
+      }
+      updatedPermissions[mod.id] = nextPerm;
+    });
+
+    const updatedUser: UserProfile = {
+      ...selectedStaffObj,
+      permissions: updatedPermissions,
+    };
+
+    const nextList = usersList.map((u) => (u.userId === updatedUser.userId ? updatedUser : u));
+    onUpdateUsersList(nextList);
+    setPermissionSuccessMsg(`Updated ${section.title} (${targetValue ? 'Enabled' : 'Disabled'}) for ${selectedStaffObj.name}.`);
+    setTimeout(() => setPermissionSuccessMsg(null), 3000);
+  };
+
   const handleApplyPreset = (preset: 'ALL' | 'STANDARD' | 'READONLY' | 'MINIMAL') => {
     if (!selectedStaffObj) return;
     const newPermissions: ModulePermissionMap = {};
 
     SYSTEM_MODULES.forEach((mod) => {
+      // Super admin safeguard
+      if (mod.id === 'super-admin' && isUserSuperAdmin(selectedStaffObj)) {
+        newPermissions[mod.id] = { visible: true, canEdit: true, canDelete: true };
+        return;
+      }
+
       if (preset === 'ALL') {
         newPermissions[mod.id] = { visible: true, canEdit: true, canDelete: true };
       } else if (preset === 'STANDARD') {
-        const isOps = mod.category === 'CORE' || mod.category === 'OPERATIONS';
+        const isOps = mod.sectionKey === 'USER' || mod.sectionKey === 'OPERATIONS' || mod.sectionKey === 'DEPARTMENTS';
         newPermissions[mod.id] = {
           visible: isOps,
           canEdit: isOps,
@@ -819,6 +922,12 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                                   ? 'bg-amber-100 text-amber-900 border border-amber-300'
                                   : user.systemRole === 'ADMIN'
                                   ? 'bg-indigo-100 text-indigo-900 border border-indigo-300'
+                                  : user.systemRole === 'DIRECTOR'
+                                  ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                  : user.systemRole === 'EXECUTIVE_ASSISTANT'
+                                  ? 'bg-sky-100 text-sky-900 border border-sky-300'
+                                  : user.systemRole === 'PROCESS_COORDINATOR'
+                                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
                                   : user.systemRole === 'DEPT_ADMIN'
                                   ? 'bg-blue-100 text-blue-900 border border-blue-200'
                                   : user.systemRole === 'PROCESS_MANAGER'
@@ -863,19 +972,21 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                                   <span>Edit</span>
                                 </button>
 
-                                {/* UPDATE: Module Permissions */}
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedStaffForPermissions(user.userId);
-                                    setActiveTab('PERMISSIONS');
-                                  }}
-                                  className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold rounded-lg border border-amber-300 cursor-pointer text-[11px] flex items-center gap-1"
-                                  title="Configure Granular Module Visibility & Edit Rights"
-                                >
-                                  <Sliders className="w-3 h-3 text-amber-700" />
-                                  <span>Permissions</span>
-                                </button>
+                                {/* UPDATE: Module Permissions (Operational Staff Only) */}
+                                {!isUserSuperAdmin(user) && !isUserAdmin(user) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedStaffForPermissions(user.userId);
+                                      setActiveTab('PERMISSIONS');
+                                    }}
+                                    className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold rounded-lg border border-amber-300 cursor-pointer text-[11px] flex items-center gap-1"
+                                    title="Configure Granular Module Visibility & Edit Rights"
+                                  >
+                                    <Sliders className="w-3 h-3 text-amber-700" />
+                                    <span>Permissions</span>
+                                  </button>
+                                )}
 
                                 {/* UPDATE: Password / PIN */}
                                 <button
@@ -959,11 +1070,15 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                       onChange={(e) => setSelectedStaffForPermissions(e.target.value)}
                       className="bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 cursor-pointer shadow-2xs focus:ring-1 focus:ring-indigo-500"
                     >
-                      {usersList.map((u) => (
-                        <option key={u.userId} value={u.userId}>
-                          {u.name} ({u.role}) — {u.systemRole || 'STAFF'}
-                        </option>
-                      ))}
+                      {matrixTargetStaffList.length > 0 ? (
+                        matrixTargetStaffList.map((u) => (
+                          <option key={u.userId} value={u.userId}>
+                            {u.name} ({u.role}) — {u.systemRole || 'STAFF'}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No operational staff configured</option>
+                      )}
                     </select>
                   </div>
                 </div>
@@ -997,8 +1112,8 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                       </div>
                     </div>
 
-                    {/* Quick Presets (only for non-superadmin) */}
-                    {!isUserSuperAdmin(selectedStaffObj) && (
+                    {/* Quick Presets (only for non-superadmin and non-admin) */}
+                    {!isUserSuperAdmin(selectedStaffObj) && !isUserAdmin(selectedStaffObj) && (
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mr-1">Presets:</span>
                         <button
@@ -1043,7 +1158,7 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                 )}
               </div>
 
-              {/* If selected user is Super Admin */}
+              {/* If selected user is Super Admin or Admin */}
               {selectedStaffObj && isUserSuperAdmin(selectedStaffObj) ? (
                 <div className="p-6 bg-amber-50 border border-amber-300 rounded-2xl text-center space-y-2">
                   <div className="inline-flex p-3 bg-amber-100 text-amber-900 rounded-2xl">
@@ -1052,6 +1167,16 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                   <h3 className="font-black text-amber-950 text-sm">Super Admin Master Bypass Active</h3>
                   <p className="text-xs text-amber-900 max-w-lg mx-auto">
                     This account holds organization-wide Super Admin governance rights. All navigation modules, operational tabs, and create/edit/delete actions are permanently unlocked and cannot be restricted.
+                  </p>
+                </div>
+              ) : selectedStaffObj && isUserAdmin(selectedStaffObj) ? (
+                <div className="p-6 bg-indigo-50 border border-indigo-300 rounded-2xl text-center space-y-2">
+                  <div className="inline-flex p-3 bg-indigo-100 text-indigo-900 rounded-2xl">
+                    <ShieldCheck className="w-8 h-8" />
+                  </div>
+                  <h3 className="font-black text-indigo-950 text-sm">Admin Role Access Active</h3>
+                  <p className="text-xs text-indigo-900 max-w-lg mx-auto">
+                    Admin users hold automatic administrative access to User Modules, Utilities &amp; Tools, Department Modules, and System Governance (all modules except Operations). Individual module toggle matrices apply only to operational staff members.
                   </p>
                 </div>
               ) : selectedStaffObj && (
@@ -1069,98 +1194,203 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {SYSTEM_MODULES.map((mod) => {
-                          const perm = getUserModulePermission(selectedStaffObj, mod.id);
-                          const isVisible = perm.visible;
-                          const canEdit = perm.canEdit;
-                          const canDelete = perm.canDelete;
+                        {visibleMatrixSections.map((section) => {
+                          const visibleInSection = section.modules.filter(
+                            (m) => getUserModulePermission(selectedStaffObj, m.id).visible
+                          ).length;
 
                           return (
-                            <tr key={mod.id} className={`hover:bg-slate-50 transition-colors ${!isVisible ? 'bg-slate-50/40 opacity-75' : ''}`}>
-                              {/* Module Info */}
-                              <td className="p-3 pl-4">
-                                <div className="font-black text-slate-900 text-xs flex items-center gap-1.5">
-                                  <span>{mod.name}</span>
-                                  <span className="font-mono text-[10px] text-slate-400">({mod.id})</span>
-                                </div>
-                                <div className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">
-                                  {mod.description}
-                                </div>
-                              </td>
+                            <React.Fragment key={section.sectionKey}>
+                              {/* Section Header Row */}
+                              <tr className="bg-slate-100/90 border-t-2 border-b border-slate-200">
+                                <td colSpan={2} className="py-2.5 px-4">
+                                  <div className="flex items-center gap-2.5">
+                                    <div className="p-1.5 rounded-lg bg-white border border-slate-200 shadow-2xs">
+                                      {getSectionIcon(section.sectionKey)}
+                                    </div>
+                                    <div>
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-black text-slate-900 text-xs tracking-tight">
+                                          {section.title}
+                                        </span>
+                                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                                          {section.modules.length} {section.sectionKey === 'DEPARTMENTS' ? 'Departments' : 'Modules'}
+                                        </span>
+                                        <span
+                                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                            visibleInSection > 0
+                                              ? 'bg-emerald-100 text-emerald-800'
+                                              : 'bg-slate-200 text-slate-500'
+                                          }`}
+                                        >
+                                          {visibleInSection} of {section.modules.length} Visible
+                                        </span>
+                                      </div>
+                                      <p className="text-[10px] text-slate-500 line-clamp-1 mt-0.5">
+                                        {section.description}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td colSpan={3} className="py-2 px-4 text-right">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">
+                                      Section:
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleSectionPerm(section.sectionKey, 'visible', true)}
+                                      className="px-2 py-1 bg-white hover:bg-emerald-50 text-emerald-700 border border-slate-300 hover:border-emerald-300 rounded-lg text-[10px] font-bold shadow-2xs cursor-pointer transition-colors"
+                                    >
+                                      Show All
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleSectionPerm(section.sectionKey, 'visible', false)}
+                                      className="px-2 py-1 bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-300 hover:border-rose-300 rounded-lg text-[10px] font-bold shadow-2xs cursor-pointer transition-colors"
+                                    >
+                                      Hide All
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
 
-                              {/* Category */}
-                              <td className="p-3">
-                                <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                                  mod.category === 'CORE'
-                                    ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                                    : mod.category === 'OPERATIONS'
-                                    ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                    : 'bg-purple-100 text-purple-800 border border-purple-200'
-                                }`}>
-                                  {mod.category}
-                                </span>
-                              </td>
+                              {/* Section Module Rows */}
+                              {section.modules.map((mod) => {
+                                const perm = getUserModulePermission(selectedStaffObj, mod.id);
+                                const isVisible = perm.visible;
+                                const canEdit = perm.canEdit;
+                                const canDelete = perm.canDelete;
+                                const isLockedSuperAdmin = mod.id === 'super-admin' && isUserSuperAdmin(selectedStaffObj);
 
-                              {/* Visibility Toggle */}
-                              <td className="p-3 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleModulePerm(mod.id, 'visible')}
-                                  className={`px-3 py-1.5 rounded-xl font-bold text-[11px] transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs border ${
-                                    isVisible
-                                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700'
-                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-300'
-                                  }`}
-                                  title={isVisible ? 'Visible in navigation bar & screens' : 'Hidden from user navigation'}
-                                >
-                                  {isVisible ? (
-                                    <>
-                                      <Eye className="w-3.5 h-3.5" />
-                                      <span>Show</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <EyeOff className="w-3.5 h-3.5 text-slate-400" />
-                                      <span>Hide</span>
-                                    </>
-                                  )}
-                                </button>
-                              </td>
+                                return (
+                                  <tr
+                                    key={mod.id}
+                                    className={`hover:bg-slate-50 transition-colors ${
+                                      !isVisible ? 'bg-slate-50/50 opacity-70' : 'bg-white'
+                                    }`}
+                                  >
+                                    {/* Module Info */}
+                                    <td className="p-3 pl-4">
+                                      <div className="flex items-center gap-2.5">
+                                        <div className="p-1.5 rounded-lg bg-slate-50 border border-slate-200 shrink-0">
+                                          {getModuleIcon(mod.iconName)}
+                                        </div>
+                                        <div>
+                                          <div className="font-black text-slate-900 text-xs flex items-center gap-1.5 flex-wrap">
+                                            <span>{mod.name}</span>
+                                            <span className="font-mono text-[10px] text-slate-400">({mod.id})</span>
+                                            {mod.isSafeguarded && (
+                                              <span className="inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300">
+                                                <ShieldAlert className="w-3 h-3 text-amber-700" />
+                                                <span>Super Admin Safeguard</span>
+                                              </span>
+                                            )}
+                                          </div>
+                                          <div className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">
+                                            {mod.description}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </td>
 
-                              {/* Can Edit Toggle */}
-                              <td className="p-3 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleModulePerm(mod.id, 'canEdit')}
-                                  className={`px-3 py-1.5 rounded-xl font-bold text-[11px] transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs border ${
-                                    canEdit
-                                      ? 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-700'
-                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-500 border-slate-300'
-                                  }`}
-                                  title={canEdit ? 'Can create and update records' : 'Read-only / No editing'}
-                                >
-                                  <Edit3 className={`w-3.5 h-3.5 ${canEdit ? 'text-white' : 'text-slate-400'}`} />
-                                  <span>{canEdit ? 'Can Edit' : 'No Edit'}</span>
-                                </button>
-                              </td>
+                                    {/* Category Pill */}
+                                    <td className="p-3">
+                                      <span
+                                        className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                                          section.sectionKey === 'USER'
+                                            ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                                            : section.sectionKey === 'OPERATIONS'
+                                            ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                            : section.sectionKey === 'UTILITIES'
+                                            ? 'bg-teal-100 text-teal-800 border border-teal-200'
+                                            : section.sectionKey === 'DEPARTMENTS'
+                                            ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                            : 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                                        }`}
+                                      >
+                                        {section.sectionKey === 'DEPARTMENTS' ? 'DEPARTMENT' : mod.category}
+                                      </span>
+                                    </td>
 
-                              {/* Can Delete Toggle */}
-                              <td className="p-3 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleModulePerm(mod.id, 'canDelete')}
-                                  className={`px-3 py-1.5 rounded-xl font-bold text-[11px] transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs border ${
-                                    canDelete
-                                      ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-700'
-                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-500 border-slate-300'
-                                  }`}
-                                  title={canDelete ? 'Can delete records and entries' : 'Deletion restricted'}
-                                >
-                                  <Trash2 className={`w-3.5 h-3.5 ${canDelete ? 'text-white' : 'text-slate-400'}`} />
-                                  <span>{canDelete ? 'Can Delete' : 'No Delete'}</span>
-                                </button>
-                              </td>
-                            </tr>
+                                    {/* Visibility Toggle */}
+                                    <td className="p-3 text-center">
+                                      <button
+                                        type="button"
+                                        disabled={isLockedSuperAdmin}
+                                        onClick={() => handleToggleModulePerm(mod.id, 'visible')}
+                                        className={`px-3 py-1.5 rounded-xl font-bold text-[11px] transition-all inline-flex items-center gap-1.5 shadow-2xs border ${
+                                          isLockedSuperAdmin
+                                            ? 'bg-amber-50 text-amber-800 border-amber-300 cursor-not-allowed opacity-90'
+                                            : isVisible
+                                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 cursor-pointer'
+                                            : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-300 cursor-pointer'
+                                        }`}
+                                        title={
+                                          isLockedSuperAdmin
+                                            ? 'Super Admin master bypass active'
+                                            : isVisible
+                                            ? 'Visible in navigation bar & screens'
+                                            : 'Hidden from user navigation'
+                                        }
+                                      >
+                                        {isVisible ? (
+                                          <>
+                                            <Eye className="w-3.5 h-3.5" />
+                                            <span>Show</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <EyeOff className="w-3.5 h-3.5 text-slate-400" />
+                                            <span>Hide</span>
+                                          </>
+                                        )}
+                                      </button>
+                                    </td>
+
+                                    {/* Can Edit Toggle */}
+                                    <td className="p-3 text-center">
+                                      <button
+                                        type="button"
+                                        disabled={isLockedSuperAdmin}
+                                        onClick={() => handleToggleModulePerm(mod.id, 'canEdit')}
+                                        className={`px-3 py-1.5 rounded-xl font-bold text-[11px] transition-all inline-flex items-center gap-1.5 shadow-2xs border ${
+                                          isLockedSuperAdmin
+                                            ? 'bg-amber-50 text-amber-800 border-amber-300 cursor-not-allowed opacity-90'
+                                            : canEdit
+                                            ? 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-700 cursor-pointer'
+                                            : 'bg-slate-100 hover:bg-slate-200 text-slate-500 border-slate-300 cursor-pointer'
+                                        }`}
+                                        title={canEdit ? 'Can create and update records' : 'Read-only / No editing'}
+                                      >
+                                        <Edit3 className={`w-3.5 h-3.5 ${canEdit ? 'text-white' : 'text-slate-400'}`} />
+                                        <span>{canEdit ? 'Can Edit' : 'No Edit'}</span>
+                                      </button>
+                                    </td>
+
+                                    {/* Can Delete Toggle */}
+                                    <td className="p-3 text-center">
+                                      <button
+                                        type="button"
+                                        disabled={isLockedSuperAdmin}
+                                        onClick={() => handleToggleModulePerm(mod.id, 'canDelete')}
+                                        className={`px-3 py-1.5 rounded-xl font-bold text-[11px] transition-all inline-flex items-center gap-1.5 shadow-2xs border ${
+                                          isLockedSuperAdmin
+                                            ? 'bg-amber-50 text-amber-800 border-amber-300 cursor-not-allowed opacity-90'
+                                            : canDelete
+                                            ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-700 cursor-pointer'
+                                            : 'bg-slate-100 hover:bg-slate-200 text-slate-500 border-slate-300 cursor-pointer'
+                                        }`}
+                                        title={canDelete ? 'Can delete records and entries' : 'Deletion restricted'}
+                                      >
+                                        <Trash2 className={`w-3.5 h-3.5 ${canDelete ? 'text-white' : 'text-slate-400'}`} />
+                                        <span>{canDelete ? 'Can Delete' : 'No Delete'}</span>
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </React.Fragment>
                           );
                         })}
                       </tbody>
@@ -1172,19 +1402,19 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                     <div className="flex items-center gap-4 flex-wrap">
                       <span>
                         <strong className="text-slate-900 font-bold">
-                          {SYSTEM_MODULES.filter((m) => getUserModulePermission(selectedStaffObj, m.id).visible).length}
-                        </strong> of {SYSTEM_MODULES.length} Modules Shown
+                          {displayedMatrixModules.filter((m) => getUserModulePermission(selectedStaffObj, m.id).visible).length}
+                        </strong> of {displayedMatrixModules.length} Modules Shown
                       </span>
                       <span>•</span>
                       <span>
                         <strong className="text-indigo-700 font-bold">
-                          {SYSTEM_MODULES.filter((m) => getUserModulePermission(selectedStaffObj, m.id).canEdit).length}
+                          {displayedMatrixModules.filter((m) => getUserModulePermission(selectedStaffObj, m.id).canEdit).length}
                         </strong> Edit Rights
                       </span>
                       <span>•</span>
                       <span>
                         <strong className="text-rose-700 font-bold">
-                          {SYSTEM_MODULES.filter((m) => getUserModulePermission(selectedStaffObj, m.id).canDelete).length}
+                          {displayedMatrixModules.filter((m) => getUserModulePermission(selectedStaffObj, m.id).canDelete).length}
                         </strong> Delete Rights
                       </span>
                     </div>
@@ -1229,7 +1459,7 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                       required
                     >
                       <option value="">-- Choose Absent Staff --</option>
-                      {usersList.map((u) => (
+                      {visibleUsersList.map((u) => (
                         <option key={u.userId} value={u.userId}>
                           {u.name} ({u.role})
                         </option>
@@ -1246,7 +1476,7 @@ export const SuperAdminGovernanceView: React.FC<SuperAdminGovernanceViewProps> =
                       required
                     >
                       <option value="">-- Choose Relief Staff --</option>
-                      {usersList
+                      {visibleUsersList
                         .filter((u) => u.userId !== selectedAbsentUser)
                         .map((u) => (
                           <option key={u.userId} value={u.userId}>

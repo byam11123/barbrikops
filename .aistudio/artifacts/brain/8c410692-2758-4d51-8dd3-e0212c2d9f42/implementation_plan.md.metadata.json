@@ -1,6 +1,6 @@
 {
-  "summary": "Plan for expanding All FMS sidebar navigation with dynamic department and workflow sub-trees, synced to stat cards and table filters.",
-  "updatedAt": "2026-10-13T05:43:31.972480889Z",
+  "summary": "Updated implementation plan for the Bank Payments suite. Explicitly restricts Payment Approval (Stage 2) exclusively to the Director (e.g. Pranjal Agrawal / Director role). Super Admin and Admin are excluded from payment approvals, ensuring only the Director sees payment approval tasks in their My Work queue and view action controls.",
+  "updatedAt": "2026-10-15T05:40:28.723798014Z",
   "requestFeedback": true,
   "userFacing": true
 }

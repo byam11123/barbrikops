@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { UserProfile, NoticeBoardItem, UserRole } from '../../types';
 import { USERS, INITIAL_NOTICE_BOARD } from '../../data/initialData';
-import { validateStaffUniqueness } from '../../utils/staffValidation';
+import { validateStaffUniqueness, filterUsersForViewer } from '../../utils/staffValidation';
 
 interface SuperAdminModalProps {
   isOpen: boolean;
@@ -38,6 +38,7 @@ interface SuperAdminModalProps {
   noticeBoardItems: NoticeBoardItem[];
   onUpdateNoticeBoard: (notices: NoticeBoardItem[]) => void;
   onImpersonateUser: (user: UserProfile) => void;
+  currentUser?: UserProfile;
 }
 
 export const SuperAdminModal: React.FC<SuperAdminModalProps> = ({
@@ -48,7 +49,9 @@ export const SuperAdminModal: React.FC<SuperAdminModalProps> = ({
   noticeBoardItems,
   onUpdateNoticeBoard,
   onImpersonateUser,
+  currentUser,
 }) => {
+  const visibleUsersList = filterUsersForViewer(usersList, currentUser);
   const [activeTab, setActiveTab] = useState<'DIRECTORY' | 'REASSIGN' | 'NOTICES'>('DIRECTORY');
   const [search, setSearch] = useState('');
 
@@ -188,7 +191,7 @@ export const SuperAdminModal: React.FC<SuperAdminModalProps> = ({
 
   if (!isOpen) return null;
 
-  const filteredUsers = usersList.filter(
+  const filteredUsers = visibleUsersList.filter(
     (u) =>
       u.name.toLowerCase().includes(search.toLowerCase()) ||
       u.role.toLowerCase().includes(search.toLowerCase()) ||
@@ -326,7 +329,7 @@ export const SuperAdminModal: React.FC<SuperAdminModalProps> = ({
             }`}
           >
             <UserCheck className="w-4 h-4 text-indigo-600" />
-            <span>Staff Directory &amp; Role Access ({usersList.length})</span>
+            <span>Staff Directory &amp; Role Access ({visibleUsersList.length})</span>
           </button>
 
           <button
@@ -440,8 +443,11 @@ export const SuperAdminModal: React.FC<SuperAdminModalProps> = ({
                         onChange={(e) => setNewUserSystemRole(e.target.value as any)}
                         className="w-full bg-white border border-indigo-300 rounded-lg p-2 font-semibold text-slate-800 cursor-pointer"
                       >
-                        <option value="OPERATIONAL_USER">OPERATIONAL_USER (Field Staff)</option>
-                        <option value="PROCESS_MANAGER">PROCESS_MANAGER (Coordinators)</option>
+                        <option value="OPERATIONAL_USER">OPERATIONAL_USER (Field &amp; Site Staff)</option>
+                        <option value="PROCESS_COORDINATOR">PROCESS_COORDINATOR (Cross-Dept Delay Tracker)</option>
+                        <option value="EXECUTIVE_ASSISTANT">EXECUTIVE_ASSISTANT (Approval Pre-Review &amp; Screening)</option>
+                        <option value="DIRECTOR">DIRECTOR (Executive Decision Maker)</option>
+                        <option value="PROCESS_MANAGER">PROCESS_MANAGER (Section In-Charge &amp; Approver)</option>
                         <option value="DEPT_ADMIN">DEPT_ADMIN (Department Head)</option>
                         <option value="ADMIN">ADMIN (Operational Administrator)</option>
                         <option value="SUPER_ADMIN">SUPER_ADMIN (Full Governance)</option>
@@ -616,7 +622,7 @@ export const SuperAdminModal: React.FC<SuperAdminModalProps> = ({
                     required
                   >
                     <option value="">-- Choose Absent Staff Member --</option>
-                    {usersList.map((u) => (
+                    {visibleUsersList.map((u) => (
                       <option key={u.userId} value={u.userId}>
                         {u.name} ({u.role} - {u.departmentName})
                       </option>
@@ -633,7 +639,7 @@ export const SuperAdminModal: React.FC<SuperAdminModalProps> = ({
                     required
                   >
                     <option value="">-- Choose Relief Staff Member --</option>
-                    {usersList.filter((u) => u.userId !== selectedAbsentUser).map((u) => (
+                    {visibleUsersList.filter((u) => u.userId !== selectedAbsentUser).map((u) => (
                       <option key={u.userId} value={u.userId}>
                         {u.name} ({u.role} - {u.departmentName})
                       </option>
@@ -943,7 +949,10 @@ export const SuperAdminModal: React.FC<SuperAdminModalProps> = ({
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 cursor-pointer focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
                   >
                     <option value="OPERATIONAL_USER">OPERATIONAL_USER (Field &amp; Site Staff)</option>
-                    <option value="PROCESS_MANAGER">PROCESS_MANAGER (Process Coordinators &amp; Approvers)</option>
+                    <option value="PROCESS_COORDINATOR">PROCESS_COORDINATOR (Cross-Dept SLA Delay Tracker)</option>
+                    <option value="EXECUTIVE_ASSISTANT">EXECUTIVE_ASSISTANT (Approval Pre-Review &amp; Screening)</option>
+                    <option value="DIRECTOR">DIRECTOR (Executive Decision Maker)</option>
+                    <option value="PROCESS_MANAGER">PROCESS_MANAGER (Section In-Charge &amp; Approver)</option>
                     <option value="DEPT_ADMIN">DEPT_ADMIN (Department Head)</option>
                     <option value="ADMIN">ADMIN (Operational Administrator)</option>
                     <option value="SUPER_ADMIN">SUPER_ADMIN (Full Governance)</option>

@@ -138,15 +138,26 @@ export function validateStaffUniqueness(params: StaffUniquenessCheckParams): Sta
   return { isValid, errors, conflicts };
 }
 
+function checkSuperAdmin(u?: UserProfile | null): boolean {
+  if (!u) return false;
+  return (
+    u.userId === 'USR-000' ||
+    u.systemRole === 'SUPER_ADMIN' ||
+    u.role === 'SUPER_ADMIN' ||
+    u.role === 'Super Admin' ||
+    u.username === 'superadmin'
+  );
+}
+
 /**
  * Filter users list based on who is viewing it.
  * Super Admin (USR-000 or role SUPER_ADMIN) account and info are hidden from all non-Super Admin users (including Admins).
  */
 export function filterUsersForViewer(users: UserProfile[], viewer?: UserProfile | null): UserProfile[] {
   if (!users || !Array.isArray(users)) return [];
-  if (viewer && (viewer.userId === 'USR-000' || viewer.role === 'SUPER_ADMIN')) {
+  if (viewer && checkSuperAdmin(viewer)) {
     return users;
   }
-  return users.filter((u) => u.userId !== 'USR-000' && u.role !== 'SUPER_ADMIN');
+  return users.filter((u) => !checkSuperAdmin(u));
 }
 

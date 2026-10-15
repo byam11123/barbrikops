@@ -32,7 +32,7 @@ import {
   CalendarDays,
   Timer
 } from 'lucide-react';
-import { CentralRegistryConfig, DepartmentDefinition, UserProfile, isUserSuperAdmin } from '../../types';
+import { CentralRegistryConfig, DepartmentDefinition, SiteRegistryItem, UserProfile, isUserSuperAdmin } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { downloadCentralRegistryExcel } from '../../services/centralRegistryExcelService';
 import { addWorkingSlaHours, formatToStandardDateTime, calculateWorkingHoursDelay, DEFAULT_WORK_SHIFT_CONFIG } from '../../services/workShiftService';
@@ -61,7 +61,7 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
   onOpenTemplateStudio,
   onCreateFlow,
 }) => {
-  const [activeTab, setActiveTab] = useState<'SHIFT_CONFIG' | 'DEPARTMENTS' | 'FMS_WORKFLOWS' | 'CONFIG' | 'SQL_SCHEMA' | 'COLUMN_MAPPINGS'>('SHIFT_CONFIG');
+  const [activeTab, setActiveTab] = useState<'SHIFT_CONFIG' | 'DEPARTMENTS' | 'SITE_REGISTRY' | 'FMS_WORKFLOWS' | 'CONFIG' | 'SQL_SCHEMA' | 'COLUMN_MAPPINGS'>('SHIFT_CONFIG');
   const [formConfig, setFormConfig] = useState<CentralRegistryConfig>(config);
   const [copied, setCopied] = useState<boolean>(false);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
@@ -69,10 +69,10 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
   const isSuper = isUserSuperAdmin(currentUser);
 
   React.useEffect(() => {
-    if (!isSuper && activeTab !== 'SHIFT_CONFIG' && activeTab !== 'DEPARTMENTS') {
+    if (!isSuper && currentUser?.systemRole !== 'DEPT_ADMIN' && activeTab !== 'SHIFT_CONFIG' && activeTab !== 'DEPARTMENTS' && activeTab !== 'SITE_REGISTRY') {
       setActiveTab('SHIFT_CONFIG');
     }
-  }, [isSuper, activeTab]);
+  }, [isSuper, currentUser, activeTab]);
 
   const handleUpdateNotificationToggle = (field: 'enableDesktopPush' | 'enableFmsAlerts' | 'enableSlaBreachAlerts' | 'enableDelegationAlerts' | 'enableStockAlerts', checked: boolean) => {
     const current = formConfig.notificationSettings || {
@@ -199,6 +199,74 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
     setTimeout(() => setSavedSuccess(false), 2500);
   };
 
+  // Site Registry State & Handlers
+  const [siteList, setSiteList] = useState<SiteRegistryItem[]>(() => storageAdapter.getSiteRegistry());
+  const [siteStatusFilter, setSiteStatusFilter] = useState<'ALL' | 'ACTIVE' | 'ARCHIVED'>('ALL');
+  const [isSiteModalOpen, setIsSiteModalOpen] = useState(false);
+  const [editingSite, setEditingSite] = useState<SiteRegistryItem | null>(null);
+  const [siteCodeInput, setSiteCodeInput] = useState('');
+  const [siteNameInput, setSiteNameInput] = useState('');
+  const [siteError, setSiteError] = useState<string | null>(null);
+
+  const canManageSites = isSuper || currentUser?.systemRole === 'DEPT_ADMIN';
+
+  const handleToggleArchiveSite = (site: SiteRegistryItem) => {
+    storageAdapter.toggleArchiveSiteRegistryItem(site.id);
+    setSiteList(storageAdapter.getSiteRegistry());
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 2500);
+  };
+
+  const handleDeleteSite = (site: SiteRegistryItem) => {
+    if (window.confirm(`Are you sure you want to delete site "${site.name}"?`)) {
+      storageAdapter.deleteSiteRegistryItem(site.id);
+      setSiteList(storageAdapter.getSiteRegistry());
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2500);
+    }
+  };
+
+  const handleOpenAddSite = () => {
+    setEditingSite(null);
+    setSiteCodeInput('');
+    setSiteNameInput('');
+    setSiteError(null);
+    setIsSiteModalOpen(true);
+  };
+
+  const handleOpenEditSite = (site: SiteRegistryItem) => {
+    setEditingSite(site);
+    setSiteCodeInput(site.code);
+    setSiteNameInput(site.name);
+    setSiteError(null);
+    setIsSiteModalOpen(true);
+  };
+
+  const handleSaveSite = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!siteNameInput.trim()) {
+      setSiteError('Site Name is required');
+      return;
+    }
+
+    if (editingSite) {
+      storageAdapter.updateSiteRegistryItem(editingSite.id, {
+        code: siteCodeInput.trim().toUpperCase() || siteNameInput.trim().slice(0, 3).toUpperCase(),
+        name: siteNameInput.trim(),
+      });
+    } else {
+      storageAdapter.addSiteRegistryItem(
+        siteCodeInput.trim().toUpperCase(),
+        siteNameInput.trim()
+      );
+    }
+
+    setSiteList(storageAdapter.getSiteRegistry());
+    setIsSiteModalOpen(false);
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 2500);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header Tab Switcher */}
@@ -226,6 +294,17 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
             >
               <Building2 className="w-3.5 h-3.5" />
               <span>Department Hub ({departments.length})</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('SITE_REGISTRY')}
+              className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all flex items-center gap-1.5 ${
+                activeTab === 'SITE_REGISTRY'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 font-semibold'
+              }`}
+            >
+              <Warehouse className="w-3.5 h-3.5" />
+              <span>Central Site Registry ({siteList.length})</span>
             </button>
             {/* Technical Migration & Governance Tabs (SUPER ADMIN ONLY) */}
             {isUserSuperAdmin(currentUser) && (
@@ -807,6 +886,241 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
                       className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-colors shadow-xs cursor-pointer"
                     >
                       {editingDept ? 'Save Changes' : 'Create Department'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'SITE_REGISTRY' && (
+        <div className="space-y-6">
+          {savedSuccess && (
+            <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs rounded-xl flex items-center gap-2">
+              <Check className="w-4 h-4" />
+              <span>Site Registry updated and synced successfully!</span>
+            </div>
+          )}
+
+          {/* Site Registry Header Card */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Warehouse className="w-5 h-5 text-indigo-600" />
+                <span>Central Site Registry</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-2xl">
+                Master database of company project sites and office locations. Site entries defined here automatically populate site dropdowns across <span className="font-semibold text-slate-700">Indents, FMS Workflows, IMS Inventory, DPR Reports, Delegation Tasks, and Operational Checklists</span>.
+              </p>
+            </div>
+            {canManageSites && (
+              <button
+                onClick={handleOpenAddSite}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors shrink-0 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Add Site</span>
+              </button>
+            )}
+          </div>
+
+          {/* Site Registry Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+            {/* Table Header Filter Bar */}
+            <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setSiteStatusFilter('ALL')}
+                  className={`px-3 py-1 text-xs rounded-lg font-bold transition-all ${
+                    siteStatusFilter === 'ALL'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  All ({siteList.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSiteStatusFilter('ACTIVE')}
+                  className={`px-3 py-1 text-xs rounded-lg font-bold transition-all ${
+                    siteStatusFilter === 'ACTIVE'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Active ({siteList.filter((s) => s.status === 'ACTIVE').length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSiteStatusFilter('ARCHIVED')}
+                  className={`px-3 py-1 text-xs rounded-lg font-bold transition-all ${
+                    siteStatusFilter === 'ARCHIVED'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Archived ({siteList.filter((s) => s.status === 'ARCHIVED').length})
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-700">
+                <thead className="bg-slate-100 text-slate-900 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
+                  <tr>
+                    <th className="p-3.5 pl-5">Site Code</th>
+                    <th className="p-3.5">Site Name</th>
+                    <th className="p-3.5">Status</th>
+                    <th className="p-3.5">Created Date</th>
+                    <th className="p-3.5 text-right pr-5">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {siteList
+                    .filter((s) => {
+                      if (siteStatusFilter === 'ACTIVE') return s.status === 'ACTIVE';
+                      if (siteStatusFilter === 'ARCHIVED') return s.status === 'ARCHIVED';
+                      return true;
+                    })
+                    .map((site) => (
+                      <tr key={site.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="p-3.5 pl-5 font-mono font-bold text-slate-900">
+                          <span className="px-2 py-1 bg-slate-100 text-indigo-700 border border-slate-200 rounded-md">
+                            {site.code}
+                          </span>
+                        </td>
+                        <td className="p-3.5 font-bold text-slate-900">
+                          {site.name}
+                        </td>
+                        <td className="p-3.5">
+                          {site.status === 'ACTIVE' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                              Active
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
+                              Archived
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3.5 text-slate-500 font-medium">
+                          {site.createdAt}
+                        </td>
+                        <td className="p-3.5 pr-5 text-right">
+                          {canManageSites ? (
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => handleOpenEditSite(site)}
+                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
+                                title="Edit Site Details"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                onClick={() => handleToggleArchiveSite(site)}
+                                className={`px-2.5 py-1.5 font-bold rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer ${
+                                  site.status === 'ARCHIVED'
+                                    ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'
+                                    : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
+                                }`}
+                              >
+                                <span>{site.status === 'ARCHIVED' ? 'Reactivate' : 'Archive'}</span>
+                              </button>
+
+                              <button
+                                onClick={() => handleDeleteSite(site)}
+                                className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg transition-colors cursor-pointer"
+                                title="Delete Site"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-slate-400 font-medium">Read Only</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Site Add/Edit Modal */}
+          {isSiteModalOpen && (
+            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-200">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <Warehouse className="w-5 h-5 text-indigo-600" />
+                    <span>{editingSite ? 'Edit Master Site' : 'Add New Master Site'}</span>
+                  </h3>
+                  <button
+                    onClick={() => setIsSiteModalOpen(false)}
+                    className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {siteError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl font-semibold">
+                    {siteError}
+                  </div>
+                )}
+
+                <form onSubmit={handleSaveSite} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Site Name *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Siladehi Site, Bijetala Site, Durg Project Office"
+                      value={siteNameInput}
+                      onChange={(e) => {
+                        setSiteNameInput(e.target.value);
+                        if (!editingSite) {
+                          setSiteCodeInput(e.target.value.slice(0, 3).toUpperCase());
+                        }
+                      }}
+                      className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Site Code *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. SIL-01, BIJ-01, DRG-01"
+                      value={siteCodeInput}
+                      onChange={(e) => setSiteCodeInput(e.target.value.toUpperCase())}
+                      className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <p className="text-[11px] text-slate-400 mt-1">Short identifier code used in PO references and site labels</p>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setIsSiteModalOpen(false)}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-colors shadow-xs cursor-pointer"
+                    >
+                      {editingSite ? 'Save Changes' : 'Create Master Site'}
                     </button>
                   </div>
                 </form>

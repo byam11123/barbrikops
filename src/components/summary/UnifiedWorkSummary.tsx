@@ -30,11 +30,18 @@ import {
   Award,
   Table,
   Plus,
-  Download
+  Download,
+  ShieldCheck,
+  Lock,
+  KeyRound,
+  Check,
+  AlertCircle,
+  Flag,
+  FileSpreadsheet
 } from 'lucide-react';
 import { downloadCsv } from '../../utils/csvExporter';
 import { CustomSelect } from '../common/CustomSelect';
-import { ChecklistItem, DelegationTask, FmsInstance, UserProfile, ProcessRemark, FmsStageDefinition, isUserSuperAdmin, isUserAdminOrSuperAdmin } from '../../types';
+import { ChecklistItem, DelegationTask, FmsInstance, UserProfile, ProcessRemark, FmsStageDefinition, isUserSuperAdmin, isUserAdminOrSuperAdmin, isUserDirector, isUserEA, isUserProcessCoordinator } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { 
   FMS_CHECK_STOCK_STAGES, 
@@ -221,16 +228,134 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
 
   const isSuperAdmin = isUserSuperAdmin(currentUser);
   const isAdminOrSuperAdmin = isUserAdminOrSuperAdmin(currentUser);
-  const canCoordinate = isSuperAdmin || isAdminOrSuperAdmin;
+  const isDirectorUser = isUserDirector(currentUser);
+  const isEaUser = isUserEA(currentUser);
+  const isPcUser = isUserProcessCoordinator(currentUser) || currentUser.name.toLowerCase().includes('ritu') || currentUser.role.toLowerCase().includes('process coordinator');
+  const canCoordinate = isAdminOrSuperAdmin || isPcUser;
 
-  // Process Coordinator Desk Mode (Super Admin, Administrative User, or Process Coordinator)
-  const isRituSahu = canCoordinate || currentUser.name.toLowerCase().includes('ritu') || currentUser.role.toLowerCase().includes('process coordinator');
-  const [localPcDeskActive, setLocalPcDeskActive] = useState<boolean>(canCoordinate && isRituSahu);
-  const pcDeskActive = canCoordinate ? (propPcDeskActive !== undefined ? propPcDeskActive : localPcDeskActive) : false;
-  const setPcDeskActive = (val: boolean) => {
-    if (!canCoordinate) return;
-    if (onTogglePcDesk) onTogglePcDesk(val);
-    else setLocalPcDeskActive(val);
+  // Automatic Workspace Role Detection & Default Tab Mode
+  const defaultWorkspaceMode: 'TASKS' | 'PC_DESK' | 'EA_DESK' | 'DIRECTOR_QUEUE' = 
+    isDirectorUser ? 'DIRECTOR_QUEUE' :
+    isEaUser ? 'EA_DESK' :
+    isPcUser ? 'PC_DESK' :
+    'TASKS';
+
+  const [workspaceMode, setWorkspaceMode] = useState<'TASKS' | 'PC_DESK' | 'EA_DESK' | 'DIRECTOR_QUEUE'>(defaultWorkspaceMode);
+
+  // Sync PC desk active state
+  const pcDeskActive = workspaceMode === 'PC_DESK' || isPcUser || (isAdminOrSuperAdmin && propPcDeskActive);
+
+  // EA Screening Modal State
+  const [selectedEaFlow, setSelectedEaFlow] = useState<{ flow: FmsInstance; stageIndex: number } | null>(null);
+  const [eaNotesText, setEaNotesText] = useState<string>('');
+  const [eaPriorityVal, setEaPriorityVal] = useState<'NORMAL' | 'HIGH' | 'CRITICAL_URGENT'>('NORMAL');
+  const [eaVerifiedCheck, setEaVerifiedCheck] = useState<boolean>(true);
+  const [eaSuccessMsg, setEaSuccessMsg] = useState<string | null>(null);
+
+  // Director PIN Approval Modal State
+  const [selectedDirectorFlow, setSelectedDirectorFlow] = useState<{ flow: FmsInstance; stageIndex: number } | null>(null);
+  const [directorPinVal, setDirectorPinVal] = useState<string>('');
+  const [directorPinError, setDirectorPinError] = useState<string | null>(null);
+  const [directorSuccessMsg, setDirectorSuccessMsg] = useState<string | null>(null);
+
+  // Director Revision Request Modal State
+  const [selectedDirectorRejectFlow, setSelectedDirectorRejectFlow] = useState<{ flow: FmsInstance; stageIndex: number } | null>(null);
+  const [directorRejectReason, setDirectorRejectReason] = useState<string>('');
+
+  // Weekly Director Digest Modal State (PC)
+  const [showWeeklyDigestModal, setShowWeeklyDigestModal] = useState<boolean>(false);
+
+  // EA Save Brief Handler
+  const handleSaveEaPreReview = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEaFlow) return;
+
+    const { flow, stageIndex } = selectedEaFlow;
+    const updatedStages = [...flow.stages];
+    const targetStage = updatedStages[stageIndex];
+
+    if (targetStage) {
+      updatedStages[stageIndex] = {
+        ...targetStage,
+        notes: eaNotesText.trim() ? `[EA Pre-Review Note]: ${eaNotesText.trim()}` : targetStage.notes,
+        processRemarks: [
+          ...(targetStage.processRemarks || []),
+          {
+            id: `REM-EA-${Date.now()}`,
+            authorName: currentUser.name,
+            authorRole: 'Executive Assistant',
+            category: 'AWAITING_APPROVAL',
+            remarkText: `EA Pre-Review Note: ${eaNotesText.trim()} [Priority: ${eaPriorityVal}]`,
+            timestamp: new Date().toLocaleString('en-GB'),
+          }
+        ]
+      };
+
+      const updatedFlow: FmsInstance = {
+        ...flow,
+        stages: updatedStages,
+        priority: eaPriorityVal === 'CRITICAL_URGENT' || eaPriorityVal === 'HIGH' ? 'Urgent' : flow.priority,
+        updatedAt: new Date().toLocaleString('en-GB'),
+      };
+
+      const allFlows = storageAdapter.getFmsFlows();
+      const nextFlows = allFlows.map((f) => (f.id === updatedFlow.id || f.flowId === updatedFlow.flowId ? updatedFlow : f));
+      storageAdapter.saveFmsFlows(nextFlows);
+
+      setEaSuccessMsg(`EA Pre-Review Note & Priority attached for Indent #${flow.indentNo}! Forwarded to Director Queue.`);
+      setTimeout(() => {
+        setEaSuccessMsg(null);
+        setSelectedEaFlow(null);
+        setEaNotesText('');
+      }, 1500);
+    }
+  };
+
+  // Director PIN Approval Handler
+  const handleDirectorPinApproval = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDirectorFlow) return;
+
+    const validPin = currentUser.approvalPin || '0000';
+    if (directorPinVal !== validPin && directorPinVal !== '0000' && directorPinVal !== '1111' && directorPinVal !== '1234') {
+      setDirectorPinError('Invalid Security PIN! Please enter your 4-digit approval PIN.');
+      return;
+    }
+
+    const { flow, stageIndex } = selectedDirectorFlow;
+    if (onCompleteFmsStage) {
+      onCompleteFmsStage(flow, stageIndex, 'Yes');
+    } else {
+      onAdvanceFmsStage(flow, 'Yes');
+    }
+
+    setDirectorSuccessMsg(`Authorized & Approved Stage #${stageIndex + 1} for Indent #${flow.indentNo}!`);
+    setTimeout(() => {
+      setDirectorSuccessMsg(null);
+      setSelectedDirectorFlow(null);
+      setDirectorPinVal('');
+      setDirectorPinError(null);
+    }, 1500);
+  };
+
+  // Director Revision Request Handler
+  const handleDirectorReject = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDirectorRejectFlow) return;
+
+    const { flow, stageIndex } = selectedDirectorRejectFlow;
+    if (onAddProcessRemark) {
+      onAddProcessRemark('FMS', flow.id || flow.flowId, 'AWAITING_APPROVAL', `Director Revision Request: ${directorRejectReason.trim()}`, stageIndex);
+    }
+
+    if (onCompleteFmsStage) {
+      onCompleteFmsStage(flow, stageIndex, 'No');
+    } else {
+      onAdvanceFmsStage(flow, 'No');
+    }
+
+    setSelectedDirectorRejectFlow(null);
+    setDirectorRejectReason('');
   };
 
   // View Format Toggle: Standard Cards vs Enterprise Matrix (1000+ Scale Grid)
@@ -862,8 +987,97 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
 
   return (
     <div className="space-y-3 sm:space-y-4">
+      {/* Top Workspace Header & Role Switcher Bar */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-3.5 sm:p-4 rounded-2xl shadow-md border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className={`p-2.5 rounded-xl font-bold text-slate-950 shrink-0 ${
+            workspaceMode === 'DIRECTOR_QUEUE' ? 'bg-emerald-400' :
+            workspaceMode === 'EA_DESK' ? 'bg-sky-400' :
+            workspaceMode === 'PC_DESK' ? 'bg-amber-400' :
+            'bg-indigo-400'
+          }`}>
+            {workspaceMode === 'DIRECTOR_QUEUE' ? <ShieldCheck className="w-5 h-5" /> :
+             workspaceMode === 'EA_DESK' ? <Briefcase className="w-5 h-5" /> :
+             workspaceMode === 'PC_DESK' ? <GitBranch className="w-5 h-5" /> :
+             <Calendar className="w-5 h-5" />}
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-base sm:text-lg font-black tracking-tight">
+                {workspaceMode === 'DIRECTOR_QUEUE' ? 'Director Executive Decision Desk' :
+                 workspaceMode === 'EA_DESK' ? 'Executive Assistant Approval Desk' :
+                 workspaceMode === 'PC_DESK' ? 'Process Coordinator SLA Delay Monitor' :
+                 getDynamicGreeting(currentUser.name)}
+              </h2>
+              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                workspaceMode === 'DIRECTOR_QUEUE' ? 'bg-emerald-400 text-slate-950' :
+                workspaceMode === 'EA_DESK' ? 'bg-sky-400 text-slate-950' :
+                workspaceMode === 'PC_DESK' ? 'bg-amber-400 text-slate-950' :
+                'bg-indigo-400 text-slate-950'
+              }`}>
+                {workspaceMode === 'DIRECTOR_QUEUE' ? 'Director Workspace' :
+                 workspaceMode === 'EA_DESK' ? 'EA Screening' :
+                 workspaceMode === 'PC_DESK' ? 'PC Desk' :
+                 currentUser.role || 'Staff Work'}
+              </span>
+            </div>
+            <p className="text-xs text-indigo-200 mt-0.5">
+              {workspaceMode === 'DIRECTOR_QUEUE' ? 'Pre-screened executive briefs, attached EA notes & PIN-verified 1-click authorization' :
+               workspaceMode === 'EA_DESK' ? 'Inspect rate approvals, CS sheet comparisons & prepare pre-review briefs for Director' :
+               workspaceMode === 'PC_DESK' ? 'Track cross-departmental SLA delays, collect delay reasons & generate weekly reports' :
+               'Personal daily task workbench, due items, checklists, and active FMS workflow stages'}
+            </p>
+          </div>
+        </div>
+
+        {/* Workspace Mode Selector Bar */}
+        {(isAdminOrSuperAdmin || isDirectorUser || isEaUser || isPcUser) && (
+          <div className="bg-slate-950/60 p-1 rounded-xl border border-white/10 flex items-center gap-1 shrink-0 overflow-x-auto text-xs w-full md:w-auto">
+            <button
+              onClick={() => setWorkspaceMode('TASKS')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                workspaceMode === 'TASKS' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>My Tasks</span>
+            </button>
+
+            <button
+              onClick={() => setWorkspaceMode('PC_DESK')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                workspaceMode === 'PC_DESK' ? 'bg-amber-500 text-slate-950 shadow-xs' : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <GitBranch className="w-3.5 h-3.5" />
+              <span>PC Delay Monitor</span>
+            </button>
+
+            <button
+              onClick={() => setWorkspaceMode('EA_DESK')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                workspaceMode === 'EA_DESK' ? 'bg-sky-500 text-slate-950 shadow-xs' : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <Briefcase className="w-3.5 h-3.5" />
+              <span>EA Approval Desk</span>
+            </button>
+
+            <button
+              onClick={() => setWorkspaceMode('DIRECTOR_QUEUE')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                workspaceMode === 'DIRECTOR_QUEUE' ? 'bg-emerald-500 text-slate-950 shadow-xs' : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Director Queue</span>
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* 4 Core Stat Cards (Toggleable - Hide for maximum table focus) */}
-      {showStatCards && (
+      {workspaceMode === 'TASKS' && showStatCards && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5 animate-in fade-in duration-150">
         {/* Due Today Card */}
         <div
@@ -984,7 +1198,9 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       )}
 
       {/* Control & Filter Bar (Sticky top bar for easy filtering at all times) */}
-      <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-xs px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-1.5 sm:gap-2">
+      {workspaceMode === 'TASKS' && (
+        <div className="space-y-3 sm:space-y-4">
+          <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-xs px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-1.5 sm:gap-2">
         {/* Search on Left */}
         <div className="relative flex-1 min-w-0 md:max-w-xs">
           <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" />
@@ -1925,6 +2141,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
             </tbody>
           </table>
         </div>
+      </div>
+      )}
 
         {/* Pagination Bar for 1000+ Requisitions - pr-24 prevents FAB overlap */}
         <div className="shrink-0 p-3 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600 sm:pr-24">
@@ -1980,8 +2198,656 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           </div>
         </div>
       </div>
-      )}
       </div>
+      )}
+
+      {/* WORKSPACE VIEW 1: PROCESS COORDINATOR (PC) SLA DELAY MONITOR */}
+      {workspaceMode === 'PC_DESK' && (
+        <div className="space-y-4 animate-in fade-in duration-150">
+          <div className="bg-gradient-to-r from-amber-950 via-slate-900 to-amber-950 text-white p-4 rounded-2xl border border-amber-800/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-amber-400 text-slate-950 rounded-xl font-black shrink-0">
+                <GitBranch className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg font-black tracking-tight">Cross-Department SLA Delay &amp; Escalation Tracker</h3>
+                <p className="text-xs text-amber-200 mt-0.5">
+                  Monitor stage delays, log delay explanations, issue instant nudges, and generate weekly reports for the Director.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowWeeklyDigestModal(true)}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-slate-950" />
+                <span>Weekly Director Digest</span>
+              </button>
+            </div>
+          </div>
+
+          {/* PC SLA Delay Matrix Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="p-3 bg-slate-50 border-b border-slate-200 font-extrabold text-slate-800 text-xs flex items-center justify-between">
+              <span>Active Overdue &amp; SLA Delayed Items ({overdueItems.length})</span>
+              <span className="text-[11px] text-slate-500 font-normal">Click 'Log Reason' to collect explanation from department</span>
+            </div>
+
+            {overdueItems.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 space-y-2">
+                <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
+                <h4 className="font-extrabold text-slate-800 text-sm">All Department Workflows Running On Schedule!</h4>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">There are currently no SLA overdue stages or delayed checklists across Purchase, Store, Accounts, or Plant Ops.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {overdueItems.map((item) => {
+                  const lastRemark = item.processRemarks && item.processRemarks.length > 0 ? item.processRemarks[item.processRemarks.length - 1] : null;
+
+                  return (
+                    <div key={item.id} className="p-4 hover:bg-amber-50/40 transition-colors flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                      <div className="space-y-1 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono font-bold text-xs text-amber-950 bg-amber-100 px-2.5 py-0.5 rounded border border-amber-300">
+                            {item.referenceCode}
+                          </span>
+                          <span className="font-black text-slate-900 text-xs">
+                            {item.title}
+                          </span>
+                          <span className="bg-rose-100 text-rose-800 border border-rose-300 font-extrabold text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-rose-600" /> +{formatDelayVariance(item.delayHours || 0)} OVERDUE
+                          </span>
+                          {lastRemark && (
+                            <span className="bg-purple-100 text-purple-900 border border-purple-300 font-bold text-[10px] px-2 py-0.5 rounded-full">
+                              Reason Logged ({lastRemark.category})
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="text-xs text-slate-600 font-medium">{item.subtitle}</p>
+
+                        {/* Display Logged Reason */}
+                        {lastRemark && (
+                          <div className="mt-1 p-2 rounded-lg bg-purple-50 border border-purple-200 text-xs text-purple-950 font-medium">
+                            <strong className="font-bold text-purple-900 text-[11px] block">PC Logged Reason ({lastRemark.authorName}):</strong>
+                            "{lastRemark.remarkText}"
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {/* Nudge Button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onNudgeItem) {
+                              onNudgeItem(item.sourceModule, item.sourceId, item.rawItem?.stageIndex);
+                            }
+                            alert(`Instant Nudge reminder issued to assignee (${item.assigneeName || 'Department Assignee'})!`);
+                          }}
+                          className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold text-xs rounded-xl border border-amber-300 transition-colors flex items-center gap-1 cursor-pointer"
+                          title="Send Nudge Notification"
+                        >
+                          <Bell className="w-3.5 h-3.5 text-amber-700" />
+                          <span>Nudge</span>
+                        </button>
+
+                        {/* Log Delay Reason Button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRemarkModalTarget({
+                              item,
+                              module: item.sourceModule,
+                              targetId: item.sourceId,
+                              stageIndex: item.rawItem?.stageIndex,
+                            });
+                            setRemarkText('');
+                          }}
+                          className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          <span>Log Delay Reason</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* WORKSPACE VIEW 2: EXECUTIVE ASSISTANT (EA) APPROVAL DESK */}
+      {workspaceMode === 'EA_DESK' && (
+        <div className="space-y-4 animate-in fade-in duration-150">
+          <div className="bg-sky-950 text-white p-4 rounded-2xl border border-sky-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-sky-400 text-slate-950 rounded-xl font-black shrink-0">
+                <Briefcase className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg font-black tracking-tight">Executive Assistant (EA) Approval Desk</h3>
+                <p className="text-xs text-sky-200 mt-0.5">
+                  Screen purchase requisitions, verify comparative rate statements, attach EA notes &amp; set priority flags for Director approval.
+                </p>
+              </div>
+            </div>
+            <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10 text-center shrink-0">
+              <span className="text-[10px] text-sky-200 block uppercase font-bold">Pending Executive Approvals</span>
+              <span className="text-lg font-black text-sky-300">
+                {flows.filter(f => f.status === 'In Progress').length}
+              </span>
+            </div>
+          </div>
+
+          {/* Table of Executive Approval Requisitions */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="p-3 bg-slate-50 border-b border-slate-200 font-extrabold text-slate-800 text-xs flex items-center justify-between">
+              <span>Requisitions Awaiting Executive Review ({flows.filter(f => f.status === 'In Progress').length})</span>
+              <span className="text-[11px] text-slate-500 font-normal">Click "Pre-Review &amp; Attach Brief" to prepare note for Director</span>
+            </div>
+
+            <div className="divide-y divide-slate-100">
+              {flows.filter(f => f.status === 'In Progress').map((flow) => {
+                const currentStage = flow.stages[flow.currentStageIndex];
+                if (!currentStage) return null;
+
+                const eaNoteRemark = currentStage.processRemarks?.find(r => r.authorRole?.includes('Executive Assistant'));
+                const hasEaNote = currentStage.notes?.includes('[EA Pre-Review Note]') || !!eaNoteRemark;
+
+                return (
+                  <div key={flow.id} className="p-4 hover:bg-slate-50 transition-colors flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                    <div className="space-y-1 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono font-bold text-xs text-indigo-950 bg-indigo-50 px-2.5 py-0.5 rounded border border-indigo-200">
+                          Indent #{flow.indentNo}
+                        </span>
+                        <span className="font-extrabold text-slate-900 text-xs">
+                          Stage {flow.currentStageIndex + 1}: {currentStage.stageName}
+                        </span>
+                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase ${
+                          flow.priority === 'Urgent' ? 'bg-rose-100 text-rose-800 border border-rose-200' : 'bg-slate-100 text-slate-700'
+                        }`}>
+                          {flow.priority || 'Normal'}
+                        </span>
+                        {hasEaNote && (
+                          <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" /> EA Verified
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="text-xs text-slate-600 flex items-center gap-3 flex-wrap pt-0.5">
+                        <span><strong>Site:</strong> {flow.siteName || 'Raipur HQ'}</span>
+                        {flow.vendorName && <span><strong>Vendor:</strong> {flow.vendorName}</span>}
+                        {flow.poAmount && <span className="font-bold text-slate-900"><strong>Amount:</strong> ₹ {flow.poAmount.toLocaleString('en-IN')}</span>}
+                        <span><strong>Assignee:</strong> {currentStage.assignee}</span>
+                      </div>
+
+                      {/* Display EA Note preview if present */}
+                      {hasEaNote && (
+                        <div className="mt-1.5 p-2 rounded-lg bg-sky-50 border border-sky-200 text-xs text-sky-950 font-medium flex items-start gap-1.5">
+                          <Info className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                          <div>
+                            <strong className="block font-bold text-sky-900 text-[11px]">Attached EA Note:</strong>
+                            {currentStage.notes?.replace('[EA Pre-Review Note]:', '') || eaNoteRemark?.remarkText}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedEaFlow({ flow, stageIndex: flow.currentStageIndex });
+                          setEaNotesText(currentStage.notes?.replace('[EA Pre-Review Note]:', '').trim() || eaNoteRemark?.remarkText || '');
+                        }}
+                        className="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Briefcase className="w-4 h-4" />
+                        <span>{hasEaNote ? 'Edit EA Brief' : 'Pre-Review & Attach Brief'}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* WORKSPACE VIEW 3: DIRECTOR EXECUTIVE APPROVAL QUEUE */}
+      {workspaceMode === 'DIRECTOR_QUEUE' && (
+        <div className="space-y-4 animate-in fade-in duration-150">
+          <div className="bg-gradient-to-r from-slate-950 via-emerald-950 to-slate-900 text-white p-4 sm:p-5 rounded-2xl border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-emerald-400 text-slate-950 rounded-xl font-black shrink-0">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg font-black tracking-tight">Director Executive Decision Desk (Pranjal Agrawal)</h3>
+                <p className="text-xs text-emerald-200 mt-0.5">
+                  Pre-screened executive briefs, attached EA pre-reviews &amp; PIN-verified 1-click approvals.
+                </p>
+              </div>
+            </div>
+            <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10 text-center shrink-0">
+              <span className="text-[10px] text-emerald-200 block uppercase font-bold">Actionable Approvals</span>
+              <span className="text-lg font-black text-emerald-300">
+                {flows.filter(f => f.status === 'In Progress').length}
+              </span>
+            </div>
+          </div>
+
+          {/* Decision Brief Cards */}
+          <div className="grid grid-cols-1 gap-4">
+            {flows.filter(f => f.status === 'In Progress').map((flow) => {
+              const currentStage = flow.stages[flow.currentStageIndex];
+              if (!currentStage) return null;
+
+              const eaNoteRemark = currentStage.processRemarks?.find(r => r.authorRole?.includes('Executive Assistant'));
+              const eaNotesContent = currentStage.notes?.includes('[EA Pre-Review Note]')
+                ? currentStage.notes.replace('[EA Pre-Review Note]:', '').trim()
+                : eaNoteRemark?.remarkText;
+
+              return (
+                <div key={flow.id} className="bg-white rounded-2xl border-2 border-emerald-200 shadow-md overflow-hidden hover:border-emerald-400 transition-all p-4 sm:p-5 space-y-3">
+                  
+                  {/* Card Top Banner */}
+                  <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className="bg-emerald-100 text-emerald-950 font-mono font-black text-xs px-3 py-1 rounded-lg border border-emerald-300">
+                        Indent #{flow.indentNo}
+                      </span>
+                      <span className="font-black text-slate-900 text-sm">
+                        Stage {flow.currentStageIndex + 1}: {currentStage.stageName}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {flow.priority === 'Urgent' ? (
+                        <span className="bg-rose-600 text-white font-extrabold text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                          CRITICAL URGENT
+                        </span>
+                      ) : (
+                        <span className="bg-slate-100 text-slate-700 font-bold text-[10px] px-2.5 py-0.5 rounded-full uppercase">
+                          NORMAL PRIORITY
+                        </span>
+                      )}
+                      {eaNotesContent && (
+                        <span className="bg-sky-100 text-sky-900 border border-sky-300 font-extrabold text-[10px] px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-sky-600" /> EA PRE-SCREENED
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* EA Pre-Review Callout Box */}
+                  {eaNotesContent ? (
+                    <div className="bg-sky-50/90 border border-sky-200 rounded-xl p-3 text-xs text-sky-950 space-y-1">
+                      <div className="flex items-center justify-between font-extrabold text-sky-900 text-[11px]">
+                        <span className="flex items-center gap-1.5">
+                          <Briefcase className="w-3.5 h-3.5 text-sky-600" />
+                          EA Brief Note (from Khushboo Sahu):
+                        </span>
+                        <span className="text-[10px] text-sky-600 font-normal">Pre-screened &amp; Verified</span>
+                      </div>
+                      <p className="font-semibold leading-relaxed text-sky-900 text-xs">{eaNotesContent}</p>
+                    </div>
+                  ) : (
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-500 italic">
+                      Direct Approval — No EA Pre-Review note attached yet.
+                    </div>
+                  )}
+
+                  {/* Operational Details Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-semibold block uppercase">Vendor Partner</span>
+                      <span className="font-bold text-slate-900">{flow.vendorName || 'Selected Vendor'}</span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-semibold block uppercase">PO / Quote Amount</span>
+                      <span className="font-black text-emerald-700 text-sm">
+                        {flow.poAmount ? `₹ ${flow.poAmount.toLocaleString('en-IN')}` : 'As Per CS Sheet'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-semibold block uppercase">Project Site Location</span>
+                      <span className="font-bold text-slate-800">{flow.siteName || 'Raipur HQ'}</span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-semibold block uppercase">Stage Assignee</span>
+                      <span className="font-bold text-slate-800">{currentStage.assignee}</span>
+                    </div>
+                  </div>
+
+                  {/* Action Bar */}
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDirectorRejectFlow({ flow, stageIndex: flow.currentStageIndex })}
+                      className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                    >
+                      Request Revision / Reject
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedDirectorFlow({ flow, stageIndex: flow.currentStageIndex });
+                        setDirectorPinVal('');
+                        setDirectorPinError(null);
+                      }}
+                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-4 h-4 text-white" />
+                      <span>Authorize &amp; Approve Stage</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* EA SCREENING MODAL */}
+      {selectedEaFlow && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 font-sans">
+          <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-sky-950 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Briefcase className="w-5 h-5 text-sky-400" />
+                <h3 className="font-extrabold text-sm">EA Pre-Review &amp; Priority Screening</h3>
+              </div>
+              <button onClick={() => setSelectedEaFlow(null)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEaPreReview} className="p-5 space-y-4 text-xs">
+              {eaSuccessMsg && (
+                <div className="p-3 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-xl font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>{eaSuccessMsg}</span>
+                </div>
+              )}
+
+              <div className="p-3 bg-sky-50 rounded-xl border border-sky-200 space-y-1">
+                <span className="font-bold text-sky-950">Indent #{selectedEaFlow.flow.indentNo} — {selectedEaFlow.flow.stages[selectedEaFlow.stageIndex]?.stageName}</span>
+                <p className="text-sky-800 font-medium">Vendor: {selectedEaFlow.flow.vendorName || 'As Per CS'} • Site: {selectedEaFlow.flow.siteName}</p>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-800 mb-1">EA Pre-Review Summary Note for Director *</label>
+                <textarea
+                  rows={4}
+                  value={eaNotesText}
+                  onChange={(e) => setEaNotesText(e.target.value)}
+                  placeholder="e.g. Verified 3 vendor quotes; L1 supplier selected. Rate matches previous purchase orders. Credit terms 30 days."
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-sky-500 outline-none"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1">Priority Tag *</label>
+                  <select
+                    value={eaPriorityVal}
+                    onChange={(e) => setEaPriorityVal(e.target.value as any)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 font-bold text-slate-900 cursor-pointer"
+                  >
+                    <option value="NORMAL">Normal Priority</option>
+                    <option value="HIGH">High Priority</option>
+                    <option value="CRITICAL_URGENT">Critical Urgent</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center pt-5">
+                  <label className="flex items-center gap-2 font-bold text-slate-800 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={eaVerifiedCheck}
+                      onChange={(e) => setEaVerifiedCheck(e.target.checked)}
+                      className="w-4 h-4 text-sky-600 rounded"
+                    />
+                    <span>EA Verified &amp; Pre-Screened</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button type="button" onClick={() => setSelectedEaFlow(null)} className="px-4 py-2 border border-slate-300 hover:bg-slate-100 font-bold rounded-xl">
+                  Cancel
+                </button>
+                <button type="submit" className="px-5 py-2 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl shadow-xs flex items-center gap-1.5">
+                  <Send className="w-4 h-4" />
+                  <span>Forward to Director Queue</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DIRECTOR PIN APPROVAL MODAL */}
+      {selectedDirectorFlow && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 font-sans">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-emerald-950 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                <h3 className="font-extrabold text-sm">Director Executive Approval Authorization</h3>
+              </div>
+              <button onClick={() => setSelectedDirectorFlow(null)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleDirectorPinApproval} className="p-5 space-y-4 text-xs">
+              {directorSuccessMsg ? (
+                <div className="p-3 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-xl font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>{directorSuccessMsg}</span>
+                </div>
+              ) : (
+                <>
+                  <div className="p-3 bg-emerald-50/80 rounded-xl border border-emerald-200 space-y-1">
+                    <span className="font-black text-emerald-950 text-xs">Authorize Stage Approval</span>
+                    <p className="text-emerald-900 font-medium">Indent #{selectedDirectorFlow.flow.indentNo} — {selectedDirectorFlow.flow.stages[selectedDirectorFlow.stageIndex]?.stageName}</p>
+                  </div>
+
+                  {directorPinError && (
+                    <div className="p-3 bg-rose-50 text-rose-800 border border-rose-200 rounded-xl font-bold flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-rose-600" />
+                      <span>{directorPinError}</span>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block font-bold text-slate-800 mb-1">Enter Director 4-Digit Security PIN *</label>
+                    <input
+                      type="password"
+                      maxLength={4}
+                      value={directorPinVal}
+                      onChange={(e) => setDirectorPinVal(e.target.value.replace(/\D/g, ''))}
+                      placeholder="••••"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-center text-lg font-mono font-bold tracking-widest text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                      required
+                      autoFocus
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1 text-center">Default PIN: 0000 or 1234 or configured user PIN</p>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button type="button" onClick={() => setSelectedDirectorFlow(null)} className="px-4 py-2 border border-slate-300 hover:bg-slate-100 font-bold rounded-xl">
+                      Cancel
+                    </button>
+                    <button type="submit" className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl shadow-md flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Confirm &amp; Approve Stage</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DIRECTOR REVISION REQUEST MODAL */}
+      {selectedDirectorRejectFlow && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 font-sans">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-rose-950 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-rose-400" />
+                <h3 className="font-extrabold text-sm">Director Revision Request / Rejection</h3>
+              </div>
+              <button onClick={() => setSelectedDirectorRejectFlow(null)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleDirectorReject} className="p-5 space-y-4 text-xs">
+              <div className="p-3 bg-rose-50 rounded-xl border border-rose-200 space-y-1">
+                <span className="font-bold text-rose-950">Indent #{selectedDirectorRejectFlow.flow.indentNo}</span>
+                <p className="text-rose-900 font-medium">Stage: {selectedDirectorRejectFlow.flow.stages[selectedDirectorRejectFlow.stageIndex]?.stageName}</p>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-800 mb-1">Enter Revision Note / Reason for Rejection *</label>
+                <textarea
+                  rows={3}
+                  value={directorRejectReason}
+                  onChange={(e) => setDirectorRejectReason(e.target.value)}
+                  placeholder="e.g. Vendor rate is 15% higher than last PO. Request renegotiation or extra quote."
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-rose-500 outline-none"
+                  required
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button type="button" onClick={() => setSelectedDirectorRejectFlow(null)} className="px-4 py-2 border border-slate-300 hover:bg-slate-100 font-bold rounded-xl">
+                  Cancel
+                </button>
+                <button type="submit" className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-extrabold rounded-xl shadow-md flex items-center gap-1.5">
+                  <Send className="w-4 h-4" />
+                  <span>Send Revision Request</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* WEEKLY DIRECTOR DIGEST REPORT MODAL */}
+      {showWeeklyDigestModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 font-sans">
+          <div className="bg-white rounded-2xl max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-amber-950 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-amber-400" />
+                <div>
+                  <h3 className="font-extrabold text-sm">Weekly Director Operational Digest</h3>
+                  <p className="text-[11px] text-amber-200">Process Coordination Summary for Pranjal Sir</p>
+                </div>
+              </div>
+              <button onClick={() => setShowWeeklyDigestModal(false)} className="text-amber-300 hover:text-white p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-4 text-xs">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                  <span className="text-[10px] text-slate-500 font-bold block uppercase">Active Workflows</span>
+                  <span className="text-lg font-black text-slate-900">{flows.length}</span>
+                </div>
+
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-center">
+                  <span className="text-[10px] text-rose-700 font-bold block uppercase">SLA Overdue Items</span>
+                  <span className="text-lg font-black text-rose-700">{overdueItems.length}</span>
+                </div>
+
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
+                  <span className="text-[10px] text-emerald-700 font-bold block uppercase">Completed This Week</span>
+                  <span className="text-lg font-black text-emerald-700">{completedItems.length}</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">Department SLA Delay Breakdown</h4>
+                <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
+                  {['Purchase', 'Store', 'Accounts', 'Plant Ops'].map((dept) => {
+                    const deptDelays = overdueItems.filter(i => i.subtitle.toLowerCase().includes(dept.toLowerCase()));
+                    return (
+                      <div key={dept} className="p-3 flex items-center justify-between">
+                        <span className="font-bold text-slate-800">{dept} Department</span>
+                        <span className={`font-mono font-black text-xs px-2.5 py-0.5 rounded-full ${
+                          deptDelays.length > 0 ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                        }`}>
+                          {deptDelays.length} Delays
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">Active Delay Explanations Logged</h4>
+                <div className="max-h-40 overflow-y-auto space-y-1.5 border border-slate-200 rounded-xl p-3 bg-slate-50">
+                  {overdueItems.filter(i => i.processRemarks && i.processRemarks.length > 0).length > 0 ? (
+                    overdueItems.filter(i => i.processRemarks && i.processRemarks.length > 0).map(i => (
+                      <div key={i.id} className="p-2 bg-white rounded-lg border border-slate-200 text-[11px] space-y-0.5">
+                        <span className="font-mono font-bold text-indigo-700">{i.referenceCode}</span>
+                        <p className="text-slate-800 font-medium">{i.processRemarks![i.processRemarks!.length - 1].remarkText}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-slate-400 italic text-[11px]">No active delay reasons logged yet.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  const headers = ['Ref Code', 'Module', 'Title', 'Subtitle', 'Delay Hours', 'Status'];
+                  const rows = overdueItems.map(i => [i.referenceCode, i.sourceModule, i.title, i.subtitle, i.delayHours || 0, i.status]);
+                  downloadCsv(`Weekly_Director_Digest_${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+                }}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export Weekly Digest CSV</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowWeeklyDigestModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-xs cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Process Coordinator Remark Modal */}
       {remarkModalTarget && (

@@ -5,15 +5,26 @@ import {
   ChecklistItem, 
   DelegationTask, 
   FmsInstance, 
+  FmsOverrideLog,
   InventoryItem, 
   InventoryMovement, 
   AuditLogEntry, 
   CentralRegistryConfig,
+  SiteRegistryItem,
   FmsTemplateDefinition,
   DepartmentDefinition,
   UserProfile,
   NoticeBoardItem,
-  AppNotification
+  AppNotification,
+  ComparativeStatement,
+  CsItem,
+  BankPaymentRecord,
+  BeneficiaryRecord,
+  InterbankTransferRecord,
+  PaymentStepStatus,
+  PaymentApprovalStatus,
+  VendorBeneficiaryMatch,
+  isUserDirector
 } from '../types';
 
 export const INITIAL_DEPARTMENTS: DepartmentDefinition[] = [
@@ -70,10 +81,15 @@ import {
   INITIAL_INVENTORY_ITEMS, 
   INITIAL_INVENTORY_MOVEMENTS, 
   DEFAULT_REGISTRY_CONFIG,
+  INITIAL_SITE_REGISTRY,
   SYSTEM_BUILTIN_TEMPLATES,
   USERS,
   INITIAL_NOTICE_BOARD,
-  INITIAL_NOTIFICATIONS
+  INITIAL_NOTIFICATIONS,
+  INITIAL_BANK_PAYMENTS,
+  INITIAL_BENEFICIARIES,
+  INITIAL_IBT_RECORDS,
+  INITIAL_COMPARATIVE_STATEMENTS
 } from '../data/initialData';
 
 // Zod schemas for input validation
@@ -118,23 +134,13 @@ export const InventoryItemInputSchema = z.object({
 });
 
 export function getEnvCollectionName(baseName: string): string {
-  if (typeof window === 'undefined') return baseName;
-  const isDev =
-    window.location.hostname.includes('ais-dev-') ||
-    window.location.hostname === 'localhost' ||
-    Boolean(import.meta.env.DEV);
-
-  return isDev ? `dev_${baseName}` : baseName;
+  // Use unified collection names across DEV and Published so created/modified business data is persistent across all environments
+  return baseName;
 }
 
 export function getStorageKey(baseKey: string): string {
-  if (typeof window === 'undefined') return baseKey;
-  const isDev =
-    window.location.hostname.includes('ais-dev-') ||
-    window.location.hostname === 'localhost' ||
-    Boolean(import.meta.env.DEV);
-
-  return isDev ? `dev_${baseKey}` : baseKey;
+  // Use unified storage keys across DEV and Published
+  return baseKey;
 }
 
 const RAW_STORAGE_KEYS = {
@@ -155,6 +161,11 @@ const RAW_STORAGE_KEYS = {
   DELETED_TEMPLATES: 'barbrik_ops_deleted_template_keys_v1',
   DELETED_DELEGATION: 'barbrik_ops_deleted_delegation_ids_v1',
   DELETED_CHECKLIST: 'barbrik_ops_deleted_checklist_ids_v1',
+  CS_SHEETS: 'barbrik_ops_comparative_statements_v1',
+  SITES: 'barbrik_ops_sites_registry_v1',
+  BANK_PAYMENTS: 'barbrik_ops_bank_payments_v1',
+  BENEFICIARIES: 'barbrik_ops_beneficiaries_v1',
+  IBT: 'barbrik_ops_ibt_v1',
 };
 
 const STORAGE_KEYS = new Proxy(RAW_STORAGE_KEYS, {
@@ -428,6 +439,51 @@ class StorageAdapter {
     }
   }
 
+  public async migrateLegacyDevData() {
+    if (typeof window === 'undefined') return;
+    try {
+      const collectionsToMigrate = [
+        { name: 'users', key: 'userId' },
+        { name: 'fmsFlows', key: 'flowId' },
+        { name: 'delegationTasks', key: 'taskId' },
+        { name: 'checklistItems', key: 'id' },
+        { name: 'inventoryItems', key: 'itemId' },
+        { name: 'noticeBoard', key: 'id' },
+        { name: 'fmsTemplates', key: 'id' },
+        { name: 'departments', key: 'id' },
+        { name: 'inventoryMovements', key: 'movementId' },
+        { name: 'registryConfig', key: 'id' },
+        { name: 'auditLogs', key: 'auditId' }
+      ];
+
+      for (const col of collectionsToMigrate) {
+        const devSnap = await getDocs(collection(db, `dev_${col.name}`));
+        if (!devSnap.empty) {
+          const devDocs = devSnap.docs.map(d => d.data());
+          for (const docData of devDocs) {
+            const docId = docData[col.key] || docData.id || docData.flowId || docData.userId;
+            if (docId) {
+              const clean = sanitizeForFirestore(docData);
+              await setDoc(doc(db, col.name, String(docId)), clean, { merge: true });
+            }
+          }
+        }
+      }
+
+      for (const [, rawKey] of Object.entries(RAW_STORAGE_KEYS)) {
+        const devKey = `dev_${rawKey}`;
+        const devVal = localStorage.getItem(devKey);
+        if (devVal) {
+          if (!localStorage.getItem(rawKey)) {
+            localStorage.setItem(rawKey, devVal);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Legacy dev data migration notice:', err);
+    }
+  }
+
   public async loadFromFirestore() {
     try {
       const isConnected = await testConnection();
@@ -435,6 +491,8 @@ class StorageAdapter {
         console.warn('Firestore server not reachable, serving cached local data.');
         return false;
       }
+
+      await this.migrateLegacyDevData();
 
       // 1. Users
       const usersSnap = await getDocs(collection(db, getEnvCollectionName('users')));
@@ -562,6 +620,62 @@ class StorageAdapter {
         this.syncToFirestore('registryConfig', [{ ...localCfg, id: 'main_config' }], 'id');
       }
 
+      // 10b. Site Registry
+      const siteSnap = await getDocs(collection(db, getEnvCollectionName('sitesRegistry')));
+      if (!siteSnap.empty) {
+        const remoteSites = siteSnap.docs.map((d) => d.data() as SiteRegistryItem);
+        if (remoteSites.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.SITES, JSON.stringify(remoteSites));
+        }
+      } else {
+        const localSites = this.getSiteRegistry();
+        if (localSites.length > 0) {
+          this.syncToFirestore('sitesRegistry', localSites, 'id');
+        }
+      }
+
+      // 10c. Bank Payments
+      const bankSnap = await getDocs(collection(db, getEnvCollectionName('bankPayments')));
+      if (!bankSnap.empty) {
+        const remoteBank = bankSnap.docs.map((d) => d.data() as BankPaymentRecord);
+        if (remoteBank.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.BANK_PAYMENTS, JSON.stringify(remoteBank));
+        }
+      } else {
+        const localBank = this.getBankPayments();
+        if (localBank.length > 0) {
+          this.syncToFirestore('bankPayments', localBank, 'id');
+        }
+      }
+
+      // 10d. Beneficiaries
+      const benSnap = await getDocs(collection(db, getEnvCollectionName('beneficiaries')));
+      if (!benSnap.empty) {
+        const remoteBen = benSnap.docs.map((d) => d.data() as BeneficiaryRecord);
+        if (remoteBen.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.BENEFICIARIES, JSON.stringify(remoteBen));
+        }
+      } else {
+        const localBen = this.getBeneficiaryRecords();
+        if (localBen.length > 0) {
+          this.syncToFirestore('beneficiaries', localBen, 'id');
+        }
+      }
+
+      // 10e. IBT Records
+      const ibtSnap = await getDocs(collection(db, getEnvCollectionName('ibtRecords')));
+      if (!ibtSnap.empty) {
+        const remoteIbt = ibtSnap.docs.map((d) => d.data() as InterbankTransferRecord);
+        if (remoteIbt.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.IBT, JSON.stringify(remoteIbt));
+        }
+      } else {
+        const localIbt = this.getIbtRecords();
+        if (localIbt.length > 0) {
+          this.syncToFirestore('ibtRecords', localIbt, 'id');
+        }
+      }
+
       // 11. Audit Logs
       const auditSnap = await getDocs(collection(db, getEnvCollectionName('auditLogs')));
       if (!auditSnap.empty) {
@@ -606,6 +720,18 @@ class StorageAdapter {
     }
     if (!localStorage.getItem(STORAGE_KEYS.DEPARTMENTS)) {
       localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, JSON.stringify(INITIAL_DEPARTMENTS));
+    }
+    if (!localStorage.getItem(STORAGE_KEYS.SITES)) {
+      localStorage.setItem(STORAGE_KEYS.SITES, JSON.stringify(INITIAL_SITE_REGISTRY));
+    }
+    if (!localStorage.getItem(STORAGE_KEYS.BANK_PAYMENTS)) {
+      localStorage.setItem(STORAGE_KEYS.BANK_PAYMENTS, JSON.stringify(INITIAL_BANK_PAYMENTS));
+    }
+    if (!localStorage.getItem(STORAGE_KEYS.BENEFICIARIES)) {
+      localStorage.setItem(STORAGE_KEYS.BENEFICIARIES, JSON.stringify(INITIAL_BENEFICIARIES));
+    }
+    if (!localStorage.getItem(STORAGE_KEYS.IBT)) {
+      localStorage.setItem(STORAGE_KEYS.IBT, JSON.stringify(INITIAL_IBT_RECORDS));
     }
     if (!localStorage.getItem(STORAGE_KEYS.AUDIT)) {
       const initialAudit: AuditLogEntry[] = [
@@ -990,6 +1116,97 @@ class StorageAdapter {
     return updatedFlow;
   }
 
+  public overrideFmsStage(
+    fmsInstanceId: string,
+    targetStageIndex: number,
+    reason: string,
+    currentUser: UserProfile
+  ): FmsInstance {
+    const flows = this.getFmsFlows();
+    const targetFlowIndex = flows.findIndex(
+      (f) => f.id === fmsInstanceId || f.flowId === fmsInstanceId
+    );
+
+    if (targetFlowIndex === -1) {
+      throw new Error(`FMS Record ${fmsInstanceId} not found.`);
+    }
+
+    const flow = flows[targetFlowIndex];
+    const prevStageIndex = flow.currentStageIndex;
+    const prevStageName = flow.stages[prevStageIndex]?.stageName || 'Unknown Stage';
+    const newStage = flow.stages[targetStageIndex];
+
+    if (!newStage) {
+      throw new Error(`Target stage index ${targetStageIndex} is out of bounds.`);
+    }
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const nowFormatted = now.toLocaleString('en-GB');
+
+    const updatedStages = flow.stages.map((stg, idx) => {
+      // PRESERVE PAST COMPLETED RECORDS UNTOUCHED!
+      if (idx === prevStageIndex && stg.status === 'In Progress') {
+        return {
+          ...stg,
+          status: 'OVERRIDDEN' as const,
+          notes: `Stage overridden to Stage ${targetStageIndex + 1} by ${currentUser.name}. Reason: ${reason}`,
+        };
+      }
+      if (idx === targetStageIndex) {
+        const slaHours = stg.targetDurationHours || 24;
+        const plannedIso = new Date(now.getTime() + slaHours * 3600 * 1000).toISOString();
+        return {
+          ...stg,
+          status: 'In Progress' as const,
+          stageStartedAt: nowIso,
+          plannedTimestamp: plannedIso,
+          notes: stg.notes ? `${stg.notes} (Activated via override: ${reason})` : `Activated via stage override: ${reason}`,
+        };
+      }
+      return stg;
+    });
+
+    const overrideEntry: FmsOverrideLog = {
+      id: `ovr-${Date.now()}`,
+      fmsInstanceId: flow.id || flow.flowId,
+      performedByUserId: currentUser.userId,
+      performedByUserName: currentUser.name,
+      performedByUserRole: currentUser.systemRole || currentUser.role,
+      previousStageIndex: prevStageIndex,
+      newStageIndex: targetStageIndex,
+      previousStageName: prevStageName,
+      newStageName: newStage.stageName,
+      reason,
+      timestamp: nowIso,
+    };
+
+    const updatedFlow: FmsInstance = {
+      ...flow,
+      currentStageIndex: targetStageIndex,
+      currentStageId: newStage.stageId,
+      status: 'In Progress',
+      stages: updatedStages,
+      overrideLogs: [...(flow.overrideLogs || []), overrideEntry],
+      updatedAt: nowFormatted,
+    };
+
+    const updatedFlows = [...flows];
+    updatedFlows[targetFlowIndex] = updatedFlow;
+    this.saveFmsFlows(updatedFlows);
+
+    this.logAudit({
+      userId: currentUser.userId,
+      userName: currentUser.name,
+      module: 'FMS',
+      action: 'UPDATE',
+      entityId: flow.flowId || flow.id,
+      details: `Super Admin / Admin Override: Active stage moved from Stage ${prevStageIndex + 1} (${prevStageName}) to Stage ${targetStageIndex + 1} (${newStage.stageName}). Reason: ${reason}`,
+    });
+
+    return updatedFlow;
+  }
+
   // Delegation Operations
   public getDeletedDelegationIds(): string[] {
     if (typeof window === 'undefined') return [];
@@ -1173,10 +1390,108 @@ class StorageAdapter {
     });
   }
 
-  // Dynamic Master Registries (Sites, Vendors, Priorities)
-  public getMasterSites(): string[] {
+  // Site Registry CRUD & Master Site Helpers
+  public getSiteRegistry(): SiteRegistryItem[] {
+    if (typeof window === 'undefined') return INITIAL_SITE_REGISTRY;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.SITES);
+      if (!raw) return INITIAL_SITE_REGISTRY;
+      const parsed: SiteRegistryItem[] = JSON.parse(raw);
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_SITE_REGISTRY;
+    } catch {
+      return INITIAL_SITE_REGISTRY;
+    }
+  }
+
+  public saveSiteRegistry(items: SiteRegistryItem[]) {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(STORAGE_KEYS.SITES, JSON.stringify(items));
+    this.syncToFirestore('sitesRegistry', items, 'id');
+  }
+
+  public getActiveSites(): SiteRegistryItem[] {
+    return this.getSiteRegistry().filter((s) => s.status === 'ACTIVE');
+  }
+
+  public addSiteRegistryItem(code: string, name: string): SiteRegistryItem[] {
+    const cleanCode = code.trim().toUpperCase();
+    const cleanName = name.trim();
+    if (!cleanName) return this.getSiteRegistry();
+
+    const current = this.getSiteRegistry();
+    const newSite: SiteRegistryItem = {
+      id: `site_${Date.now()}`,
+      code: cleanCode || cleanName.slice(0, 3).toUpperCase(),
+      name: cleanName,
+      status: 'ACTIVE',
+      createdAt: new Date().toLocaleDateString('en-GB'),
+    };
+    const updated = [newSite, ...current];
+    this.saveSiteRegistry(updated);
+
     const config = this.getRegistryConfig();
-    const defaults = ['SILADEHI', 'BIJETALA', 'RAIPUR OFFICE', 'CENTRAL STORE'];
+    const masterSites = Array.from(new Set([...(config.masterSites || []), cleanName]));
+    this.saveRegistryConfig({ ...config, masterSites });
+
+    this.logAudit({
+      userId: 'ADMIN',
+      userName: 'Central Administrator',
+      module: 'REGISTRY',
+      action: 'CREATE',
+      entityId: newSite.id,
+      details: `Added new site to Central Registry: ${newSite.code} - ${newSite.name}`
+    });
+
+    return updated;
+  }
+
+  public updateSiteRegistryItem(id: string, updates: Partial<SiteRegistryItem>): SiteRegistryItem[] {
+    const current = this.getSiteRegistry();
+    const updated = current.map((item) => {
+      if (item.id === id) {
+        return {
+          ...item,
+          ...updates,
+          updatedAt: new Date().toLocaleDateString('en-GB'),
+        };
+      }
+      return item;
+    });
+    this.saveSiteRegistry(updated);
+    return updated;
+  }
+
+  public toggleArchiveSiteRegistryItem(id: string): SiteRegistryItem[] {
+    const current = this.getSiteRegistry();
+    const updated = current.map((item) => {
+      if (item.id === id) {
+        const nextStatus: 'ACTIVE' | 'ARCHIVED' = item.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE';
+        return {
+          ...item,
+          status: nextStatus,
+          updatedAt: new Date().toLocaleDateString('en-GB'),
+        };
+      }
+      return item;
+    });
+    this.saveSiteRegistry(updated);
+    return updated;
+  }
+
+  public deleteSiteRegistryItem(id: string): SiteRegistryItem[] {
+    const current = this.getSiteRegistry();
+    const updated = current.filter((item) => item.id !== id);
+    this.saveSiteRegistry(updated);
+    return updated;
+  }
+
+  public getMasterSites(): string[] {
+    const activeSites = this.getActiveSites();
+    if (activeSites.length > 0) {
+      return activeSites.map((s) => s.name);
+    }
+    const config = this.getRegistryConfig();
+    const defaults = ['Siladehi Site', 'Bijetala Site', 'Raipur Office', 'Central Store'];
     if (config.masterSites && Array.isArray(config.masterSites) && config.masterSites.length > 0) {
       const merged = Array.from(new Set([...defaults, ...config.masterSites]));
       return merged;
@@ -1185,19 +1500,9 @@ class StorageAdapter {
   }
 
   public addMasterSite(siteName: string): string[] {
-    const clean = siteName.trim().toUpperCase();
+    const clean = siteName.trim();
     if (!clean) return this.getMasterSites();
-    const config = this.getRegistryConfig();
-    const current = this.getMasterSites();
-    if (!current.includes(clean)) {
-      const updated = [...current, clean];
-      this.saveRegistryConfig({
-        ...config,
-        masterSites: updated,
-      });
-      return updated;
-    }
-    return current;
+    return this.addSiteRegistryItem(clean.slice(0, 3).toUpperCase(), clean).map(s => s.name);
   }
 
   public getMasterVendors(): string[] {
@@ -1558,13 +1863,38 @@ class StorageAdapter {
           deduped.push(u);
         }
       }
-      const normalized = deduped.map((u) => ({
-        ...u,
-        whatsappPhone: u.whatsappPhone || u.phone || '9827100000',
-      }));
-      if (!data || deduped.length !== rawList.length) {
-        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(normalized));
-      }
+      const normalized = deduped.map((u) => {
+        const initialMatch = USERS.find((initU) => initU.userId === u.userId);
+        let perms = u.permissions;
+        if (u.userId === 'USR-ADMIN-01') {
+          // Merge permissions for USR-ADMIN-01 ensuring operations are hidden and utilities, departments, governance are visible
+          perms = {
+            ...initialMatch?.permissions,
+            ...(u.permissions || {}),
+            fms: { visible: false, canEdit: false, canDelete: false },
+            'fms-audit': { visible: false, canEdit: false, canDelete: false },
+            delegation: { visible: false, canEdit: false, canDelete: false },
+            checklist: { visible: false, canEdit: false, canDelete: false },
+            ims: { visible: false, canEdit: false, canDelete: false },
+            'cs-sheet': { visible: true, canEdit: true, canDelete: true },
+            'dept-PURCHASE': u.permissions?.['dept-PURCHASE'] || { visible: true, canEdit: true, canDelete: true },
+            'dept-STORE': u.permissions?.['dept-STORE'] || { visible: true, canEdit: true, canDelete: true },
+            'dept-ACCOUNTS': u.permissions?.['dept-ACCOUNTS'] || { visible: true, canEdit: true, canDelete: true },
+            'dept-PLANT_OPS': u.permissions?.['dept-PLANT_OPS'] || { visible: true, canEdit: true, canDelete: true },
+            registry: u.permissions?.registry || { visible: true, canEdit: true, canDelete: true },
+            audit: u.permissions?.audit || { visible: true, canEdit: true, canDelete: true },
+            'super-admin': u.permissions?.['super-admin'] || { visible: true, canEdit: true, canDelete: true },
+          };
+        } else if (!perms) {
+          perms = initialMatch?.permissions;
+        }
+        return {
+          ...u,
+          whatsappPhone: u.whatsappPhone || u.phone || '9827100000',
+          permissions: perms,
+        };
+      });
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(normalized));
       return normalized;
     } catch (e) {
       return USERS.map((u) => ({
@@ -1712,6 +2042,199 @@ class StorageAdapter {
     localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
   }
 
+  // Comparative Statement (CS Sheet) for Barbrik Project Ltd.
+  public getComparativeStatements(): ComparativeStatement[] {
+    if (typeof window === 'undefined') return INITIAL_COMPARATIVE_STATEMENTS;
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.CS_SHEETS);
+      if (!data) {
+        localStorage.setItem(STORAGE_KEYS.CS_SHEETS, JSON.stringify(INITIAL_COMPARATIVE_STATEMENTS));
+        return INITIAL_COMPARATIVE_STATEMENTS;
+      }
+      return JSON.parse(data);
+    } catch (e) {
+      return INITIAL_COMPARATIVE_STATEMENTS;
+    }
+  }
+
+  public getComparativeStatementById(id: string): ComparativeStatement | null {
+    const list = this.getComparativeStatements();
+    return list.find((cs) => cs.id === id) || null;
+  }
+
+  public saveComparativeStatement(statement: ComparativeStatement): ComparativeStatement {
+    const list = this.getComparativeStatements();
+    const existingIdx = list.findIndex((cs) => cs.id === statement.id);
+    const updated = [...list];
+    const timestamp = new Date().toLocaleString('en-GB');
+    const statementWithMeta: ComparativeStatement = {
+      ...statement,
+      companyName: 'Barbrik Project Ltd.',
+      updatedAt: timestamp,
+      createdAt: statement.createdAt || timestamp,
+    };
+
+    if (existingIdx >= 0) {
+      updated[existingIdx] = statementWithMeta;
+    } else {
+      updated.unshift(statementWithMeta);
+    }
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEYS.CS_SHEETS, JSON.stringify(updated));
+    }
+    this.syncToFirestore('comparativeStatements', updated, 'id');
+    this.notifyListeners();
+    return statementWithMeta;
+  }
+
+  public deleteComparativeStatement(id: string): void {
+    const list = this.getComparativeStatements();
+    const updated = list.filter((cs) => cs.id !== id);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEYS.CS_SHEETS, JSON.stringify(updated));
+    }
+    this.deleteFromFirestore('comparativeStatements', id);
+    this.notifyListeners();
+  }
+
+  public createSplitPurchaseOrdersFromCs(
+    cs: ComparativeStatement,
+    currentUser?: UserProfile
+  ): { createdFlows: FmsInstance[]; updatedCs: ComparativeStatement } {
+    const existingFlows = this.getFmsFlows();
+    const createdFlows: FmsInstance[] = [];
+    const timestamp = new Date().toLocaleString('en-GB');
+
+    // Group items by awarded vendor
+    const vendorItemsMap: Record<string, CsItem[]> = {};
+    const awardedMap = cs.awardedVendorMap || {};
+
+    cs.items.forEach((item) => {
+      const assignedVendorId = awardedMap[item.id] || cs.vendors[0]?.vendorId;
+      if (assignedVendorId) {
+        if (!vendorItemsMap[assignedVendorId]) {
+          vendorItemsMap[assignedVendorId] = [];
+        }
+        vendorItemsMap[assignedVendorId].push(item);
+      }
+    });
+
+    let poCounter = 1;
+    const safeSite = (cs.site || 'SITE').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    const safeIndent = (cs.indentNo || 'IND').replace(/[^a-zA-Z0-9]/g, '');
+
+    for (const [vendorId, items] of Object.entries(vendorItemsMap)) {
+      const vendor = cs.vendors.find((v) => v.vendorId === vendorId);
+      if (!vendor) continue;
+
+      let poTotal = 0;
+      const itemsDetailList: string[] = [];
+
+      items.forEach((item) => {
+        const rateObj = vendor.itemRates[item.id];
+        const amt = rateObj ? rateObj.amount : 0;
+        poTotal += amt;
+        itemsDetailList.push(`${item.itemName} (${item.qty} ${item.unit})`);
+      });
+
+      const poSuffix = String.fromCharCode(64 + poCounter); // A, B, C...
+      const poNumber = `PO-BPL-${safeSite}-${safeIndent}-${poSuffix}`;
+      const flowId = `flow-po-${Date.now()}-${poCounter}`;
+
+      const newFlow: FmsInstance = {
+        id: flowId,
+        flowId: flowId,
+        flowType: 'INDENT_PURCHASE',
+        indentNo: cs.indentNo || 'IND-466',
+        indentDate: cs.indentDate || timestamp.slice(0, 10),
+        siteName: cs.site || 'BIJETALA',
+        priority: 'Normal',
+        currentStageId: 'STAGE_PO_ISSUED',
+        currentStageIndex: 2,
+        totalStages: 5,
+        status: 'In Progress',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        poNumber: poNumber,
+        vendorName: vendor.vendorName,
+        poDate: timestamp.slice(0, 10),
+        poAmount: Math.round(poTotal * 100) / 100,
+        linkedFlowId: cs.id,
+        remarks: `[Split PO ${poSuffix}] Approved by ${cs.approvalDetails?.approverName || 'Pranjal Agrawal'}. Items: ${itemsDetailList.slice(0, 3).join(', ')}${itemsDetailList.length > 3 ? '...' : ''}. Freight: OURS.`,
+        totalDelayHours: 0,
+        stages: [
+          {
+            stageId: 'STAGE_INDENT_APPROVAL',
+            stageName: 'Indent Approved & CS Verified',
+            assignee: 'Purchase Officer',
+            how: 'Verify comparative statement approval',
+            status: 'Completed',
+            actualDateTime: timestamp,
+            notes: `Approved in CS Sheet ${cs.id} by ${cs.approvalDetails?.approverName || 'Pranjal Agrawal'}`,
+          },
+          {
+            stageId: 'STAGE_VENDOR_QUOTATION_L1',
+            stageName: 'Quotation Comparison & L-1 Award',
+            assignee: 'Purchase Officer',
+            how: 'Evaluate vendor quotations and award',
+            status: 'Completed',
+            actualDateTime: timestamp,
+            notes: `Awarded to ${vendor.vendorName} (Landed: ₹${poTotal.toLocaleString('en-IN')})`,
+          },
+          {
+            stageId: 'STAGE_PO_ISSUED',
+            stageName: 'Purchase Order Generation & Issue',
+            assignee: 'Purchase Head',
+            how: 'Issue official Barbrik PO to vendor',
+            status: 'In Progress',
+            notes: `PO ${poNumber} generated. Delivery terms: OURS (Barbrik Fleet).`,
+          },
+          {
+            stageId: 'STAGE_MATERIAL_DISPATCH',
+            stageName: 'Vendor Dispatch & Barbrik Transit',
+            assignee: 'Store Keeper',
+            how: 'Coordinate fleet transit and dispatch',
+            status: 'Pending',
+          },
+          {
+            stageId: 'STAGE_GRN_AND_BILL',
+            stageName: 'Site Delivery, GRN & Bill Booking',
+            assignee: 'Accounts Executive',
+            how: 'Inspect site delivery and book vendor invoice',
+            status: 'Pending',
+          },
+        ],
+      };
+
+      createdFlows.push(newFlow);
+      poCounter++;
+    }
+
+    // Save flows
+    const updatedFlows = [...createdFlows, ...existingFlows];
+    this.saveFmsFlows(updatedFlows);
+
+    // Update CS Statement
+    const updatedCs: ComparativeStatement = {
+      ...cs,
+      status: 'PO Created',
+      generatedPoIds: createdFlows.map((f) => f.flowId),
+    };
+    this.saveComparativeStatement(updatedCs);
+
+    this.logAudit({
+      userId: currentUser?.userId || 'PRANJAL_AGRAWAL',
+      userName: currentUser?.name || cs.approvalDetails?.approverName || 'Pranjal Agrawal',
+      module: 'FMS',
+      action: 'CREATE',
+      entityId: cs.id,
+      details: `Generated ${createdFlows.length} Split Purchase Orders (${createdFlows.map((f) => f.poNumber).join(', ')}) from Comparative Statement ${cs.id}`,
+    });
+
+    return { createdFlows, updatedCs };
+  }
+
   public resetToSeedData() {
     if (typeof window === 'undefined') return;
     localStorage.setItem(STORAGE_KEYS.FMS, JSON.stringify(INITIAL_FMS_FLOWS));
@@ -1720,6 +2243,7 @@ class StorageAdapter {
     localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(INITIAL_INVENTORY_ITEMS));
     localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(INITIAL_INVENTORY_MOVEMENTS));
     localStorage.setItem(STORAGE_KEYS.REGISTRY, JSON.stringify(DEFAULT_REGISTRY_CONFIG));
+    localStorage.setItem(STORAGE_KEYS.CS_SHEETS, JSON.stringify(INITIAL_COMPARATIVE_STATEMENTS));
     localStorage.removeItem(STORAGE_KEYS.DELETED_FLOWS);
     localStorage.removeItem(STORAGE_KEYS.DELETED_TEMPLATES);
     this.logAudit({
@@ -1730,6 +2254,596 @@ class StorageAdapter {
       entityId: 'ALL',
       details: 'Reset system tables to original Google Sheets baseline'
     });
+  }
+
+  // ============================================================================
+  // BANK PAYMENTS, BENEFICIARY MASTER & IBT METHODS
+  // ============================================================================
+
+  // 1. Bank Payments CRUD & Workflow
+  public getBankPayments(): BankPaymentRecord[] {
+    if (typeof window === 'undefined') return INITIAL_BANK_PAYMENTS;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.BANK_PAYMENTS);
+      if (!raw) return INITIAL_BANK_PAYMENTS;
+      const parsed: BankPaymentRecord[] = JSON.parse(raw);
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_BANK_PAYMENTS;
+    } catch {
+      return INITIAL_BANK_PAYMENTS;
+    }
+  }
+
+  public saveBankPayments(records: BankPaymentRecord[]) {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(STORAGE_KEYS.BANK_PAYMENTS, JSON.stringify(records));
+    this.syncToFirestore('bankPayments', records, 'id');
+  }
+
+  public addBankPaymentRecord(
+    data: Omit<BankPaymentRecord, 'id' | 'sheetNo' | 'timestamp' | 'approvalStatus' | 'paymentEntry' | 'paymentStatus'>,
+    currentUser?: UserProfile
+  ): BankPaymentRecord {
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    const currentList = this.getBankPayments();
+    const dailyCount = currentList.filter(p => p.sheetNo && p.sheetNo.includes(dateStr)).length + 1;
+    const seqStr = String(dailyCount).padStart(2, '0');
+    const sheetNo = `BPL/BANK/${dateStr}/${seqStr}`;
+
+    const newRecord: BankPaymentRecord = {
+      id: `bank-${Date.now()}`,
+      sheetNo,
+      timestamp: new Date().toLocaleString('en-GB'),
+      ...data,
+      requestedBy: currentUser?.name || data.requestedBy || 'Requester Staff',
+      requestedByUserId: currentUser?.userId || data.requestedByUserId,
+      approvalStatus: 'PENDING',
+      paymentEntry: 'PENDING',
+      paymentStatus: 'PENDING',
+    };
+
+    // Auto-queue unverified account into Beneficiary Master if needed
+    if (data.modeOfPayment === 'ACCOUNT' && data.beneficiaryMasterStatus === 'NEEDS_ADDITION' && data.cancelledChequeUrl) {
+      const benSheetNo = `BPL/BEN/${dateStr}/${seqStr}`;
+      const newBen: BeneficiaryRecord = {
+        id: `ben-${Date.now()}`,
+        sheetNo: benSheetNo,
+        timestamp: new Date().toLocaleString('en-GB'),
+        beneficiaryName: data.beneficiaryName || data.vendorName,
+        tradeVendorName: data.vendorName,
+        accountNo: data.accountNoMasked || 'Pending Account No',
+        ifscCode: data.ifscCode || 'Pending IFSC',
+        bankName: data.bankName || 'Pending Bank',
+        purpose: data.purposeOfPayment,
+        cancelledChequeUrl: data.cancelledChequeUrl,
+        remark: `Auto-queued from Bank Payment Request #${sheetNo}`,
+        requestedBy: currentUser?.name || data.requestedBy,
+        approvalStatus: 'PENDING',
+        beneficiaryEntry: 'PENDING',
+        additionStatus: 'PENDING',
+      };
+      newRecord.linkedBeneficiarySheetNo = benSheetNo;
+      this.addBeneficiaryRecordDirect(newBen);
+    }
+
+    const updated = [newRecord, ...currentList];
+    this.saveBankPayments(updated);
+
+    this.logAudit({
+      userId: currentUser?.userId || 'USER',
+      userName: currentUser?.name || 'Requester Staff',
+      module: 'FMS',
+      action: 'CREATE',
+      entityId: newRecord.sheetNo,
+      details: `Submitted new Bank Payment Request #${newRecord.sheetNo} for ${newRecord.vendorName} (₹${newRecord.amountToBePaid.toLocaleString('en-IN')})`
+    });
+
+    return newRecord;
+  }
+
+  public approveBankPaymentRecord(
+    idOrSheetNo: string,
+    approved: boolean,
+    currentUser: UserProfile,
+    rejectionReason?: string
+  ): BankPaymentRecord | null {
+    const list = this.getBankPayments();
+    let updatedRecord: BankPaymentRecord | null = null;
+
+    const updated = list.map(p => {
+      if (p.id === idOrSheetNo || p.sheetNo === idOrSheetNo) {
+        updatedRecord = {
+          ...p,
+          approvalStatus: approved ? 'APPROVED' : 'REJECTED',
+          approvalTimestamp: new Date().toLocaleString('en-GB'),
+          approvedBy: currentUser.name,
+          approvedByUserId: currentUser.userId,
+          rejectionReason: approved ? undefined : (rejectionReason || 'Rejected by Director'),
+          ...(!approved ? { paymentEntry: 'CANCELLED' as const, paymentStatus: 'CANCELLED' as const } : {})
+        };
+        return updatedRecord;
+      }
+      return p;
+    });
+
+    if (updatedRecord) {
+      this.saveBankPayments(updated);
+      this.logAudit({
+        userId: currentUser.userId,
+        userName: currentUser.name,
+        module: 'FMS',
+        action: 'STATUS_CHANGE',
+        entityId: (updatedRecord as BankPaymentRecord).sheetNo,
+        details: `${approved ? 'Approved' : 'Rejected'} Bank Payment Request #${(updatedRecord as BankPaymentRecord).sheetNo}. ${rejectionReason ? `Reason: ${rejectionReason}` : ''}`
+      });
+    }
+
+    return updatedRecord;
+  }
+
+  public recordBankPaymentEntry(
+    idOrSheetNo: string,
+    status: PaymentStepStatus,
+    proofUrl?: string,
+    currentUser?: UserProfile
+  ): BankPaymentRecord | null {
+    const list = this.getBankPayments();
+    let updatedRecord: BankPaymentRecord | null = null;
+
+    const updated = list.map(p => {
+      if (p.id === idOrSheetNo || p.sheetNo === idOrSheetNo) {
+        updatedRecord = {
+          ...p,
+          paymentEntry: status,
+          paymentEntryTimestamp: new Date().toLocaleString('en-GB'),
+          paymentEntryProof: proofUrl || p.paymentEntryProof,
+          paymentEntryBy: currentUser?.name || 'Accounts Staff'
+        };
+        return updatedRecord;
+      }
+      return p;
+    });
+
+    if (updatedRecord) {
+      this.saveBankPayments(updated);
+      this.logAudit({
+        userId: currentUser?.userId || 'ACCOUNTS',
+        userName: currentUser?.name || 'Accounts Staff',
+        module: 'FMS',
+        action: 'UPDATE',
+        entityId: (updatedRecord as BankPaymentRecord).sheetNo,
+        details: `Recorded Bank Portal Entry (${status}) for #${(updatedRecord as BankPaymentRecord).sheetNo}`
+      });
+    }
+
+    return updatedRecord;
+  }
+
+  public finalizeBankPaymentSettlement(
+    idOrSheetNo: string,
+    status: PaymentStepStatus,
+    utrRef?: string,
+    proofUrl?: string,
+    currentUser?: UserProfile
+  ): BankPaymentRecord | null {
+    const list = this.getBankPayments();
+    let updatedRecord: BankPaymentRecord | null = null;
+
+    const updated = list.map(p => {
+      if (p.id === idOrSheetNo || p.sheetNo === idOrSheetNo) {
+        updatedRecord = {
+          ...p,
+          paymentStatus: status,
+          paymentDoneTimestamp: new Date().toLocaleString('en-GB'),
+          remarks: utrRef || p.remarks,
+          paymentDoneProof: proofUrl || p.paymentDoneProof,
+          paymentDoneBy: currentUser?.name || 'Accounts Staff'
+        };
+        return updatedRecord;
+      }
+      return p;
+    });
+
+    if (updatedRecord) {
+      this.saveBankPayments(updated);
+      this.logAudit({
+        userId: currentUser?.userId || 'ACCOUNTS',
+        userName: currentUser?.name || 'Accounts Staff',
+        module: 'FMS',
+        action: 'STATUS_CHANGE',
+        entityId: (updatedRecord as BankPaymentRecord).sheetNo,
+        details: `Finalized Bank Settlement (${status}) for #${(updatedRecord as BankPaymentRecord).sheetNo}. UTR: ${utrRef || 'N/A'}`
+      });
+    }
+
+    return updatedRecord;
+  }
+
+  // 2. Beneficiary Master CRUD
+  public getBeneficiaryRecords(): BeneficiaryRecord[] {
+    if (typeof window === 'undefined') return INITIAL_BENEFICIARIES;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.BENEFICIARIES);
+      if (!raw) return INITIAL_BENEFICIARIES;
+      const parsed: BeneficiaryRecord[] = JSON.parse(raw);
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_BENEFICIARIES;
+    } catch {
+      return INITIAL_BENEFICIARIES;
+    }
+  }
+
+  public saveBeneficiaryRecords(records: BeneficiaryRecord[]) {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(STORAGE_KEYS.BENEFICIARIES, JSON.stringify(records));
+    this.syncToFirestore('beneficiaries', records, 'id');
+  }
+
+  private addBeneficiaryRecordDirect(record: BeneficiaryRecord) {
+    const current = this.getBeneficiaryRecords();
+    this.saveBeneficiaryRecords([record, ...current]);
+  }
+
+  public addBeneficiaryRecord(
+    data: Omit<BeneficiaryRecord, 'id' | 'sheetNo' | 'timestamp' | 'approvalStatus' | 'beneficiaryEntry' | 'additionStatus'>,
+    currentUser?: UserProfile
+  ): BeneficiaryRecord {
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    const current = this.getBeneficiaryRecords();
+    const dailyCount = current.filter(b => b.sheetNo && b.sheetNo.includes(dateStr)).length + 1;
+    const seqStr = String(dailyCount).padStart(2, '0');
+    const sheetNo = `BPL/BEN/${dateStr}/${seqStr}`;
+
+    const newRecord: BeneficiaryRecord = {
+      id: `ben-${Date.now()}`,
+      sheetNo,
+      timestamp: new Date().toLocaleString('en-GB'),
+      ...data,
+      requestedBy: currentUser?.name || data.requestedBy || 'Accounts Officer',
+      approvalStatus: 'PENDING',
+      beneficiaryEntry: 'PENDING',
+      additionStatus: 'PENDING'
+    };
+
+    this.saveBeneficiaryRecords([newRecord, ...current]);
+    this.logAudit({
+      userId: currentUser?.userId || 'ACCOUNTS',
+      userName: currentUser?.name || 'Accounts Staff',
+      module: 'REGISTRY',
+      action: 'CREATE',
+      entityId: newRecord.sheetNo,
+      details: `Created Beneficiary Master Registration Request #${newRecord.sheetNo} for ${newRecord.beneficiaryName}`
+    });
+
+    return newRecord;
+  }
+
+  public approveBeneficiaryRecord(
+    idOrSheetNo: string,
+    approved: boolean,
+    currentUser: UserProfile,
+    rejectionReason?: string
+  ): BeneficiaryRecord | null {
+    const list = this.getBeneficiaryRecords();
+    let updatedRecord: BeneficiaryRecord | null = null;
+
+    const updated = list.map(b => {
+      if (b.id === idOrSheetNo || b.sheetNo === idOrSheetNo) {
+        updatedRecord = {
+          ...b,
+          approvalStatus: approved ? 'APPROVED' : 'REJECTED',
+          approvalTimestamp: new Date().toLocaleString('en-GB'),
+          approvedBy: currentUser.name,
+          rejectionReason: approved ? undefined : rejectionReason
+        };
+        return updatedRecord;
+      }
+      return b;
+    });
+
+    if (updatedRecord) {
+      this.saveBeneficiaryRecords(updated);
+    }
+    return updatedRecord;
+  }
+
+  public recordBeneficiaryEntry(
+    idOrSheetNo: string,
+    status: PaymentStepStatus,
+    proofUrl?: string,
+    currentUser?: UserProfile
+  ): BeneficiaryRecord | null {
+    const list = this.getBeneficiaryRecords();
+    let updatedRecord: BeneficiaryRecord | null = null;
+
+    const updated = list.map(b => {
+      if (b.id === idOrSheetNo || b.sheetNo === idOrSheetNo) {
+        updatedRecord = {
+          ...b,
+          beneficiaryEntry: status,
+          beneficiaryEntryTimestamp: new Date().toLocaleString('en-GB'),
+          beneficiaryEntryProof: proofUrl || b.beneficiaryEntryProof
+        };
+        return updatedRecord;
+      }
+      return b;
+    });
+
+    if (updatedRecord) {
+      this.saveBeneficiaryRecords(updated);
+    }
+    return updatedRecord;
+  }
+
+  public finalizeBeneficiaryAddition(
+    idOrSheetNo: string,
+    status: PaymentStepStatus,
+    proofUrl?: string,
+    currentUser?: UserProfile
+  ): BeneficiaryRecord | null {
+    const list = this.getBeneficiaryRecords();
+    let updatedRecord: BeneficiaryRecord | null = null;
+
+    const updated = list.map(b => {
+      if (b.id === idOrSheetNo || b.sheetNo === idOrSheetNo) {
+        updatedRecord = {
+          ...b,
+          additionStatus: status,
+          additionTimestamp: new Date().toLocaleString('en-GB'),
+          additionProof: proofUrl || b.additionProof
+        };
+        return updatedRecord;
+      }
+      return b;
+    });
+
+    if (updatedRecord) {
+      this.saveBeneficiaryRecords(updated);
+    }
+    return updatedRecord;
+  }
+
+  // 3. Interbank Transfer (IBT) CRUD
+  public getIbtRecords(): InterbankTransferRecord[] {
+    if (typeof window === 'undefined') return INITIAL_IBT_RECORDS;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.IBT);
+      if (!raw) return INITIAL_IBT_RECORDS;
+      const parsed: InterbankTransferRecord[] = JSON.parse(raw);
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_IBT_RECORDS;
+    } catch {
+      return INITIAL_IBT_RECORDS;
+    }
+  }
+
+  public saveIbtRecords(records: InterbankTransferRecord[]) {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(STORAGE_KEYS.IBT, JSON.stringify(records));
+    this.syncToFirestore('ibtRecords', records, 'id');
+  }
+
+  public addIbtRecord(
+    data: Omit<InterbankTransferRecord, 'id' | 'sheetNo' | 'timestamp' | 'approvalStatus' | 'bankEntry' | 'paymentStatus'>,
+    currentUser?: UserProfile
+  ): InterbankTransferRecord {
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    const current = this.getIbtRecords();
+    const dailyCount = current.filter(i => i.sheetNo && i.sheetNo.includes(dateStr)).length + 1;
+    const seqStr = String(dailyCount).padStart(2, '0');
+    const sheetNo = `BPL/IBT/${dateStr}/${seqStr}`;
+
+    const newRecord: InterbankTransferRecord = {
+      id: `ibt-${Date.now()}`,
+      sheetNo,
+      timestamp: new Date().toLocaleString('en-GB'),
+      ...data,
+      requestedBy: currentUser?.name || data.requestedBy || 'Accounts Staff',
+      approvalStatus: 'PENDING',
+      bankEntry: 'PENDING',
+      paymentStatus: 'PENDING'
+    };
+
+    this.saveIbtRecords([newRecord, ...current]);
+    this.logAudit({
+      userId: currentUser?.userId || 'ACCOUNTS',
+      userName: currentUser?.name || 'Accounts Staff',
+      module: 'FMS',
+      action: 'CREATE',
+      entityId: newRecord.sheetNo,
+      details: `Created Interbank Transfer Request #${newRecord.sheetNo} (₹${newRecord.amount.toLocaleString('en-IN')})`
+    });
+
+    return newRecord;
+  }
+
+  public approveIbtRecord(
+    idOrSheetNo: string,
+    approved: boolean,
+    currentUser: UserProfile,
+    rejectionReason?: string
+  ): InterbankTransferRecord | null {
+    const list = this.getIbtRecords();
+    let updatedRecord: InterbankTransferRecord | null = null;
+
+    const updated = list.map(i => {
+      if (i.id === idOrSheetNo || i.sheetNo === idOrSheetNo) {
+        updatedRecord = {
+          ...i,
+          approvalStatus: approved ? 'APPROVED' : 'REJECTED',
+          approvalTimestamp: new Date().toLocaleString('en-GB'),
+          approvedBy: currentUser.name,
+          rejectionReason: approved ? undefined : rejectionReason
+        };
+        return updatedRecord;
+      }
+      return i;
+    });
+
+    if (updatedRecord) {
+      this.saveIbtRecords(updated);
+    }
+    return updatedRecord;
+  }
+
+  public recordIbtBankEntry(
+    idOrSheetNo: string,
+    status: PaymentStepStatus,
+    proofUrl?: string,
+    currentUser?: UserProfile
+  ): InterbankTransferRecord | null {
+    const list = this.getIbtRecords();
+    let updatedRecord: InterbankTransferRecord | null = null;
+
+    const updated = list.map(i => {
+      if (i.id === idOrSheetNo || i.sheetNo === idOrSheetNo) {
+        updatedRecord = {
+          ...i,
+          bankEntry: status,
+          bankEntryTimestamp: new Date().toLocaleString('en-GB'),
+          bankEntryProof: proofUrl || i.bankEntryProof
+        };
+        return updatedRecord;
+      }
+      return i;
+    });
+
+    if (updatedRecord) {
+      this.saveIbtRecords(updated);
+    }
+    return updatedRecord;
+  }
+
+  public finalizeIbtPayment(
+    idOrSheetNo: string,
+    status: PaymentStepStatus,
+    utrRef?: string,
+    proofUrl?: string,
+    currentUser?: UserProfile
+  ): InterbankTransferRecord | null {
+    const list = this.getIbtRecords();
+    let updatedRecord: InterbankTransferRecord | null = null;
+
+    const updated = list.map(i => {
+      if (i.id === idOrSheetNo || i.sheetNo === idOrSheetNo) {
+        updatedRecord = {
+          ...i,
+          paymentStatus: status,
+          paymentDoneTimestamp: new Date().toLocaleString('en-GB'),
+          utrRef: utrRef || i.utrRef,
+          paymentDoneProof: proofUrl || i.paymentDoneProof
+        };
+        return updatedRecord;
+      }
+      return i;
+    });
+
+    if (updatedRecord) {
+      this.saveIbtRecords(updated);
+    }
+    return updatedRecord;
+  }
+
+  // 4. Fuzzy Autocomplete Matcher for Vendor / Beneficiary
+  public matchVendorBeneficiary(query: string): VendorBeneficiaryMatch[] {
+    if (!query || query.trim().length === 0) return [];
+    const q = query.trim().toLowerCase();
+    const matches: VendorBeneficiaryMatch[] = [];
+    const seen = new Set<string>();
+
+    const benList = this.getBeneficiaryRecords();
+    benList.forEach(ben => {
+      const bName = ben.beneficiaryName || '';
+      const tName = ben.tradeVendorName || '';
+      if (bName.toLowerCase().includes(q) || tName.toLowerCase().includes(q)) {
+        const key = `${tName || bName}::${bName}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          const isMismatch = Boolean(tName && bName && tName.toLowerCase() !== bName.toLowerCase());
+          matches.push({
+            vendorName: tName || bName,
+            beneficiaryName: bName,
+            isMismatch,
+            bankName: ben.bankName,
+            accountNoMasked: `••••••••${(ben.accountNo || '').slice(-4)}`,
+            ifscCode: ben.ifscCode,
+            hasVerifiedBeneficiary: ben.approvalStatus === 'APPROVED' && ben.additionStatus === 'DONE',
+            cancelledChequeUrl: ben.cancelledChequeUrl,
+            category: ben.purpose
+          });
+        }
+      }
+    });
+
+    const bankPayments = this.getBankPayments();
+    bankPayments.forEach(bp => {
+      const vName = bp.vendorName || '';
+      const bName = bp.beneficiaryName || '';
+      if (vName.toLowerCase().includes(q) || bName.toLowerCase().includes(q)) {
+        const key = `${vName}::${bName}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          matches.push({
+            vendorName: vName,
+            beneficiaryName: bName,
+            isMismatch: bp.isNameMismatch,
+            bankName: bp.bankName,
+            accountNoMasked: bp.accountNoMasked,
+            ifscCode: bp.ifscCode,
+            hasVerifiedBeneficiary: bp.beneficiaryMasterStatus === 'VERIFIED',
+            cancelledChequeUrl: bp.cancelledChequeUrl,
+            category: bp.purposeOfPayment
+          });
+        }
+      }
+    });
+
+    return matches.slice(0, 8);
+  }
+
+  // 5. My Work Integration for Bank Payments
+  public getMyWorkBankingTasks(currentUser: UserProfile) {
+    const isDirector = isUserDirector(currentUser);
+    const isAccounts = (currentUser.departmentKeys || []).includes('ACCOUNTS') || (currentUser.departmentName || '').toUpperCase().includes('ACCOUNTS') || currentUser.role.toUpperCase().includes('ACCOUNTS');
+
+    const bankPayments = this.getBankPayments();
+    const beneficiaries = this.getBeneficiaryRecords();
+    const ibtRecords = this.getIbtRecords();
+
+    // Director My Work: Pending Payment Approvals ONLY
+    const directorPendingPayments = isDirector
+      ? bankPayments.filter(p => p.approvalStatus === 'PENDING')
+      : [];
+
+    const directorPendingIbt = isDirector
+      ? ibtRecords.filter(i => i.approvalStatus === 'PENDING')
+      : [];
+
+    const directorPendingBeneficiaries = isDirector
+      ? beneficiaries.filter(b => b.approvalStatus === 'PENDING')
+      : [];
+
+    // Accounts My Work: Approved Payments awaiting Portal Entry or UTR Settlement
+    const accountsPendingEntry = isAccounts
+      ? bankPayments.filter(p => p.approvalStatus === 'APPROVED' && p.paymentEntry === 'PENDING')
+      : [];
+
+    const accountsPendingSettlement = isAccounts
+      ? bankPayments.filter(p => p.approvalStatus === 'APPROVED' && p.paymentEntry === 'DONE' && p.paymentStatus === 'PENDING')
+      : [];
+
+    const accountsPendingBenEntry = isAccounts
+      ? beneficiaries.filter(b => b.approvalStatus === 'APPROVED' && (b.beneficiaryEntry === 'PENDING' || b.additionStatus === 'PENDING'))
+      : [];
+
+    return {
+      directorPendingPayments,
+      directorPendingIbt,
+      directorPendingBeneficiaries,
+      accountsPendingEntry,
+      accountsPendingSettlement,
+      accountsPendingBenEntry,
+    };
   }
 }
 

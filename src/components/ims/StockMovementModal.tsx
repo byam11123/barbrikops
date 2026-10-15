@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, ArrowRightLeft, AlertCircle, Check } from 'lucide-react';
 import { InventoryItem, InventoryMovement, UserProfile } from '../../types';
+import { storageAdapter } from '../../services/storageAdapter';
 
 interface StockMovementModalProps {
   isOpen: boolean;
@@ -158,24 +159,34 @@ export const StockMovementModal: React.FC<StockMovementModalProps> = ({
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Source Location
               </label>
-              <input
-                type="text"
+              <select
                 value={sourceLoc}
                 onChange={(e) => setSourceLoc(e.target.value)}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-              />
+                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white font-medium"
+              >
+                {storageAdapter.getMasterSites().map((site) => (
+                  <option key={site} value={site}>
+                    {site}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Destination Location
               </label>
-              <input
-                type="text"
+              <select
                 value={destLoc}
                 onChange={(e) => setDestLoc(e.target.value)}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-              />
+                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white font-medium"
+              >
+                {storageAdapter.getMasterSites().map((site) => (
+                  <option key={site} value={site}>
+                    {site}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

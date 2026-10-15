@@ -13,6 +13,7 @@ import {
   ArrowRightLeft
 } from 'lucide-react';
 import { InventoryItem, InventoryMovement, UserProfile } from '../../types';
+import { storageAdapter } from '../../services/storageAdapter';
 
 interface InventoryManagerProps {
   items: InventoryItem[];
@@ -172,13 +173,14 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                 aria-label="Filter by location"
                 value={locationFilter}
                 onChange={(e) => setLocationFilter(e.target.value)}
-                className="text-xs bg-white border border-slate-300 rounded-lg py-1.5 px-2 text-slate-700 font-medium"
+                className="text-xs bg-white border border-slate-300 rounded-lg py-1.5 px-2 text-slate-700 font-medium font-semibold"
               >
                 <option value="ALL">All Locations</option>
-                <option value="Siladehi Site">Siladehi Site</option>
-                <option value="Bijetala Site">Bijetala Site</option>
-                <option value="Raipur Office">Raipur Office</option>
-                <option value="Central Store">Central Store</option>
+                {storageAdapter.getMasterSites().map((site) => (
+                  <option key={site} value={site}>
+                    {site}
+                  </option>
+                ))}
               </select>
 
               <select

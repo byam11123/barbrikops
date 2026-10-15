@@ -17,6 +17,8 @@ import { CreateFmsModal } from './components/fms/CreateFmsModal';
 import { FmsDetailModal } from './components/fms/FmsDetailModal';
 import { StageActionModal } from './components/fms/StageActionModal';
 import { FmsTemplateStudioModal } from './components/fms/FmsTemplateStudioModal';
+import { ComparativeSheetView } from './components/comparative/ComparativeSheetView';
+import { BankPaymentsSuiteView } from './components/banking/BankPaymentsSuiteView';
 import { DelegationBoard } from './components/delegation/DelegationBoard';
 import { NewTaskModal } from './components/delegation/NewTaskModal';
 import { ReviseTaskModal } from './components/delegation/ReviseTaskModal';
@@ -584,19 +586,13 @@ export default function App() {
       }
       return;
     }
-    if (!isSuperAdmin && !hasModulePermission(currentUser, tab, 'view')) {
+    if (!isSuperAdmin && !isAdminOrSuperAdmin && !hasModulePermission(currentUser, tab, 'view')) {
       if (hasModulePermission(currentUser, 'summary', 'view')) {
         setActiveTab('summary');
       } else if (hasModulePermission(currentUser, 'mis', 'view')) {
         setActiveTab('mis');
-      } else if (hasModulePermission(currentUser, 'delegation', 'view')) {
-        setActiveTab('delegation');
-      } else if (hasModulePermission(currentUser, 'checklist', 'view')) {
-        setActiveTab('checklist');
-      } else if (hasModulePermission(currentUser, 'fms', 'view')) {
-        setActiveTab('fms');
-      } else if (hasModulePermission(currentUser, 'ims', 'view')) {
-        setActiveTab('ims');
+      } else if (hasModulePermission(currentUser, 'cs-sheet', 'view')) {
+        setActiveTab('cs-sheet');
       } else {
         setActiveTab('profile');
       }
@@ -607,7 +603,7 @@ export default function App() {
 
   // Real-time permission guard: if currentUser permissions change and current activeTab is revoked, redirect
   useEffect(() => {
-    if (isSuperAdmin) return;
+    if (isSuperAdmin || isAdminOrSuperAdmin) return;
     if (activeTab === 'profile') return;
     if (activeTab === 'super-admin') {
       if (!isAdminOrSuperAdmin && !hasModulePermission(currentUser, 'super-admin', 'view')) {
@@ -621,27 +617,13 @@ export default function App() {
       }
       return;
     }
-    if (activeTab === 'fms' && !isAdminOrSuperAdmin && !hasModulePermission(currentUser, 'fms', 'view')) {
-      if (hasModulePermission(currentUser, 'summary', 'view')) {
-        setActiveTab('summary');
-      } else if (hasModulePermission(currentUser, 'mis', 'view')) {
-        setActiveTab('mis');
-      } else {
-        setActiveTab('profile');
-      }
-      return;
-    }
     if (!hasModulePermission(currentUser, activeTab, 'view')) {
       if (hasModulePermission(currentUser, 'summary', 'view')) {
         setActiveTab('summary');
       } else if (hasModulePermission(currentUser, 'mis', 'view')) {
         setActiveTab('mis');
-      } else if (hasModulePermission(currentUser, 'delegation', 'view')) {
-        setActiveTab('delegation');
-      } else if (hasModulePermission(currentUser, 'checklist', 'view')) {
-        setActiveTab('checklist');
-      } else if (hasModulePermission(currentUser, 'ims', 'view')) {
-        setActiveTab('ims');
+      } else if (hasModulePermission(currentUser, 'cs-sheet', 'view')) {
+        setActiveTab('cs-sheet');
       } else {
         setActiveTab('profile');
       }
@@ -1882,6 +1864,7 @@ export default function App() {
                     }
                   }
                 }}
+                onOpenComparativeSheet={() => handleTabChange('cs-sheet')}
               />
             )}
 
@@ -1891,6 +1874,25 @@ export default function App() {
                 currentUser={currentUser}
                 onSelectFlow={(f) => setSelectedFmsDetail(f)}
                 onDeleteFlow={handleDeleteFlow}
+              />
+            )}
+
+            {activeTab === 'cs-sheet' && (isSuperAdmin || isAdminOrSuperAdmin || hasModulePermission(currentUser, 'cs-sheet', 'view')) && (
+              <ComparativeSheetView
+                currentUser={currentUser}
+                purchaseFlows={flows.filter((f) => f.flowType === 'INDENT_PURCHASE' || Boolean(f.indentNo))}
+                onNavigateTab={(tab) => handleTabChange(tab as any)}
+              />
+            )}
+
+            {activeTab === 'bank-payments' && (
+              <BankPaymentsSuiteView
+                currentUser={currentUser}
+                searchQuery=""
+                siteFilter="ALL"
+                onRefresh={() => {
+                  setAuditLogs(storageAdapter.getAuditLogs());
+                }}
               />
             )}
 
@@ -2191,6 +2193,7 @@ export default function App() {
         noticeBoardItems={noticeBoardItems}
         onUpdateNoticeBoard={handleUpdateNoticeBoard}
         onImpersonateUser={handleImpersonateUser}
+        currentUser={currentUser}
       />
 
       {/* Global Universal Search Modal */}

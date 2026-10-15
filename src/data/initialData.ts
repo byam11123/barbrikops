@@ -9,7 +9,11 @@ import {
   InventoryMovement, 
   UserProfile,
   NoticeBoardItem,
-  AppNotification
+  AppNotification,
+  BankPaymentRecord,
+  BeneficiaryRecord,
+  InterbankTransferRecord,
+  ComparativeStatement
 } from '../types';
 
 export const INITIAL_NOTIFICATIONS: AppNotification[] = [
@@ -186,7 +190,24 @@ export const USERS: UserProfile[] = [
     shiftHours: '09:00 AM - 06:00 PM',
     status: 'ACTIVE',
     approvalPin: '1111',
-    lastLoginAt: '09/10/2026 09:30 AM'
+    lastLoginAt: '09/10/2026 09:30 AM',
+    permissions: {
+      summary: { visible: true, canEdit: true, canDelete: false },
+      mis: { visible: true, canEdit: true, canDelete: false },
+      fms: { visible: false, canEdit: false, canDelete: false },
+      'fms-audit': { visible: false, canEdit: false, canDelete: false },
+      delegation: { visible: false, canEdit: false, canDelete: false },
+      checklist: { visible: false, canEdit: false, canDelete: false },
+      ims: { visible: false, canEdit: false, canDelete: false },
+      'cs-sheet': { visible: true, canEdit: true, canDelete: true },
+      'dept-PURCHASE': { visible: true, canEdit: true, canDelete: true },
+      'dept-STORE': { visible: true, canEdit: true, canDelete: true },
+      'dept-ACCOUNTS': { visible: true, canEdit: true, canDelete: true },
+      'dept-PLANT_OPS': { visible: true, canEdit: true, canDelete: true },
+      registry: { visible: true, canEdit: true, canDelete: true },
+      audit: { visible: true, canEdit: true, canDelete: true },
+      'super-admin': { visible: true, canEdit: true, canDelete: true }
+    }
   },
   {
     userId: 'USR-001',
@@ -350,7 +371,8 @@ export const USERS: UserProfile[] = [
     name: 'Pranjal Agrawal',
     username: 'pranjal.agrawal',
     password: 'pass123',
-    role: 'Finance Approver / Director',
+    role: 'Director',
+    systemRole: 'DIRECTOR',
     departmentId: 'DEPT-ACCOUNTS',
     departmentName: 'Accounts & Finance',
     phone: '9827100066',
@@ -361,7 +383,8 @@ export const USERS: UserProfile[] = [
     name: 'Khushboo Sahu',
     username: 'khushboo.sahu',
     password: 'pass123',
-    role: 'Executive Assistant / Accounts',
+    role: 'Executive Assistant',
+    systemRole: 'EXECUTIVE_ASSISTANT',
     departmentId: 'DEPT-ACCOUNTS',
     departmentName: 'Accounts & Finance',
     phone: '9827100077',
@@ -469,6 +492,7 @@ export const USERS: UserProfile[] = [
     username: 'ritu.sahu',
     password: 'pass123',
     role: 'Process Coordinator',
+    systemRole: 'PROCESS_COORDINATOR',
     departmentId: 'DEPT-MIS',
     departmentName: 'Process Coordination & Audit',
     phone: '9827100091',
@@ -4824,9 +4848,18 @@ export const INITIAL_INVENTORY_MOVEMENTS: InventoryMovement[] = [
   }
 ];
 
+export const INITIAL_SITE_REGISTRY = [
+  { id: 'site-01', code: 'SIL-01', name: 'Siladehi Site', status: 'ACTIVE' as const, createdAt: '01/10/2026' },
+  { id: 'site-02', code: 'BIJ-01', name: 'Bijetala Site', status: 'ACTIVE' as const, createdAt: '01/10/2026' },
+  { id: 'site-03', code: 'RPR-HQ', name: 'Raipur Office', status: 'ACTIVE' as const, createdAt: '01/10/2026' },
+  { id: 'site-04', code: 'CST-01', name: 'Central Store', status: 'ACTIVE' as const, createdAt: '01/10/2026' },
+];
+
 export const DEFAULT_REGISTRY_CONFIG: CentralRegistryConfig = {
   organizationName: 'BarBrik Construction & Engineering',
   activeDataSource: 'HYBRID_TRANSITION',
+  masterSites: ['Siladehi Site', 'Bijetala Site', 'Raipur Office', 'Central Store'],
+  sitesRegistry: INITIAL_SITE_REGISTRY,
   workShiftConfig: {
     shiftStartTime: '09:30',
     shiftEndTime: '18:30',
@@ -5115,4 +5148,251 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
       slaHours: s.slaHours,
     })),
   },
+];
+
+export const INITIAL_BENEFICIARIES: BeneficiaryRecord[] = [
+  {
+    id: 'ben-001',
+    sheetNo: 'BPL/BEN/20261012/01',
+    timestamp: '12/10/2026 10:30',
+    beneficiaryName: 'MAHAVIR GAS CHULHA REPAIR STORE',
+    tradeVendorName: 'MAHAVIR GAS CHULHA',
+    accountNo: '381928371923',
+    ifscCode: 'SBIN0001292',
+    bankName: 'State Bank of India',
+    purpose: 'Kitchen Machinery & Refill Accessories',
+    cancelledChequeUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+    remark: 'Verified active vendor account',
+    requestedBy: 'Amanat Bharadwaj',
+    approvalStatus: 'APPROVED',
+    approvalTimestamp: '12/10/2026 11:00',
+    approvedBy: 'Pranjal Agrawal',
+    beneficiaryEntry: 'DONE',
+    beneficiaryEntryTimestamp: '12/10/2026 12:15',
+    additionStatus: 'DONE',
+    additionTimestamp: '12/10/2026 12:30'
+  },
+  {
+    id: 'ben-002',
+    sheetNo: 'BPL/BEN/20261014/01',
+    timestamp: '14/10/2026 09:15',
+    beneficiaryName: 'KANHAIYA LAL SAHU',
+    tradeVendorName: 'KANHAIYA HARDWARE & INDUSTRIAL SUPPLIES',
+    accountNo: '918237192834',
+    ifscCode: 'HDFC0000412',
+    bankName: 'HDFC Bank Ltd',
+    purpose: 'Structural Fasteners & Site Tools',
+    cancelledChequeUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+    remark: 'Proprietor Account - Mismatch Approved',
+    requestedBy: 'Priyanka',
+    approvalStatus: 'PENDING',
+    beneficiaryEntry: 'PENDING',
+    additionStatus: 'PENDING'
+  }
+];
+
+export const INITIAL_BANK_PAYMENTS: BankPaymentRecord[] = [
+  {
+    id: 'bank-001',
+    sheetNo: 'BPL/BANK/20261014/01',
+    timestamp: '14/10/2026 09:30',
+    vendorName: 'MAHAVIR GAS CHULHA',
+    beneficiaryName: 'MAHAVIR GAS CHULHA REPAIR STORE',
+    isNameMismatch: false,
+    purposeOfPayment: 'Industrial LPG Cylinder Refill & Torch Nozzles for Siladehi Workshop',
+    requestedBy: 'Bramhanand Patel',
+    requestedByUserId: 'USR-002',
+    site: 'Siladehi Site',
+    modeOfPayment: 'ACCOUNT',
+    amountToBePaid: 48500,
+    remark: 'Urgent for metal fabrication works',
+    plannedDate: '14/10/2026',
+    billNoPo: 'INV-MGC-9812',
+    beneficiaryMasterStatus: 'VERIFIED',
+    bankName: 'State Bank of India',
+    accountNoMasked: '••••••••1923',
+    ifscCode: 'SBIN0001292',
+    cancelledChequeUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+    linkedBeneficiarySheetNo: 'BPL/BEN/20261012/01',
+    approvalStatus: 'PENDING',
+    paymentEntry: 'PENDING',
+    paymentStatus: 'PENDING'
+  },
+  {
+    id: 'bank-002',
+    sheetNo: 'BPL/BANK/20261013/02',
+    timestamp: '13/10/2026 14:10',
+    vendorName: 'KANHAIYA HARDWARE',
+    beneficiaryName: 'KANHAIYA LAL SAHU',
+    isNameMismatch: true,
+    payeeRelationship: 'Sole Proprietor Personal Bank Account',
+    purposeOfPayment: 'M20 Grade Anchor Bolts & Galvanized Clamps for Bijetala Tower',
+    requestedBy: 'Shyam Rao Sureshe',
+    requestedByUserId: 'USR-003',
+    site: 'Bijetala Site',
+    modeOfPayment: 'ACCOUNT',
+    amountToBePaid: 125000,
+    remark: 'Rate approved via CS-IND-466',
+    plannedDate: '14/10/2026',
+    billNoPo: 'PO-BPL-2026-88',
+    beneficiaryMasterStatus: 'NEEDS_ADDITION',
+    bankName: 'HDFC Bank Ltd',
+    accountNoMasked: '••••••••2834',
+    ifscCode: 'HDFC0000412',
+    cancelledChequeUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+    linkedBeneficiarySheetNo: 'BPL/BEN/20261014/01',
+    approvalStatus: 'APPROVED',
+    approvalTimestamp: '13/10/2026 16:00',
+    approvedBy: 'Pranjal Agrawal',
+    approvedByUserId: 'USR-013',
+    paymentEntry: 'PENDING',
+    paymentStatus: 'PENDING'
+  },
+  {
+    id: 'bank-003',
+    sheetNo: 'BPL/BANK/20261012/01',
+    timestamp: '12/10/2026 11:20',
+    vendorName: 'RAIPUR AUTO SPARES',
+    beneficiaryName: 'RAIPUR AUTO SPARES LLP',
+    isNameMismatch: false,
+    purposeOfPayment: 'JCB Loader Engine Oil & Filter Replacement Consumables',
+    requestedBy: 'Amanat Bharadwaj',
+    requestedByUserId: 'USR-001',
+    site: 'Raipur Office',
+    modeOfPayment: 'UPI',
+    amountToBePaid: 18200,
+    remark: 'Instant UPI payout',
+    plannedDate: '12/10/2026',
+    beneficiaryMasterStatus: 'NOT_APPLICABLE_UPI',
+    approvalStatus: 'APPROVED',
+    approvalTimestamp: '12/10/2026 11:45',
+    approvedBy: 'Pranjal Agrawal',
+    approvedByUserId: 'USR-013',
+    paymentEntry: 'DONE',
+    paymentEntryTimestamp: '12/10/2026 12:00',
+    paymentEntryBy: 'Priyanka',
+    paymentStatus: 'DONE',
+    paymentDoneTimestamp: '12/10/2026 12:05',
+    remarks: 'UPI-UTR-918237192834',
+    paymentDoneBy: 'Priyanka'
+  }
+];
+
+export const INITIAL_IBT_RECORDS: InterbankTransferRecord[] = [
+  {
+    id: 'ibt-001',
+    sheetNo: 'BPL/IBT/20261014/01',
+    timestamp: '14/10/2026 08:30',
+    transferFrom: 'SBI CC A/C 3819203912 (Raipur Main Branch)',
+    transferTo: 'HDFC CURRENT A/C 9182371928 (Treasury Ops)',
+    purpose: 'Site Labour Muster Wage Disbursement Liquidity',
+    amount: 500000,
+    plannedDate: '14/10/2026',
+    remarks: 'Muster roll payout scheduled for 15/10',
+    requestedBy: 'Priyanka',
+    approvalStatus: 'PENDING',
+    bankEntry: 'PENDING',
+    paymentStatus: 'PENDING'
+  }
+];
+
+export const INITIAL_COMPARATIVE_STATEMENTS: ComparativeStatement[] = [
+  {
+    id: 'cs-barbrik-001',
+    companyName: 'Barbrik Project Ltd.',
+    site: 'BIJETALA',
+    indentNo: '466',
+    indentDate: '12/10/2026',
+    forPurpose: 'HM LOADER & DG-82.5KVA (CHAKRABORTY JI)',
+    statementDate: '13/10/2026',
+    status: 'Approved',
+    approvedBy: 'Pranjal Agrawal',
+    approvalDate: '13/10/2026, 11:30 AM',
+    notes: 'Quotation normalized with Freight & Delivery: OURS for all vendors. L-1 item-wise split PO recommended for maximum project cost savings.',
+    awardedVendorMap: {
+      'it-01': 'vnd-01', // Shanti Earthmovers (L-1)
+      'it-02': 'vnd-01', // Shanti Earthmovers (L-1)
+      'it-03': 'vnd-02', // Chhattisgarh Diesel (L-1)
+      'it-04': 'vnd-01', // Shanti Earthmovers (L-1)
+      'it-05': 'vnd-02', // Chhattisgarh Diesel (L-1)
+    },
+    approvalDetails: {
+      approverName: 'Pranjal Agrawal',
+      approverDesignation: 'Executive Director / Authorized Signatory',
+      approvalDate: '13/10/2026, 11:30 AM',
+      remarks: 'Approved with item-wise split PO allocation to maintain dual vendor operational readiness. Freight strictly OURS.',
+      signatureStamp: 'BPL-SIG-PA-9482-EXEC-VERIFIED',
+    },
+    items: [
+      { id: 'it-01', sn: 1, itemName: 'GREASE NIPPLE 8NO', brandMake: 'HINO ASCO', unit: 'NOS', qty: 10 },
+      { id: 'it-02', sn: 2, itemName: 'OIL FILTER LF-3959 (DG 82.5KVA)', brandMake: 'COMMINS/F.GUARD', unit: 'NOS', qty: 2 },
+      { id: 'it-03', sn: 3, itemName: 'HYDRAULIC RETURN FILTER HF-6510', brandMake: 'FLEETGUARD', unit: 'NOS', qty: 4 },
+      { id: 'it-04', sn: 4, itemName: 'AIR FILTER CARTRIDGE AF-25292', brandMake: 'DONALDSON', unit: 'SET', qty: 2 },
+      { id: 'it-05', sn: 5, itemName: 'DIESEL FILTER ELEMENT FF-5052', brandMake: 'MICO BOSCH', unit: 'NOS', qty: 6 },
+    ],
+    vendors: [
+      {
+        vendorId: 'vnd-01',
+        vendorName: 'M/s Shanti Earthmovers & Spares',
+        rating: '4.5 / 5.0 (Top Rated Local Supplier)',
+        contactPersonMobile: 'Amit Ji | Mo: +91-7477230200',
+        storeOfficeAddress: 'Shop No. 20, Korba/Karcha Market, MG Road, Korba (C.G.)',
+        paymentTerms: '30 Days Credit',
+        warrantyPeriod: '01 Year Comprehensive Warranty',
+        gstTerms: '18% GST Paid / Included in Quoted Rates',
+        freightDeliveryTerms: 'OURS (Barbrik Project Ltd.)',
+        quotationDateValidity: '19/08/2026 | 30 Days Validity',
+        primaryProductFocus: 'Heavy Equipment Spares & Filtration',
+        itemRates: {
+          'it-01': { baseRate: 42, gstPercent: 18, gstAmount: 7.56, landedRate: 49.56, amount: 495.6, isQuoted: true },
+          'it-02': { baseRate: 850, gstPercent: 18, gstAmount: 153, landedRate: 1003, amount: 2006, isQuoted: true },
+          'it-03': { baseRate: 1450, gstPercent: 18, gstAmount: 261, landedRate: 1711, amount: 6844, isQuoted: true },
+          'it-04': { baseRate: 2200, gstPercent: 18, gstAmount: 396, landedRate: 2596, amount: 5192, isQuoted: true },
+          'it-05': { baseRate: 340, gstPercent: 18, gstAmount: 61.2, landedRate: 401.2, amount: 2407.2, isQuoted: true },
+        }
+      },
+      {
+        vendorId: 'vnd-02',
+        vendorName: 'M/s Chhattisgarh Diesel & Machinery Store',
+        rating: '4.2 / 5.0 (Authorized Distributor)',
+        contactPersonMobile: 'Ramesh Verma | Mo: +91-9425211890',
+        storeOfficeAddress: 'Transport Nagar, Near Indian Oil Depot, Bilaspur (C.G.)',
+        paymentTerms: '100% Advance Payment',
+        warrantyPeriod: '06 Months OEM Warranty',
+        gstTerms: '18% GST Paid / Included in Quoted Rates',
+        freightDeliveryTerms: 'OURS (Barbrik Project Ltd.)',
+        quotationDateValidity: '20/08/2026 | 15 Days Validity',
+        primaryProductFocus: 'Engine & Filtration Spares',
+        itemRates: {
+          'it-01': { baseRate: 46, gstPercent: 18, gstAmount: 8.28, landedRate: 54.28, amount: 542.8, isQuoted: true },
+          'it-02': { baseRate: 890, gstPercent: 18, gstAmount: 160.2, landedRate: 1050.2, amount: 2100.4, isQuoted: true },
+          'it-03': { baseRate: 1380, gstPercent: 18, gstAmount: 248.4, landedRate: 1628.4, amount: 6513.6, isQuoted: true },
+          'it-04': { baseRate: 2350, gstPercent: 18, gstAmount: 423, landedRate: 2773, amount: 5546, isQuoted: true },
+          'it-05': { baseRate: 320, gstPercent: 18, gstAmount: 57.6, landedRate: 377.6, amount: 2265.6, isQuoted: true },
+        }
+      },
+      {
+        vendorId: 'vnd-03',
+        vendorName: 'M/s Raipur Heavy Industrial Spares',
+        rating: '3.9 / 5.0 (Regional Stockist)',
+        contactPersonMobile: 'Suresh Agrawal | Mo: +91-9893124560',
+        storeOfficeAddress: 'Industrial Area, Bhanpuri, Raipur (C.G.)',
+        paymentTerms: '50% Advance, Balance on Delivery',
+        warrantyPeriod: 'Replacement on Manufacturer Defect',
+        gstTerms: '18% GST Extra',
+        freightDeliveryTerms: 'OURS (Barbrik Project Ltd.)',
+        quotationDateValidity: '22/08/2026 | 30 Days Validity',
+        primaryProductFocus: 'Earthmoving & Plant Spares',
+        itemRates: {
+          'it-01': { baseRate: 48, gstPercent: 18, gstAmount: 8.64, landedRate: 56.64, amount: 566.4, isQuoted: true },
+          'it-02': { baseRate: 910, gstPercent: 18, gstAmount: 163.8, landedRate: 1073.8, amount: 2147.6, isQuoted: true },
+          'it-03': { baseRate: 1420, gstPercent: 18, gstAmount: 255.6, landedRate: 1675.6, amount: 6702.4, isQuoted: true },
+          'it-04': { baseRate: 2290, gstPercent: 18, gstAmount: 412.2, landedRate: 2702.2, amount: 5404.4, isQuoted: true },
+          'it-05': { baseRate: 350, gstPercent: 18, gstAmount: 63, landedRate: 413, amount: 2478, isQuoted: true },
+        }
+      }
+    ],
+    createdAt: '13/10/2026, 10:00 AM',
+    updatedAt: '13/10/2026, 10:30 AM'
+  }
 ];
