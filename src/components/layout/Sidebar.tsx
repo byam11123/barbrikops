@@ -18,14 +18,15 @@ import {
   FileSpreadsheet,
   ShieldCheck,
   User,
-  Scale
+  Scale,
+  Users
 } from 'lucide-react';
 import { FmsInstance, UserProfile, isUserSuperAdmin, isUserAdmin, isUserAdminOrSuperAdmin, hasModulePermission, ChecklistItem, DelegationTask } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { getFlowDepartmentKey, getDepartmentBranchLabel, matchItemDepartment, matchTaskDepartment, getDepartmentForWorkflow } from '../../services/stageAssignment';
 import { UserAvatar } from '../common/UserAvatar';
 
-export type NavTab = 'summary' | 'mis' | 'fms' | 'fms-audit' | 'cs-sheet' | 'bank-payments' | 'delegation' | 'checklist' | 'ims' | 'registry' | 'audit' | 'super-admin' | 'profile';
+export type NavTab = 'summary' | 'mis' | 'fms' | 'fms-audit' | 'cs-sheet' | 'bank-payments' | 'vendor-directory' | 'delegation' | 'checklist' | 'ims' | 'registry' | 'audit' | 'super-admin' | 'profile';
 
 interface SidebarProps {
   activeTab: NavTab;
@@ -297,6 +298,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'bank-payments' as NavTab,
       label: 'Bank Payments',
       icon: Landmark,
+    },
+    {
+      id: 'vendor-directory' as NavTab,
+      label: 'Vendor Directory',
+      icon: Users,
     },
   ];
 

@@ -1,6 +1,6 @@
 {
-  "summary": "Updated implementation plan for the Bank Payments suite. Explicitly restricts Payment Approval (Stage 2) exclusively to the Director (e.g. Pranjal Agrawal / Director role). Super Admin and Admin are excluded from payment approvals, ensuring only the Director sees payment approval tasks in their My Work queue and view action controls.",
-  "updatedAt": "2026-10-15T05:40:28.723798014Z",
+  "summary": "Implementation plan for simplifying the Purchase FMS application flow, decoupling store dispatch and purchase orders into separate indents, and embedding bank payment and L1 approvals directly into FMS modals.",
+  "updatedAt": "2026-10-17T05:34:02.575451233Z",
   "requestFeedback": true,
   "userFacing": true
 }

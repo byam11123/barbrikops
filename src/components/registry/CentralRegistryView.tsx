@@ -43,6 +43,7 @@ import {
   DELEGATION_MIGRATION_MAPPINGS, 
   CHECKLIST_MIGRATION_MAPPINGS 
 } from '../../services/migrationEngine';
+import { EntityRelationshipDiagramView } from './EntityRelationshipDiagramView';
 
 interface CentralRegistryViewProps {
   config: CentralRegistryConfig;
@@ -61,7 +62,7 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
   onOpenTemplateStudio,
   onCreateFlow,
 }) => {
-  const [activeTab, setActiveTab] = useState<'SHIFT_CONFIG' | 'DEPARTMENTS' | 'SITE_REGISTRY' | 'FMS_WORKFLOWS' | 'CONFIG' | 'SQL_SCHEMA' | 'COLUMN_MAPPINGS'>('SHIFT_CONFIG');
+  const [activeTab, setActiveTab] = useState<'SHIFT_CONFIG' | 'DEPARTMENTS' | 'SITE_REGISTRY' | 'FMS_WORKFLOWS' | 'CONFIG' | 'SQL_SCHEMA' | 'COLUMN_MAPPINGS' | 'ERD_DIAGRAM'>('ERD_DIAGRAM');
   const [formConfig, setFormConfig] = useState<CentralRegistryConfig>(config);
   const [copied, setCopied] = useState<boolean>(false);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
@@ -69,8 +70,8 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
   const isSuper = isUserSuperAdmin(currentUser);
 
   React.useEffect(() => {
-    if (!isSuper && currentUser?.systemRole !== 'DEPT_ADMIN' && activeTab !== 'SHIFT_CONFIG' && activeTab !== 'DEPARTMENTS' && activeTab !== 'SITE_REGISTRY') {
-      setActiveTab('SHIFT_CONFIG');
+    if (!isSuper && currentUser?.systemRole !== 'DEPT_ADMIN' && activeTab !== 'SHIFT_CONFIG' && activeTab !== 'DEPARTMENTS' && activeTab !== 'SITE_REGISTRY' && activeTab !== 'ERD_DIAGRAM') {
+      setActiveTab('ERD_DIAGRAM');
     }
   }, [isSuper, currentUser, activeTab]);
 
@@ -306,6 +307,18 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
               <Warehouse className="w-3.5 h-3.5" />
               <span>Central Site Registry ({siteList.length})</span>
             </button>
+            <button
+              onClick={() => setActiveTab('ERD_DIAGRAM')}
+              className={`px-3.5 py-1.5 text-xs rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'ERD_DIAGRAM'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 font-semibold'
+              }`}
+            >
+              <Database className="w-3.5 h-3.5 text-amber-400" />
+              <span>Entity Relationship Diagram (ERD)</span>
+            </button>
+
             {/* Technical Migration & Governance Tabs (SUPER ADMIN ONLY) */}
             {isUserSuperAdmin(currentUser) && (
               <>
@@ -354,6 +367,11 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
             )}
           </div>
         </div>
+
+      {/* INTERACTIVE ENTITY RELATIONSHIP DIAGRAM (ERD) */}
+      {activeTab === 'ERD_DIAGRAM' && (
+        <EntityRelationshipDiagramView />
+      )}
 
       {/* SHIFT & OPERATING HOURS CONSOLE (Central Organization Work Shift & SLA Engine) */}
       {activeTab === 'SHIFT_CONFIG' && (

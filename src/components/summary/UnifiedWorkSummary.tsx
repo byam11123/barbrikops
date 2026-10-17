@@ -37,12 +37,14 @@ import {
   Check,
   AlertCircle,
   Flag,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Layers
 } from 'lucide-react';
 import { downloadCsv } from '../../utils/csvExporter';
 import { CustomSelect } from '../common/CustomSelect';
 import { ChecklistItem, DelegationTask, FmsInstance, UserProfile, ProcessRemark, FmsStageDefinition, isUserSuperAdmin, isUserAdminOrSuperAdmin, isUserDirector, isUserEA, isUserProcessCoordinator } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
+import { SplitTaskCockpit } from './SplitTaskCockpit';
 import { 
   FMS_CHECK_STOCK_STAGES, 
   FMS_STANDARD_PURCHASE_STAGES, 
@@ -265,6 +267,14 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   // Weekly Director Digest Modal State (PC)
   const [showWeeklyDigestModal, setShowWeeklyDigestModal] = useState<boolean>(false);
 
+  // Split-Screen Operational Cockpit State
+  const [cockpitTarget, setCockpitTarget] = useState<{
+    item: UnifiedItem;
+    flow?: FmsInstance;
+    stageIndex?: number;
+    checklistItem?: ChecklistItem;
+  } | null>(null);
+
   // EA Save Brief Handler
   const handleSaveEaPreReview = (e: React.FormEvent) => {
     e.preventDefault();
@@ -377,6 +387,33 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
 
   // Modal state for Process Coordinator Task Context Inspection (Ritu Sahu View Action)
   const [viewDetailItem, setViewDetailItem] = useState<UnifiedItem | null>(null);
+
+  // Split-Screen Operational Cockpit Active Task
+  const [activeCockpitTask, setActiveCockpitTask] = useState<{
+    task: UnifiedItem;
+    flow?: FmsInstance;
+    stageIndex?: number;
+    checklistItem?: ChecklistItem;
+  } | null>(null);
+
+  const handleOpenSplitCockpit = (item: UnifiedItem) => {
+    if (item.sourceModule === 'FMS') {
+      setActiveCockpitTask({
+        task: item,
+        flow: item.rawItem.flow,
+        stageIndex: item.rawItem.stageIndex
+      });
+    } else if (item.sourceModule === 'CHECKLIST') {
+      setActiveCockpitTask({
+        task: item,
+        checklistItem: item.rawItem
+      });
+    } else {
+      setActiveCockpitTask({
+        task: item
+      });
+    }
+  };
 
   // Dynamic current date (Today)
   const today = new Date();
@@ -824,22 +861,33 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       }
       if (item.isDueToday || item.isOverdue) {
         return (
-          <button
-            onClick={() => {
-              const now = new Date();
-              const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
-              onCompleteChecklist({
-                ...item.rawItem,
-                status: 'Done',
-                actualDate: formattedDate,
-                updatedAt: now.toLocaleString('en-GB')
-              });
-            }}
-            className={`${isMobile ? 'px-3.5 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded transition-colors cursor-pointer flex items-center gap-1 border border-emerald-200`}
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Mark Done</span>
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => handleOpenSplitCockpit(item)}
+              className={`${isMobile ? 'px-2.5 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded transition-colors cursor-pointer flex items-center gap-1 border border-indigo-200 shadow-2xs`}
+              title="Open Split-Screen Operational Cockpit"
+            >
+              <Layers className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Cockpit</span>
+            </button>
+            <button
+              onClick={() => {
+                const now = new Date();
+                const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+                onCompleteChecklist({
+                  ...item.rawItem,
+                  status: 'Done',
+                  actualDate: formattedDate,
+                  updatedAt: now.toLocaleString('en-GB')
+                });
+              }}
+              className={`${isMobile ? 'px-3.5 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded transition-colors cursor-pointer flex items-center gap-1 border border-emerald-200`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Mark Done</span>
+            </button>
+          </div>
         );
       }
       return (
@@ -903,26 +951,37 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       // When stage has configured form fields, Fill Form / Approve is the single primary action
       if (onOpenStageAction && hasFormFields) {
         return (
-          <button
-            type="button"
-            onClick={() => onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex)}
-            className={`${isMobile ? 'px-3.5 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} ${
-              hasApprovalField
-                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
-                : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
-            } font-bold rounded flex items-center gap-1.5 transition-colors cursor-pointer border shadow-2xs`}
-            title={hasApprovalField ? 'Review & Take Approval Decision' : 'Fill Form'}
-          >
-            {hasApprovalField ? (
-              <>
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> <span>Approve / Reject</span>
-              </>
-            ) : (
-              <>
-                <FileText className="w-3.5 h-3.5" /> <span>Fill Form</span>
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => handleOpenSplitCockpit(item)}
+              className={`${isMobile ? 'px-2.5 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded flex items-center gap-1 transition-all shadow-xs cursor-pointer`}
+              title="Open Split-Screen Operational Cockpit with link panel & mandatory verification checklist"
+            >
+              <Layers className="w-3.5 h-3.5 text-indigo-200" />
+              <span>Split Cockpit</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex)}
+              className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} ${
+                hasApprovalField
+                  ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                  : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+              } font-bold rounded flex items-center gap-1.5 transition-colors cursor-pointer border shadow-2xs`}
+              title={hasApprovalField ? 'Review & Take Approval Decision' : 'Fill Form'}
+            >
+              {hasApprovalField ? (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> <span>Approve / Reject</span>
+                </>
+              ) : (
+                <>
+                  <FileText className="w-3.5 h-3.5" /> <span>Fill Form</span>
+                </>
+              )}
+            </button>
+          </div>
         );
       }
 
@@ -930,6 +989,15 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       if (stageDef?.hasYesNoDecision || stageExec?.logic?.gatewayType === 'CONDITIONAL_JUMP') {
         return (
           <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => handleOpenSplitCockpit(item)}
+              className={`${isMobile ? 'px-2.5 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded flex items-center gap-1 transition-all shadow-xs cursor-pointer`}
+              title="Open Split-Screen Operational Cockpit"
+            >
+              <Layers className="w-3.5 h-3.5 text-indigo-200" />
+              <span>Cockpit</span>
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -964,21 +1032,32 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
 
       // For non-form sequential steps: Mark Done
       return (
-        <button
-          onClick={() => {
-            if (onOpenStageAction) {
-              onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex);
-            } else if (onCompleteFmsStage) {
-              onCompleteFmsStage(item.rawItem.flow, item.rawItem.stageIndex);
-            } else {
-              onAdvanceFmsStage(item.rawItem.flow);
-            }
-          }}
-          className={`${isMobile ? 'px-3.5 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded flex items-center gap-1 transition-colors cursor-pointer border border-amber-200`}
-        >
-          <CheckCircle2 className="w-3.5 h-3.5" />
-          <span>Mark Done</span>
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => handleOpenSplitCockpit(item)}
+            className={`${isMobile ? 'px-2.5 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded flex items-center gap-1 transition-all shadow-xs cursor-pointer`}
+            title="Open Split-Screen Operational Cockpit with link panel & mandatory verification checklist"
+          >
+            <Layers className="w-3.5 h-3.5 text-indigo-200" />
+            <span>Split Cockpit</span>
+          </button>
+          <button
+            onClick={() => {
+              if (onOpenStageAction) {
+                onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex);
+              } else if (onCompleteFmsStage) {
+                onCompleteFmsStage(item.rawItem.flow, item.rawItem.stageIndex);
+              } else {
+                onAdvanceFmsStage(item.rawItem.flow);
+              }
+            }}
+            className={`${isMobile ? 'px-3.5 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded flex items-center gap-1 transition-colors cursor-pointer border border-amber-200`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Mark Done</span>
+          </button>
+        </div>
       );
     }
 
@@ -1196,6 +1275,25 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         </div>
       </div>
       )}
+
+      {/* Split-Screen Cockpit Feature Banner */}
+      <div className="bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-900 text-white px-4 py-2.5 rounded-xl border border-indigo-800/60 shadow-xs flex items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="p-1.5 bg-indigo-500/20 text-indigo-300 rounded-lg shrink-0">
+            <Layers className="w-4 h-4 text-indigo-300" />
+          </div>
+          <div className="truncate">
+            <span className="font-bold text-white">Split-Screen Operational Cockpit Active:</span>
+            <span className="text-slate-300 ml-1.5 hidden sm:inline">
+              Click <span className="text-indigo-300 font-bold">Split Cockpit</span> on any task below to execute with live link viewport (Google Forms / Sheets / Netbanking) & mandatory anti-fraud verification checklist.
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-semibold text-indigo-200 bg-indigo-900/60 px-2.5 py-1 rounded-lg border border-indigo-700/60">
+          <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Proof-Gated Actions</span>
+        </div>
+      </div>
 
       {/* Control & Filter Bar (Sticky top bar for easy filtering at all times) */}
       {workspaceMode === 'TASKS' && (
@@ -1903,21 +2001,32 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                                 Reopen
                               </button>
                             ) : (item.isDueToday || item.isOverdue) ? (
-                              <button
-                                onClick={() => {
-                                  const now = new Date();
-                                  const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
-                                  onCompleteChecklist({
-                                    ...item.rawItem,
-                                    status: 'Done',
-                                    actualDate: formattedDate,
-                                    updatedAt: now.toLocaleString('en-GB')
-                                  });
-                                }}
-                                className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded text-[11px] transition-colors cursor-pointer"
-                              >
-                                Mark Done
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenSplitCockpit(item)}
+                                  className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded text-[11px] flex items-center gap-1 border border-indigo-200 transition-colors cursor-pointer"
+                                  title="Open in Split-Screen Operational Cockpit"
+                                >
+                                  <Layers className="w-3 h-3 text-indigo-600" />
+                                  <span>Cockpit</span>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const now = new Date();
+                                    const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+                                    onCompleteChecklist({
+                                      ...item.rawItem,
+                                      status: 'Done',
+                                      actualDate: formattedDate,
+                                      updatedAt: now.toLocaleString('en-GB')
+                                    });
+                                  }}
+                                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded text-[11px] transition-colors cursor-pointer"
+                                >
+                                  Mark Done
+                                </button>
+                              </div>
                             ) : (
                               <span className="text-[10px] text-slate-400 font-medium px-2 py-1 bg-slate-50 border border-slate-200 rounded">
                                 Scheduled {item.plannedDateTimeStr?.split(' ')[0] || item.targetDateStr}
@@ -1964,6 +2073,17 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                                 >
                                   <ExternalLink className="w-3 h-3" /> Form
                                 </a>
+                              )}
+                              {isItemActionable(item) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenSplitCockpit(item)}
+                                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded text-[11px] flex items-center gap-1 transition-all shadow-xs cursor-pointer"
+                                  title="Open Split-Screen Operational Cockpit with link panel & mandatory verification checklist"
+                                >
+                                  <Layers className="w-3 h-3 text-indigo-200" />
+                                  <span>Split Cockpit</span>
+                                </button>
                               )}
                               {(() => {
                                 if (!isItemActionable(item)) {
@@ -3061,6 +3181,26 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Split-Screen Operational Cockpit */}
+      {activeCockpitTask && (
+        <SplitTaskCockpit
+          task={activeCockpitTask.task}
+          flow={activeCockpitTask.flow}
+          stageIndex={activeCockpitTask.stageIndex}
+          checklistItem={activeCockpitTask.checklistItem}
+          currentUser={currentUser}
+          onClose={() => setActiveCockpitTask(null)}
+          onAdvanceFmsStage={(flow, decision) => {
+            onAdvanceFmsStage(flow, decision);
+            setActiveCockpitTask(null);
+          }}
+          onCompleteChecklist={(item) => {
+            onCompleteChecklist(item);
+            setActiveCockpitTask(null);
+          }}
+        />
       )}
 
       {/* Bottom spacing to ensure all content and buttons remain accessible above any floating elements */}

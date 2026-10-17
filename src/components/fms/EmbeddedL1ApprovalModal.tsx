@@ -267,27 +267,46 @@ export const EmbeddedL1ApprovalModal: React.FC<EmbeddedL1ApprovalModalProps> = (
                         {cs.vendors.map((v) => {
                           const rateData = v.itemRates[item.id];
                           const isL1 = l1Data?.vendorId === v.vendorId;
+                          const isSelected = (awardedMap[item.id] || l1Data?.vendorId) === v.vendorId;
 
                           return (
                             <td
                               key={v.vendorId}
-                              className={`p-3 text-center border-l border-slate-200 ${
-                                isL1 ? 'bg-emerald-50/70 font-bold' : ''
+                              onClick={() => {
+                                if (rateData && rateData.isQuoted) {
+                                  setAwardedMap({ ...awardedMap, [item.id]: v.vendorId });
+                                }
+                              }}
+                              className={`p-3 text-center border-l border-slate-200 cursor-pointer transition-colors ${
+                                isSelected
+                                  ? 'bg-amber-100/60 dark:bg-amber-950/40 font-bold ring-2 ring-amber-500/50'
+                                  : isL1
+                                  ? 'bg-emerald-50/70 font-bold'
+                                  : 'hover:bg-slate-100/80'
                               }`}
                             >
                               {rateData && rateData.isQuoted && rateData.landedRate > 0 ? (
-                                <div>
-                                  <div className="font-mono font-black text-slate-900 text-sm">
-                                    ₹{rateData.landedRate.toFixed(2)}
+                                <div className="flex items-center justify-center gap-2">
+                                  <input
+                                    type="radio"
+                                    name={`l1_award_${item.id}`}
+                                    checked={isSelected}
+                                    onChange={() => setAwardedMap({ ...awardedMap, [item.id]: v.vendorId })}
+                                    className="w-4 h-4 text-amber-600 focus:ring-amber-500 accent-amber-600 cursor-pointer"
+                                  />
+                                  <div>
+                                    <div className="font-mono font-black text-slate-900 text-sm">
+                                      ₹{rateData.landedRate.toFixed(2)}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 mt-0.5">
+                                      Base: ₹{rateData.baseRate} + {rateData.gstPercent}% GST
+                                    </div>
+                                    {isL1 && (
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-black bg-emerald-600 text-white px-2 py-0.5 rounded-full mt-1 shadow-2xs">
+                                        <Zap className="w-2.5 h-2.5" /> L1 LOWEST
+                                      </span>
+                                    )}
                                   </div>
-                                  <div className="text-[10px] text-slate-500 mt-0.5">
-                                    Base: ₹{rateData.baseRate} + {rateData.gstPercent}% GST
-                                  </div>
-                                  {isL1 && (
-                                    <span className="inline-flex items-center gap-1 text-[9px] font-black bg-emerald-600 text-white px-2 py-0.5 rounded-full mt-1 shadow-2xs">
-                                      <Zap className="w-2.5 h-2.5" /> L1 LOWEST
-                                    </span>
-                                  )}
                                 </div>
                               ) : (
                                 <span className="text-slate-400 italic text-[11px]">Not Quoted</span>
@@ -296,21 +315,20 @@ export const EmbeddedL1ApprovalModal: React.FC<EmbeddedL1ApprovalModalProps> = (
                           );
                         })}
 
-                        {/* Awarded Vendor Selection */}
+                        {/* Awarded Vendor Selection Badge */}
                         <td className="p-3 border-l border-amber-200 bg-amber-50/30 text-center">
-                          <select
-                            value={awardedMap[item.id] || l1Data?.vendorId || ''}
-                            onChange={(e) =>
-                              setAwardedMap({ ...awardedMap, [item.id]: e.target.value })
-                            }
-                            className="w-full px-2 py-1.5 border border-amber-300 rounded-lg font-bold text-slate-900 text-xs bg-white focus:ring-2 focus:ring-amber-500"
-                          >
-                            {cs.vendors.map((v) => (
-                              <option key={v.vendorId} value={v.vendorId}>
-                                {v.vendorName} {l1Data?.vendorId === v.vendorId ? '(L1 Rate)' : ''}
-                              </option>
-                            ))}
-                          </select>
+                          {(() => {
+                            const selectedVendorId = awardedMap[item.id] || l1Data?.vendorId;
+                            const selVendor = cs.vendors.find(v => v.vendorId === selectedVendorId);
+                            return selVendor ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-600 text-white rounded-lg font-bold text-xs shadow-xs">
+                                <Check className="w-3.5 h-3.5" />
+                                <span>{selVendor.vendorName}</span>
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-xs italic">Select Vendor</span>
+                            );
+                          })()}
                         </td>
                       </tr>
                     );

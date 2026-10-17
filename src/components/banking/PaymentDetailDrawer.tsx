@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Landmark, Check, AlertTriangle, ShieldCheck, FileText, ArrowRight, ExternalLink, Clock, Copy, Upload } from 'lucide-react';
 import { BankPaymentRecord, UserProfile, isUserDirector } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
+import { AttachmentPreviewModal } from './AttachmentPreviewModal';
 
 interface PaymentDetailDrawerProps {
   payment: BankPaymentRecord | null;
@@ -29,6 +30,18 @@ export const PaymentDetailDrawer: React.FC<PaymentDetailDrawerProps> = ({
   const [settlementProofUrl, setSettlementProofUrl] = useState('');
 
   const [message, setMessage] = useState<string | null>(null);
+
+  // Document Preview State
+  const [previewDoc, setPreviewDoc] = useState<{
+    isOpen: boolean;
+    title: string;
+    docType: 'CHEQUE' | 'DEBIT_ADVICE' | 'PORTAL_ENTRY' | 'INVOICE' | 'OTHER';
+    url?: string;
+  }>({
+    isOpen: false,
+    title: '',
+    docType: 'OTHER'
+  });
 
   if (!isOpen || !payment) return null;
 
@@ -225,35 +238,39 @@ export const PaymentDetailDrawer: React.FC<PaymentDetailDrawerProps> = ({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <span className="text-[11px] font-bold text-slate-500 block mb-1">Cancelled Cheque / Passbook</span>
-                {payment.cancelledChequeUrl ? (
-                  <a
-                    href={payment.cancelledChequeUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-indigo-700 font-bold rounded-xl text-xs transition-colors"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>View Cheque Document</span>
-                  </a>
-                ) : (
-                  <span className="text-slate-400 text-[11px]">No Cheque Attached</span>
-                )}
+                <button
+                  type="button"
+                  onClick={() => setPreviewDoc({
+                    isOpen: true,
+                    title: `Cancelled Cheque Proof - ${payment.beneficiaryName}`,
+                    docType: 'CHEQUE',
+                    url: payment.cancelledChequeUrl
+                  })}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Inspect Cheque Proof</span>
+                </button>
               </div>
 
               <div>
                 <span className="text-[11px] font-bold text-slate-500 block mb-1">Settlement UTR / Advice</span>
-                {payment.paymentDoneProof ? (
-                  <a
-                    href={payment.paymentDoneProof}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold rounded-xl text-xs transition-colors"
+                {payment.paymentDoneProof || payment.remarks ? (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewDoc({
+                      isOpen: true,
+                      title: `Debit Advice / UTR Confirmation - ${payment.sheetNo}`,
+                      docType: 'DEBIT_ADVICE',
+                      url: payment.paymentDoneProof
+                    })}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold rounded-xl text-xs transition-colors cursor-pointer"
                   >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>View Debit Advice</span>
-                  </a>
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Inspect Debit Advice</span>
+                  </button>
                 ) : (
-                  <span className="text-slate-400 text-[11px]">Pending Settlement</span>
+                  <span className="text-slate-400 text-[11px]">Pending Bank Settlement</span>
                 )}
               </div>
             </div>
@@ -417,6 +434,18 @@ export const PaymentDetailDrawer: React.FC<PaymentDetailDrawerProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Attachment Preview Modal */}
+      <AttachmentPreviewModal
+        isOpen={previewDoc.isOpen}
+        onClose={() => setPreviewDoc(prev => ({ ...prev, isOpen: false }))}
+        title={previewDoc.title}
+        documentType={previewDoc.docType}
+        fileUrl={previewDoc.url}
+        referenceNo={payment.sheetNo}
+        partyName={payment.beneficiaryName}
+        amount={payment.amountToBePaid}
+      />
     </div>
   );
 };

@@ -5,6 +5,7 @@ import {
   ChecklistItem, 
   DelegationTask, 
   FmsInstance, 
+  FmsLineItem,
   FmsOverrideLog,
   InventoryItem, 
   InventoryMovement, 
@@ -24,7 +25,11 @@ import {
   PaymentStepStatus,
   PaymentApprovalStatus,
   VendorBeneficiaryMatch,
-  isUserDirector
+  isUserDirector,
+  VendorProfileRecord,
+  VendorBankAccount,
+  VendorSearchWithBankingResult,
+  isUserAuthorizedForVendorBanking
 } from '../types';
 
 export const INITIAL_DEPARTMENTS: DepartmentDefinition[] = [
@@ -89,7 +94,10 @@ import {
   INITIAL_BANK_PAYMENTS,
   INITIAL_BENEFICIARIES,
   INITIAL_IBT_RECORDS,
-  INITIAL_COMPARATIVE_STATEMENTS
+  INITIAL_COMPARATIVE_STATEMENTS,
+  INITIAL_VENDOR_PROFILES,
+  FMS_PURCHASE_TO_STORE_DISPATCH_STAGES,
+  FMS_STANDARD_PURCHASE_STAGES
 } from '../data/initialData';
 
 // Zod schemas for input validation
@@ -166,6 +174,7 @@ const RAW_STORAGE_KEYS = {
   BANK_PAYMENTS: 'barbrik_ops_bank_payments_v1',
   BENEFICIARIES: 'barbrik_ops_beneficiaries_v1',
   IBT: 'barbrik_ops_ibt_v1',
+  VENDOR_PROFILES: 'barbrik_ops_vendor_profiles_v1',
 };
 
 const STORAGE_KEYS = new Proxy(RAW_STORAGE_KEYS, {
@@ -196,9 +205,28 @@ class StorageAdapter {
   private auditLogs: AuditLogEntry[] = [];
   private listeners: Array<() => void> = [];
   private isSyncInitialized = false;
+  private isQuotaExceeded = false;
 
   constructor() {
     this.initStorage();
+  }
+
+  private activeUnsubscribes: Array<() => void> = [];
+
+  private handleFirestoreError(err: any) {
+    if (!err) return;
+    const msg = String(err?.message || err).toLowerCase();
+    const code = String(err?.code || '').toLowerCase();
+    if (code.includes('resource-exhausted') || msg.includes('quota limit exceeded') || msg.includes('resource-exhausted') || msg.includes('quota exceeded')) {
+      if (!this.isQuotaExceeded) {
+        this.isQuotaExceeded = true;
+        console.warn('[StorageAdapter] Firestore daily quota reached. Detaching remote listeners and operating seamlessly with persistent local storage.');
+        this.activeUnsubscribes.forEach((unsub) => {
+          try { unsub(); } catch (_) {}
+        });
+        this.activeUnsubscribes = [];
+      }
+    }
   }
 
   public subscribe(callback: () => void) {
@@ -219,184 +247,213 @@ class StorageAdapter {
   }
 
   public initFirestoreRealtimeSync() {
-    if (typeof window === 'undefined' || this.isSyncInitialized) return;
+    if (typeof window === 'undefined' || this.isSyncInitialized || this.isQuotaExceeded) return;
     this.isSyncInitialized = true;
 
     const handleSnapshotError = (err: any) => {
-      console.warn('[Firestore Snapshot Listener Notice]:', err?.message || err);
+      this.handleFirestoreError(err);
+      if (!this.isQuotaExceeded) {
+        console.warn('[Firestore Snapshot Listener Notice]:', err?.message || err);
+      }
     };
 
     try {
       // 1. Users
-      onSnapshot(
-        collection(db, getEnvCollectionName('users')),
-        (snap) => {
-          if (!snap.empty) {
-            const remoteUsers = snap.docs.map((d) => d.data() as UserProfile);
-            if (remoteUsers.length > 0) {
-              localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(remoteUsers));
-              this.notifyListeners();
+      this.activeUnsubscribes.push(
+        onSnapshot(
+          collection(db, getEnvCollectionName('users')),
+          (snap) => {
+            if (!snap.empty) {
+              const remoteUsers = snap.docs.map((d) => d.data() as UserProfile);
+              if (remoteUsers.length > 0) {
+                localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(remoteUsers));
+                this.notifyListeners();
+              }
             }
-          }
-        },
-        handleSnapshotError
+          },
+          handleSnapshotError
+        )
       );
 
       // 2. FMS Workflows
-      onSnapshot(
-        collection(db, getEnvCollectionName('fmsFlows')),
-        (snap) => {
-          if (!snap.empty) {
-            const remoteFlows = snap.docs.map((d) => d.data() as FmsInstance);
-            if (remoteFlows.length > 0) {
-              localStorage.setItem(STORAGE_KEYS.FMS, JSON.stringify(remoteFlows));
-              this.notifyListeners();
+      this.activeUnsubscribes.push(
+        onSnapshot(
+          collection(db, getEnvCollectionName('fmsFlows')),
+          (snap) => {
+            if (!snap.empty) {
+              const remoteFlows = snap.docs.map((d) => d.data() as FmsInstance);
+              if (remoteFlows.length > 0) {
+                localStorage.setItem(STORAGE_KEYS.FMS, JSON.stringify(remoteFlows));
+                this.notifyListeners();
+              }
             }
-          }
-        },
-        handleSnapshotError
+          },
+          handleSnapshotError
+        )
       );
 
       // 3. Delegation Tasks
-      onSnapshot(
-        collection(db, getEnvCollectionName('delegationTasks')),
-        (snap) => {
-          if (!snap.empty) {
-            const remoteDeleg = snap.docs.map((d) => d.data() as DelegationTask);
-            if (remoteDeleg.length > 0) {
-              localStorage.setItem(STORAGE_KEYS.DELEGATION, JSON.stringify(remoteDeleg));
-              this.notifyListeners();
+      this.activeUnsubscribes.push(
+        onSnapshot(
+          collection(db, getEnvCollectionName('delegationTasks')),
+          (snap) => {
+            if (!snap.empty) {
+              const remoteDeleg = snap.docs.map((d) => d.data() as DelegationTask);
+              if (remoteDeleg.length > 0) {
+                localStorage.setItem(STORAGE_KEYS.DELEGATION, JSON.stringify(remoteDeleg));
+                this.notifyListeners();
+              }
             }
-          }
-        },
-        handleSnapshotError
+          },
+          handleSnapshotError
+        )
       );
 
       // 4. Checklist Items
-      onSnapshot(
-        collection(db, getEnvCollectionName('checklistItems')),
-        (snap) => {
-          if (!snap.empty) {
-            const remoteChk = snap.docs.map((d) => d.data() as ChecklistItem);
-            if (remoteChk.length > 0) {
-              localStorage.setItem(STORAGE_KEYS.CHECKLIST, JSON.stringify(remoteChk));
-              this.notifyListeners();
+      this.activeUnsubscribes.push(
+        onSnapshot(
+          collection(db, getEnvCollectionName('checklistItems')),
+          (snap) => {
+            if (!snap.empty) {
+              const remoteChk = snap.docs.map((d) => d.data() as ChecklistItem);
+              if (remoteChk.length > 0) {
+                localStorage.setItem(STORAGE_KEYS.CHECKLIST, JSON.stringify(remoteChk));
+                this.notifyListeners();
+              }
             }
-          }
-        },
-        handleSnapshotError
+          },
+          handleSnapshotError
+        )
       );
 
       // 5. Inventory Items
-      onSnapshot(
-        collection(db, getEnvCollectionName('inventoryItems')),
-        (snap) => {
-          if (!snap.empty) {
-            const remoteInv = snap.docs.map((d) => d.data() as InventoryItem);
-            if (remoteInv.length > 0) {
-              localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(remoteInv));
-              this.notifyListeners();
+      this.activeUnsubscribes.push(
+        onSnapshot(
+          collection(db, getEnvCollectionName('inventoryItems')),
+          (snap) => {
+            if (!snap.empty) {
+              const remoteInv = snap.docs.map((d) => d.data() as InventoryItem);
+              if (remoteInv.length > 0) {
+                localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(remoteInv));
+                this.notifyListeners();
+              }
             }
-          }
-        },
-        handleSnapshotError
+          },
+          handleSnapshotError
+        )
       );
 
       // 6. Notice Board
-      onSnapshot(
-        collection(db, getEnvCollectionName('noticeBoard')),
-        (snap) => {
-          if (!snap.empty) {
-            const remoteNotice = snap.docs.map((d) => d.data() as NoticeBoardItem);
-            if (remoteNotice.length > 0) {
-              localStorage.setItem(STORAGE_KEYS.NOTICE_BOARD, JSON.stringify(remoteNotice));
-              this.notifyListeners();
+      this.activeUnsubscribes.push(
+        onSnapshot(
+          collection(db, getEnvCollectionName('noticeBoard')),
+          (snap) => {
+            if (!snap.empty) {
+              const remoteNotice = snap.docs.map((d) => d.data() as NoticeBoardItem);
+              if (remoteNotice.length > 0) {
+                localStorage.setItem(STORAGE_KEYS.NOTICE_BOARD, JSON.stringify(remoteNotice));
+                this.notifyListeners();
+              }
             }
-          }
-        },
-        handleSnapshotError
+          },
+          handleSnapshotError
+        )
       );
 
       // 7. FMS Templates
-      onSnapshot(
-        collection(db, getEnvCollectionName('fmsTemplates')),
-        (snap) => {
-          if (!snap.empty) {
-            const remoteTemplates = snap.docs.map((d) => d.data() as FmsTemplateDefinition);
-            if (remoteTemplates.length > 0) {
-              localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(remoteTemplates));
-              this.notifyListeners();
+      this.activeUnsubscribes.push(
+        onSnapshot(
+          collection(db, getEnvCollectionName('fmsTemplates')),
+          (snap) => {
+            if (!snap.empty) {
+              const remoteTemplates = snap.docs.map((d) => d.data() as FmsTemplateDefinition);
+              if (remoteTemplates.length > 0) {
+                localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(remoteTemplates));
+                this.notifyListeners();
+              }
             }
-          }
-        },
-        handleSnapshotError
+          },
+          handleSnapshotError
+        )
       );
 
       // 8. Department Hub
-      onSnapshot(
-        collection(db, getEnvCollectionName('departments')),
-        (snap) => {
-          if (!snap.empty) {
-            const remoteDepts = snap.docs.map((d) => d.data() as DepartmentDefinition);
-            if (remoteDepts.length > 0) {
-              localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, JSON.stringify(remoteDepts));
-              this.notifyListeners();
+      this.activeUnsubscribes.push(
+        onSnapshot(
+          collection(db, getEnvCollectionName('departments')),
+          (snap) => {
+            if (!snap.empty) {
+              const remoteDepts = snap.docs.map((d) => d.data() as DepartmentDefinition);
+              if (remoteDepts.length > 0) {
+                localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, JSON.stringify(remoteDepts));
+                this.notifyListeners();
+              }
             }
-          }
-        },
-        handleSnapshotError
+          },
+          handleSnapshotError
+        )
       );
 
       // 9. Inventory Movements
-      onSnapshot(
-        collection(db, getEnvCollectionName('inventoryMovements')),
-        (snap) => {
-          if (!snap.empty) {
-            const remoteMov = snap.docs.map((d) => d.data() as InventoryMovement);
-            if (remoteMov.length > 0) {
-              localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(remoteMov));
-              this.notifyListeners();
+      this.activeUnsubscribes.push(
+        onSnapshot(
+          collection(db, getEnvCollectionName('inventoryMovements')),
+          (snap) => {
+            if (!snap.empty) {
+              const remoteMov = snap.docs.map((d) => d.data() as InventoryMovement);
+              if (remoteMov.length > 0) {
+                localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(remoteMov));
+                this.notifyListeners();
+              }
             }
-          }
-        },
-        handleSnapshotError
+          },
+          handleSnapshotError
+        )
       );
 
       // 10. Central Registry Config
-      onSnapshot(
-        collection(db, getEnvCollectionName('registryConfig')),
-        (snap) => {
-          if (!snap.empty) {
-            const remoteCfg = snap.docs.map((d) => d.data() as CentralRegistryConfig);
-            if (remoteCfg.length > 0) {
-              localStorage.setItem(STORAGE_KEYS.REGISTRY, JSON.stringify(remoteCfg[0]));
-              this.notifyListeners();
+      this.activeUnsubscribes.push(
+        onSnapshot(
+          collection(db, getEnvCollectionName('registryConfig')),
+          (snap) => {
+            if (!snap.empty) {
+              const remoteCfg = snap.docs.map((d) => d.data() as CentralRegistryConfig);
+              if (remoteCfg.length > 0) {
+                localStorage.setItem(STORAGE_KEYS.REGISTRY, JSON.stringify(remoteCfg[0]));
+                this.notifyListeners();
+              }
             }
-          }
-        },
-        handleSnapshotError
+          },
+          handleSnapshotError
+        )
       );
 
       // 11. System Audit Trail
-      onSnapshot(
-        collection(db, getEnvCollectionName('auditLogs')),
-        (snap) => {
-          if (!snap.empty) {
-            const remoteAudit = snap.docs.map((d) => d.data() as AuditLogEntry);
-            if (remoteAudit.length > 0) {
-              localStorage.setItem(STORAGE_KEYS.AUDIT, JSON.stringify(remoteAudit));
-              this.notifyListeners();
+      this.activeUnsubscribes.push(
+        onSnapshot(
+          collection(db, getEnvCollectionName('auditLogs')),
+          (snap) => {
+            if (!snap.empty) {
+              const remoteAudit = snap.docs.map((d) => d.data() as AuditLogEntry);
+              if (remoteAudit.length > 0) {
+                localStorage.setItem(STORAGE_KEYS.AUDIT, JSON.stringify(remoteAudit));
+                this.notifyListeners();
+              }
             }
-          }
-        },
-        handleSnapshotError
+          },
+          handleSnapshotError
+        )
       );
     } catch (e) {
-      console.warn('Real-time Firestore listeners initialization failed:', e);
+      this.handleFirestoreError(e);
+      if (!this.isQuotaExceeded) {
+        console.warn('Real-time Firestore listeners initialization failed:', e);
+      }
     }
   }
 
   private syncToFirestore(baseCollectionName: string, items: any[], idKey: string) {
+    if (this.isQuotaExceeded) return;
     const collectionName = getEnvCollectionName(baseCollectionName);
     try {
       const currentIds = new Set(
@@ -405,42 +462,58 @@ class StorageAdapter {
 
       // 1. Create / Update (Upsert) clean items
       for (const item of items) {
+        if (this.isQuotaExceeded) break;
         const id = item[idKey] || item.id || item.flowId || item.taskId || item.itemId || item.userId || item.auditId;
         if (id) {
           const cleanPayload = sanitizeForFirestore(item);
           setDoc(doc(db, collectionName, String(id)), cleanPayload, { merge: true })
             .catch((err) => {
-              console.warn(`[Firestore Write Error] ${collectionName}/${id}:`, err?.message || err);
+              this.handleFirestoreError(err);
+              if (!this.isQuotaExceeded) {
+                console.warn(`[Firestore Write Error] ${collectionName}/${id}:`, err?.message || err);
+              }
             });
         }
       }
 
       // 2. Delete removed items from remote Firestore collection
-      getDocs(collection(db, collectionName)).then((snap) => {
-        snap.docs.forEach((d) => {
-          if (!currentIds.has(d.id)) {
-            deleteDoc(doc(db, collectionName, d.id)).catch(() => {});
-          }
-        });
-      }).catch(() => {});
+      if (!this.isQuotaExceeded) {
+        getDocs(collection(db, collectionName)).then((snap) => {
+          snap.docs.forEach((d) => {
+            if (!currentIds.has(d.id)) {
+              deleteDoc(doc(db, collectionName, d.id)).catch((err) => this.handleFirestoreError(err));
+            }
+          });
+        }).catch((err) => this.handleFirestoreError(err));
+      }
     } catch (err) {
-      console.warn(`[Firestore Sync Exception] ${collectionName}:`, err);
+      this.handleFirestoreError(err);
+      if (!this.isQuotaExceeded) {
+        console.warn(`[Firestore Sync Exception] ${collectionName}:`, err);
+      }
     }
   }
 
   public deleteFromFirestore(baseCollectionName: string, id: string) {
+    if (this.isQuotaExceeded) return;
     const collectionName = getEnvCollectionName(baseCollectionName);
     try {
       deleteDoc(doc(db, collectionName, id)).catch((err) => {
-        console.warn(`[Firestore Delete Error] ${collectionName}/${id}:`, err?.message || err);
+        this.handleFirestoreError(err);
+        if (!this.isQuotaExceeded) {
+          console.warn(`[Firestore Delete Error] ${collectionName}/${id}:`, err?.message || err);
+        }
       });
     } catch (err) {
-      console.warn(`[Firestore Delete Exception] ${collectionName}/${id}:`, err);
+      this.handleFirestoreError(err);
+      if (!this.isQuotaExceeded) {
+        console.warn(`[Firestore Delete Exception] ${collectionName}/${id}:`, err);
+      }
     }
   }
 
   public async migrateLegacyDevData() {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || this.isQuotaExceeded) return;
     try {
       const collectionsToMigrate = [
         { name: 'users', key: 'userId' },
@@ -457,10 +530,12 @@ class StorageAdapter {
       ];
 
       for (const col of collectionsToMigrate) {
+        if (this.isQuotaExceeded) break;
         const devSnap = await getDocs(collection(db, `dev_${col.name}`));
         if (!devSnap.empty) {
           const devDocs = devSnap.docs.map(d => d.data());
           for (const docData of devDocs) {
+            if (this.isQuotaExceeded) break;
             const docId = docData[col.key] || docData.id || docData.flowId || docData.userId;
             if (docId) {
               const clean = sanitizeForFirestore(docData);
@@ -480,11 +555,15 @@ class StorageAdapter {
         }
       }
     } catch (err) {
-      console.warn('Legacy dev data migration notice:', err);
+      this.handleFirestoreError(err);
+      if (!this.isQuotaExceeded) {
+        console.warn('Legacy dev data migration notice:', err);
+      }
     }
   }
 
   public async loadFromFirestore() {
+    if (this.isQuotaExceeded) return false;
     try {
       const isConnected = await testConnection();
       if (!isConnected) {
@@ -692,7 +771,10 @@ class StorageAdapter {
 
       return true;
     } catch (e) {
-      console.warn('Error loading from Firestore:', e);
+      this.handleFirestoreError(e);
+      if (!this.isQuotaExceeded) {
+        console.warn('Error loading from Firestore:', e);
+      }
       return false;
     }
   }
@@ -1036,6 +1118,133 @@ class StorageAdapter {
     this.notifyListeners();
   }
 
+  public splitIndentForPurchaseAndStore(
+    parentFlow: FmsInstance,
+    lineItems: FmsLineItem[],
+    triageNotes: string,
+    currentUser?: UserProfile
+  ): { storeFlow: FmsInstance | null; purchaseFlow: FmsInstance | null } {
+    const existingFlows = this.getFmsFlows();
+    const baseIndentNo = parentFlow.indentNo || parentFlow.requisitionNumber || `IND-${Date.now().toString().slice(-4)}`;
+    
+    const storeItems = lineItems.filter((i) => i.triageAllocation === 'STORE_DISPATCH');
+    const purchaseItems = lineItems.filter((i) => i.triageAllocation === 'PURCHASE_REQUISITION');
+
+    let storeFlow: FmsInstance | null = null;
+    let purchaseFlow: FmsInstance | null = null;
+
+    const nowIso = new Date().toISOString();
+    const nowStr = new Date().toLocaleString('en-GB');
+
+    // 1. Create Store Dispatch Indent if store items exist
+    if (storeItems.length > 0) {
+      const dispId = `fms-disp-${Date.now()}`;
+      const dispFlowId = `FLOW-DISP-${Date.now().toString().slice(-6)}`;
+      const dispIndentNo = `${baseIndentNo}-DISP`;
+
+      storeFlow = {
+        ...parentFlow,
+        id: dispId,
+        flowId: dispFlowId,
+        indentNo: dispIndentNo,
+        requisitionNumber: dispIndentNo,
+        flowType: 'PURCHASE_TO_STORE_DISPATCH',
+        title: `[STORE DISPATCH TRACK] ${parentFlow.title || 'Store Stock Issue'}`,
+        status: 'In Progress',
+        isClosed: false,
+        lineItems: storeItems,
+        currentStageIndex: 0,
+        currentStageId: 'STG-PSD-01',
+        createdAt: nowStr,
+        updatedAt: nowStr,
+        stages: FMS_PURCHASE_TO_STORE_DISPATCH_STAGES.map((stg, idx) => ({
+          stageId: stg.stageId,
+          stageName: stg.name,
+          assignee: stg.whoDefaultAssignee || stg.whoRole || 'Store Keeper',
+          how: stg.howChannel || 'In-App Form',
+          status: idx === 0 ? ('In Progress' as const) : ('Pending' as const),
+          stageStartedAt: idx === 0 ? nowIso : undefined,
+          plannedTimestamp: idx === 0 ? new Date(Date.now() + (stg.slaHours || 12) * 3600 * 1000).toISOString() : undefined,
+        })),
+        instanceDataPool: {
+          ...(parentFlow.instanceDataPool || {}),
+          parentIndentNo: baseIndentNo,
+          splitTrackType: 'STORE_DISPATCH',
+          triageNotes,
+          triagedBy: currentUser?.name || 'Store Keeper',
+        },
+      };
+    }
+
+    // 2. Create Purchase Requisition Indent if purchase items exist
+    if (purchaseItems.length > 0) {
+      const purchId = `fms-purch-${Date.now() + 1}`;
+      const purchFlowId = `FLOW-PURCH-${Date.now().toString().slice(-6)}`;
+      const purchIndentNo = `${baseIndentNo}-PURCH`;
+
+      purchaseFlow = {
+        ...parentFlow,
+        id: purchId,
+        flowId: purchFlowId,
+        indentNo: purchIndentNo,
+        requisitionNumber: purchIndentNo,
+        flowType: 'INDENT_PURCHASE',
+        title: `[PURCHASE REQUISITION TRACK] ${parentFlow.title || 'Market Requisition'}`,
+        status: 'In Progress',
+        isClosed: false,
+        lineItems: purchaseItems,
+        currentStageIndex: 0,
+        currentStageId: 'STG-01',
+        createdAt: nowStr,
+        updatedAt: nowStr,
+        stages: FMS_STANDARD_PURCHASE_STAGES.map((stg, idx) => ({
+          stageId: stg.stageId,
+          stageName: stg.name,
+          assignee: stg.whoDefaultAssignee || stg.whoRole || 'Purchase Officer',
+          how: stg.howChannel || 'In-App Form',
+          status: idx === 0 ? ('In Progress' as const) : ('Pending' as const),
+          stageStartedAt: idx === 0 ? nowIso : undefined,
+          plannedTimestamp: idx === 0 ? new Date(Date.now() + (stg.slaHours || 24) * 3600 * 1000).toISOString() : undefined,
+        })),
+        instanceDataPool: {
+          ...(parentFlow.instanceDataPool || {}),
+          parentIndentNo: baseIndentNo,
+          splitTrackType: 'PURCHASE_REQUISITION',
+          triageNotes,
+          triagedBy: currentUser?.name || 'Store Keeper',
+        },
+      };
+    }
+
+    // 3. Mark original parent flow as CLOSED / SPLIT
+    const updatedParent: FmsInstance = {
+      ...parentFlow,
+      status: 'CLOSED',
+      isClosed: true,
+      closureRemark: `Triaged into independent sub-indents: ${storeFlow ? storeFlow.indentNo : ''} ${purchaseFlow ? purchaseFlow.indentNo : ''}`.trim(),
+      lineItems: lineItems,
+      updatedAt: nowStr,
+    };
+
+    // Replace parent and prepend new sub-indents
+    const newFlowList = existingFlows.map((f) => (f.id === parentFlow.id || f.flowId === parentFlow.flowId ? updatedParent : f));
+    if (storeFlow) newFlowList.unshift(storeFlow);
+    if (purchaseFlow) newFlowList.unshift(purchaseFlow);
+
+    this.saveFmsFlows(newFlowList);
+
+    this.logAudit({
+      userId: currentUser?.userId || 'STORE_MGR',
+      userName: currentUser?.name || 'Store Manager',
+      module: 'FMS',
+      action: 'CREATE',
+      entityId: baseIndentNo,
+      details: `Triaged Indent #${baseIndentNo} into 2 independent track indents (${storeItems.length} Store Dispatch items, ${purchaseItems.length} Market Purchase items).`,
+    });
+
+    return { storeFlow, purchaseFlow };
+  }
+
   public deleteFmsFlow(flowIdOrId: string, currentUser?: UserProfile) {
     if (typeof window === 'undefined') return;
     const existing = this.getFmsFlows();
@@ -1203,6 +1412,48 @@ class StorageAdapter {
       entityId: flow.flowId || flow.id,
       details: `Super Admin / Admin Override: Active stage moved from Stage ${prevStageIndex + 1} (${prevStageName}) to Stage ${targetStageIndex + 1} (${newStage.stageName}). Reason: ${reason}`,
     });
+
+    return updatedFlow;
+  }
+
+  public updateFmsStageUrl(
+    flowId: string,
+    stageIndex: number,
+    googleFormUrl: string,
+    currentUser?: UserProfile
+  ): FmsInstance | null {
+    const flows = this.getFmsFlows();
+    const targetIdx = flows.findIndex((f) => f.id === flowId || f.flowId === flowId);
+    if (targetIdx === -1) return null;
+
+    const flow = flows[targetIdx];
+    const updatedStages = [...flow.stages];
+    if (updatedStages[stageIndex]) {
+      updatedStages[stageIndex] = {
+        ...updatedStages[stageIndex],
+        googleFormUrl,
+      };
+    }
+
+    const updatedFlow: FmsInstance = {
+      ...flow,
+      stages: updatedStages,
+      updatedAt: new Date().toLocaleString('en-GB')
+    };
+
+    flows[targetIdx] = updatedFlow;
+    this.saveFmsFlows(flows);
+
+    if (currentUser) {
+      this.logAudit({
+        userId: currentUser.userId,
+        userName: currentUser.name,
+        module: 'FMS',
+        action: 'UPDATE',
+        entityId: flow.flowId || flow.id,
+        details: `Configured Stage ${stageIndex + 1} (${updatedStages[stageIndex]?.stageName}) external work URL: ${googleFormUrl}`
+      });
+    }
 
     return updatedFlow;
   }
@@ -2845,6 +3096,301 @@ class StorageAdapter {
       accountsPendingBenEntry,
     };
   }
+
+  // ==========================================
+  // VENDOR PROFILES & BANKING MASTER GOVERNANCE
+  // ==========================================
+  public getVendorProfiles(): VendorProfileRecord[] {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.VENDOR_PROFILES);
+      if (!raw) {
+        this.saveVendorProfiles(INITIAL_VENDOR_PROFILES);
+        return INITIAL_VENDOR_PROFILES;
+      }
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+      this.saveVendorProfiles(INITIAL_VENDOR_PROFILES);
+      return INITIAL_VENDOR_PROFILES;
+    } catch (e) {
+      console.error('Failed to load vendor profiles, resetting to initial seed', e);
+      return INITIAL_VENDOR_PROFILES;
+    }
+  }
+
+  public saveVendorProfiles(profiles: VendorProfileRecord[]): void {
+    try {
+      localStorage.setItem(STORAGE_KEYS.VENDOR_PROFILES, JSON.stringify(profiles));
+    } catch (e) {
+      console.error('Failed to save vendor profiles to localStorage', e);
+    }
+  }
+
+  public getVendorProfileById(id: string): VendorProfileRecord | null {
+    const list = this.getVendorProfiles();
+    return list.find(v => v.id === id || v.vendorCode === id) || null;
+  }
+
+  public addVendorProfile(
+    record: Omit<VendorProfileRecord, 'id' | 'createdAt'>,
+    user: UserProfile
+  ): VendorProfileRecord {
+    if (!isUserAuthorizedForVendorBanking(user)) {
+      throw new Error('Unauthorized: Only Accounts, Director, Admin, or Super Admin can register new vendors.');
+    }
+
+    const current = this.getVendorProfiles();
+    const newId = `ven-prof-${Date.now()}`;
+    const vendorCode = record.vendorCode || `VEN-${new Date().getFullYear()}-${String(current.length + 1).padStart(3, '0')}`;
+    const today = new Date().toLocaleDateString('en-GB');
+
+    const newProfile: VendorProfileRecord = {
+      ...record,
+      id: newId,
+      vendorCode,
+      createdAt: today,
+      createdBy: user.name,
+      status: record.status || 'ACTIVE',
+      bankAccounts: record.bankAccounts || []
+    };
+
+    const updated = [newProfile, ...current];
+    this.saveVendorProfiles(updated);
+
+    // Keep master registry vendors in sync
+    this.addMasterVendor(newProfile.tradeName);
+
+    // If an initial bank account was attached, sync to Beneficiary Master if applicable
+    if (newProfile.bankAccounts.length > 0) {
+      const primary = newProfile.bankAccounts[0];
+      const existingBen = this.getBeneficiaryRecords().find(
+        b => b.tradeVendorName?.toLowerCase() === newProfile.tradeName.toLowerCase() ||
+             b.accountNo === primary.accountNo
+      );
+      if (!existingBen) {
+        this.addBeneficiaryRecord({
+          beneficiaryName: primary.beneficiaryName,
+          tradeVendorName: newProfile.tradeName,
+          accountNo: primary.accountNo,
+          ifscCode: primary.ifscCode,
+          bankName: primary.bankName,
+          purpose: newProfile.category || 'Vendor Procurement',
+          cancelledChequeUrl: primary.cancelledChequeUrl || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+          remark: primary.notes || 'Created during Vendor Registration'
+        }, user);
+      }
+    }
+
+    this.logAudit({
+      userId: user.userId,
+      userName: user.name,
+      module: 'REGISTRY',
+      action: 'CREATE',
+      entityId: newProfile.tradeName,
+      details: `Registered vendor ${newProfile.tradeName} (${vendorCode}) with ${newProfile.bankAccounts.length} bank account(s)`
+    });
+
+    return newProfile;
+  }
+
+  public updateVendorProfile(
+    id: string,
+    updates: Partial<VendorProfileRecord>,
+    user: UserProfile
+  ): VendorProfileRecord | null {
+    if (!isUserAuthorizedForVendorBanking(user)) {
+      throw new Error('Unauthorized: Only Accounts, Director, Admin, or Super Admin can modify vendor details.');
+    }
+
+    const current = this.getVendorProfiles();
+    let updatedProfile: VendorProfileRecord | null = null;
+
+    const updated = current.map(v => {
+      if (v.id === id) {
+        updatedProfile = {
+          ...v,
+          ...updates,
+          updatedAt: new Date().toLocaleDateString('en-GB') + ' ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+          updatedBy: user.name
+        };
+        return updatedProfile;
+      }
+      return v;
+    });
+
+    if (updatedProfile) {
+      this.saveVendorProfiles(updated);
+      if (updates.tradeName) {
+        this.addMasterVendor(updates.tradeName);
+      }
+      this.logAudit({
+        userId: user.userId,
+        userName: user.name,
+        module: 'REGISTRY',
+        action: 'UPDATE',
+        entityId: (updatedProfile as VendorProfileRecord).tradeName,
+        details: `Updated details for vendor ${(updatedProfile as VendorProfileRecord).tradeName}`
+      });
+    }
+
+    return updatedProfile;
+  }
+
+  public addVendorBankAccount(
+    vendorId: string,
+    bankAccount: Omit<VendorBankAccount, 'id'>,
+    user: UserProfile
+  ): VendorBankAccount | null {
+    if (!isUserAuthorizedForVendorBanking(user)) {
+      throw new Error('Unauthorized: Only Accounts, Director, Admin, or Super Admin can register vendor bank accounts.');
+    }
+
+    const current = this.getVendorProfiles();
+    const vendor = current.find(v => v.id === vendorId);
+    if (!vendor) return null;
+
+    const accId = `acc-${Date.now()}`;
+    const cleanAccountNo = (bankAccount.accountNo || '').trim();
+    const masked = bankAccount.accountNoMasked || `••••••••${cleanAccountNo.slice(-4)}`;
+
+    const newAccount: VendorBankAccount = {
+      ...bankAccount,
+      id: accId,
+      accountNo: cleanAccountNo,
+      accountNoMasked: masked,
+      ifscCode: (bankAccount.ifscCode || '').trim().toUpperCase(),
+      tradeVendorName: vendor.tradeName,
+      verifiedBy: bankAccount.verificationStatus === 'VERIFIED' ? user.name : undefined,
+      verifiedAt: bankAccount.verificationStatus === 'VERIFIED' ? new Date().toLocaleDateString('en-GB') : undefined,
+    };
+
+    let updatedAccounts = [...vendor.bankAccounts];
+    if (newAccount.isPrimary) {
+      updatedAccounts = updatedAccounts.map(a => ({ ...a, isPrimary: false }));
+    } else if (updatedAccounts.length === 0) {
+      newAccount.isPrimary = true;
+    }
+    updatedAccounts.push(newAccount);
+
+    this.updateVendorProfile(vendorId, { bankAccounts: updatedAccounts }, user);
+
+    // Sync to Beneficiary Master if cancelled cheque is present or verified
+    if (newAccount.cancelledChequeUrl) {
+      this.addBeneficiaryRecord({
+        beneficiaryName: newAccount.beneficiaryName,
+        tradeVendorName: vendor.tradeName,
+        accountNo: newAccount.accountNo,
+        ifscCode: newAccount.ifscCode,
+        bankName: newAccount.bankName,
+        purpose: vendor.category || 'Vendor Disbursement',
+        cancelledChequeUrl: newAccount.cancelledChequeUrl,
+        remark: `Linked to vendor ${vendor.tradeName} (${vendor.vendorCode})`
+      }, user);
+    }
+
+    this.logAudit({
+      userId: user.userId,
+      userName: user.name,
+      module: 'REGISTRY',
+      action: 'CREATE',
+      entityId: vendor.tradeName,
+      details: `Added bank account ${newAccount.bankName} (${newAccount.accountNoMasked}) for ${vendor.tradeName}`
+    });
+
+    return newAccount;
+  }
+
+  public updateVendorBankAccount(
+    vendorId: string,
+    accountId: string,
+    updates: Partial<VendorBankAccount>,
+    user: UserProfile
+  ): VendorBankAccount | null {
+    if (!isUserAuthorizedForVendorBanking(user)) {
+      throw new Error('Unauthorized: Only Accounts, Director, Admin, or Super Admin can edit vendor bank accounts.');
+    }
+
+    const current = this.getVendorProfiles();
+    const vendor = current.find(v => v.id === vendorId);
+    if (!vendor) return null;
+
+    let targetAccount: VendorBankAccount | null = null;
+    let updatedAccounts = vendor.bankAccounts.map(acc => {
+      if (acc.id === accountId) {
+        targetAccount = {
+          ...acc,
+          ...updates,
+          ifscCode: updates.ifscCode ? updates.ifscCode.trim().toUpperCase() : acc.ifscCode,
+          accountNoMasked: updates.accountNo ? `••••••••${updates.accountNo.slice(-4)}` : acc.accountNoMasked
+        };
+        return targetAccount;
+      }
+      return acc;
+    });
+
+    if (targetAccount && (targetAccount as VendorBankAccount).isPrimary) {
+      updatedAccounts = updatedAccounts.map(a => a.id === accountId ? a : { ...a, isPrimary: false });
+    }
+
+    this.updateVendorProfile(vendorId, { bankAccounts: updatedAccounts }, user);
+    return targetAccount;
+  }
+
+  public searchVendorsWithBanking(query: string): VendorSearchWithBankingResult[] {
+    if (!query || query.trim().length === 0) return [];
+    const q = query.trim().toLowerCase();
+    const vendors = this.getVendorProfiles();
+    const results: VendorSearchWithBankingResult[] = [];
+
+    vendors.forEach(v => {
+      const matchTrade = (v.tradeName || '').toLowerCase().includes(q);
+      const matchLegal = (v.legalName || '').toLowerCase().includes(q);
+      const matchGstin = (v.gstin || '').toLowerCase().includes(q);
+      const matchPan = (v.pan || '').toLowerCase().includes(q);
+      const matchCategory = (v.category || '').toLowerCase().includes(q);
+
+      // Also check bank accounts
+      const matchBank = v.bankAccounts.some(b => 
+        (b.beneficiaryName || '').toLowerCase().includes(q) ||
+        (b.bankName || '').toLowerCase().includes(q) ||
+        (b.accountNo || '').includes(q)
+      );
+
+      if (matchTrade || matchLegal || matchGstin || matchPan || matchCategory || matchBank) {
+        let score = 0;
+        if (v.tradeName.toLowerCase() === q) score += 100;
+        else if (v.tradeName.toLowerCase().startsWith(q)) score += 50;
+        else if (matchTrade) score += 25;
+        if (matchGstin || matchPan) score += 20;
+
+        const primaryAccount = v.bankAccounts.find(a => a.isPrimary) || v.bankAccounts[0];
+        const hasBankAccounts = v.bankAccounts.length > 0;
+        const hasVerifiedBeneficiary = Boolean(primaryAccount && primaryAccount.verificationStatus === 'VERIFIED');
+        const hasCancelledCheque = Boolean(primaryAccount && primaryAccount.cancelledChequeUrl && primaryAccount.cancelledChequeUrl.trim().length > 0);
+        const isNameMismatch = Boolean(
+          primaryAccount &&
+          primaryAccount.beneficiaryName &&
+          v.tradeName &&
+          primaryAccount.beneficiaryName.trim().toLowerCase() !== v.tradeName.trim().toLowerCase()
+        );
+
+        results.push({
+          vendor: v,
+          hasBankAccounts,
+          primaryAccount,
+          hasVerifiedBeneficiary,
+          hasCancelledCheque,
+          isNameMismatch,
+          matchScore: score
+        });
+      }
+    });
+
+    results.sort((a, b) => b.matchScore - a.matchScore);
+    return results.slice(0, 8);
+  }
 }
 
 export const storageAdapter = new StorageAdapter();
+

@@ -13,7 +13,8 @@ import {
   BankPaymentRecord,
   BeneficiaryRecord,
   InterbankTransferRecord,
-  ComparativeStatement
+  ComparativeStatement,
+  VendorProfileRecord
 } from '../types';
 
 export const INITIAL_NOTIFICATIONS: AppNotification[] = [
@@ -5396,3 +5397,211 @@ export const INITIAL_COMPARATIVE_STATEMENTS: ComparativeStatement[] = [
     updatedAt: '13/10/2026, 10:30 AM'
   }
 ];
+
+export const INITIAL_VENDOR_PROFILES: VendorProfileRecord[] = [
+  {
+    id: 'ven-prof-001',
+    vendorCode: 'VEN-2026-001',
+    tradeName: 'M/S ULTRA TECH CEMENT',
+    legalName: 'UltraTech Cement Limited',
+    gstin: '22AAACU3456F1Z2',
+    pan: 'AAACU3456F',
+    category: 'Cement & Concrete',
+    contactPerson: 'Rakesh Agrawal (Key Account Manager)',
+    phone: '+91 98271 23450',
+    email: 'rakesh.agrawal@ultratech.com',
+    address: 'Plot 42, Heavy Industrial Area, Bhanpuri',
+    city: 'Raipur',
+    state: 'Chhattisgarh',
+    status: 'ACTIVE',
+    bankAccounts: [
+      {
+        id: 'acc-001',
+        beneficiaryName: 'ULTRATECH CEMENT LIMITED',
+        tradeVendorName: 'M/S ULTRA TECH CEMENT',
+        bankName: 'State Bank of India',
+        accountNo: '38291048291',
+        accountNoMasked: '••••••••8291',
+        ifscCode: 'SBIN0001292',
+        accountType: 'CURRENT',
+        isPrimary: true,
+        verificationStatus: 'VERIFIED',
+        verifiedBy: 'Pranjal Agrawal',
+        verifiedAt: '10/10/2026',
+        cancelledChequeUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+        linkedBeneficiarySheetNo: 'BPL/BEN/20261010/01',
+        notes: 'Corporate current account with CMS enablement.'
+      }
+    ],
+    notes: 'Primary bulk OPC/PPC cement supplier for Siladehi and Bijetala bridge projects.',
+    createdAt: '01/10/2026',
+    createdBy: 'System Super Admin'
+  },
+  {
+    id: 'ven-prof-002',
+    vendorCode: 'VEN-2026-002',
+    tradeName: 'MAHAVIR GAS CHULHA',
+    legalName: 'Mahavir Gas Chulha Repair & Services',
+    gstin: '22AAGPM9123D1ZK',
+    pan: 'AAGPM9123D',
+    category: 'Kitchen & Industrial Refills',
+    contactPerson: 'Kailash Sahu',
+    phone: '+91 94255 19283',
+    email: 'mahavir.gas@gmail.com',
+    address: 'Shop No. 12, Subhash Chowk, Janjgir',
+    city: 'Janjgir-Champa',
+    state: 'Chhattisgarh',
+    status: 'ACTIVE',
+    bankAccounts: [
+      {
+        id: 'acc-002',
+        beneficiaryName: 'MAHAVIR GAS CHULHA REPAIR STORE',
+        tradeVendorName: 'MAHAVIR GAS CHULHA',
+        bankName: 'State Bank of India',
+        accountNo: '381928371923',
+        accountNoMasked: '••••••••1923',
+        ifscCode: 'SBIN0001292',
+        accountType: 'CURRENT',
+        isPrimary: true,
+        verificationStatus: 'VERIFIED',
+        verifiedBy: 'Pranjal Agrawal',
+        verifiedAt: '12/10/2026',
+        cancelledChequeUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+        linkedBeneficiarySheetNo: 'BPL/BEN/20261012/01',
+        notes: 'Verified branch current account. Cancelled cheque on file.'
+      }
+    ],
+    notes: 'Local supplier for kitchen cooking fuel and cutting torch gas refills.',
+    createdAt: '05/10/2026',
+    createdBy: 'Amanat Bharadwaj'
+  },
+  {
+    id: 'ven-prof-003',
+    vendorCode: 'VEN-2026-003',
+    tradeName: 'KANHAIYA HARDWARE & INDUSTRIAL SUPPLIES',
+    legalName: 'Kanhaiya Lal Sahu (Proprietor)',
+    gstin: '22AAGPA9182E1Z8',
+    pan: 'AAGPA9182E',
+    category: 'Hardware & Tools',
+    contactPerson: 'Kanhaiya Lal Sahu',
+    phone: '+91 94252 88123',
+    email: 'kanhaiya.hardware@yahoo.com',
+    address: 'Ring Road No. 2, Transport Nagar',
+    city: 'Bilaspur',
+    state: 'Chhattisgarh',
+    status: 'ACTIVE',
+    bankAccounts: [
+      {
+        id: 'acc-003',
+        beneficiaryName: 'KANHAIYA LAL SAHU',
+        tradeVendorName: 'KANHAIYA HARDWARE & INDUSTRIAL SUPPLIES',
+        bankName: 'HDFC Bank Ltd',
+        accountNo: '918237192834',
+        accountNoMasked: '••••••••2834',
+        ifscCode: 'HDFC0000412',
+        accountType: 'CURRENT',
+        isPrimary: true,
+        verificationStatus: 'PENDING',
+        cancelledChequeUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+        linkedBeneficiarySheetNo: 'BPL/BEN/20261014/01',
+        notes: 'Proprietor name mismatch declaration submitted. Director sanction pending.'
+      }
+    ],
+    notes: 'Hardware fastener, power tools and safety consumables provider.',
+    createdAt: '06/10/2026',
+    createdBy: 'Priyanka'
+  },
+  {
+    id: 'ven-prof-004',
+    vendorCode: 'VEN-2026-004',
+    tradeName: 'M/S ASHARAM ELECTRICALS',
+    legalName: 'Asharam Electricals Private Limited',
+    gstin: '22AADCA7712Q1Z4',
+    pan: 'AADCA7712Q',
+    category: 'Electrical & Automation',
+    contactPerson: 'Vikas Sharma (Project Sales)',
+    phone: '+91 97555 12040',
+    email: 'vikas.sharma@asharamelec.in',
+    address: 'Near Old Bus Stand, G.E. Road',
+    city: 'Durg',
+    state: 'Chhattisgarh',
+    status: 'ACTIVE',
+    bankAccounts: [
+      {
+        id: 'acc-004',
+        beneficiaryName: 'ASHARAM ELECTRICALS PVT LTD',
+        tradeVendorName: 'M/S ASHARAM ELECTRICALS',
+        bankName: 'ICICI Bank',
+        accountNo: '004205019284',
+        accountNoMasked: '••••••••9284',
+        ifscCode: 'ICIC0000042',
+        accountType: 'CURRENT',
+        isPrimary: true,
+        verificationStatus: 'VERIFIED',
+        verifiedBy: 'Pranjal Agrawal',
+        verifiedAt: '08/10/2026',
+        cancelledChequeUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+        linkedBeneficiarySheetNo: 'BPL/BEN/20261008/02',
+        notes: 'Verified high-voltage cable supplier account.'
+      }
+    ],
+    notes: 'Turnkey electrical panels, LT cables, transformers and sub-station gear.',
+    createdAt: '02/10/2026',
+    createdBy: 'System Super Admin'
+  },
+  {
+    id: 'ven-prof-005',
+    vendorCode: 'VEN-2026-005',
+    tradeName: 'M/S PATEL TRADERS',
+    legalName: 'Patel Sand & Aggregates Traders',
+    gstin: '22BBNPP8821K1Z3',
+    pan: 'BBNPP8821K',
+    category: 'Aggregates & Sand',
+    contactPerson: 'Bhavesh Patel',
+    phone: '+91 98930 44211',
+    email: 'bhavesh.patel@rediffmail.com',
+    address: 'Siladehi Quarry Link Road, Janjgir-Champa',
+    city: 'Janjgir-Champa',
+    state: 'Chhattisgarh',
+    status: 'ACTIVE',
+    bankAccounts: [], // NO BANK ACCOUNT YET - testing auto-detection warning in Payment Request
+    notes: 'Local river sand and 20mm/40mm coarse aggregates quarry vendor. Banking pending.',
+    createdAt: '11/10/2026',
+    createdBy: 'Bramhanand Patel'
+  },
+  {
+    id: 'ven-prof-006',
+    vendorCode: 'VEN-2026-006',
+    tradeName: 'M/S SHREE SHYAM ENTERPRISES',
+    legalName: 'Shree Shyam Enterprises',
+    gstin: '22AACCS9920M1Z1',
+    pan: 'AACCS9920M',
+    category: 'Safety & PPE',
+    contactPerson: 'Suresh Agarwal',
+    phone: '+91 93000 55412',
+    email: 'shreeshyam.raipur@gmail.com',
+    address: 'Shop 18, Pandri Commercial Complex',
+    city: 'Raipur',
+    state: 'Chhattisgarh',
+    status: 'ACTIVE',
+    bankAccounts: [
+      {
+        id: 'acc-006',
+        beneficiaryName: 'SHREE SHYAM ENTERPRISES',
+        tradeVendorName: 'M/S SHREE SHYAM ENTERPRISES',
+        bankName: 'Axis Bank',
+        accountNo: '921020038471928',
+        accountNoMasked: '••••••••1928',
+        ifscCode: 'UTIB0000128',
+        accountType: 'CURRENT',
+        isPrimary: true,
+        verificationStatus: 'PENDING', // PENDING & NO CANCELLED CHEQUE - prompts cheque upload!
+        notes: 'Bank details submitted, pending physical cancelled cheque copy.'
+      }
+    ],
+    notes: 'Helmets, safety shoes, reflective jackets and personal protection equipment.',
+    createdAt: '09/10/2026',
+    createdBy: 'Amanat Bharadwaj'
+  }
+];
+

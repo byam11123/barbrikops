@@ -124,12 +124,6 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
     }
   }, [isOpen]);
 
-  if (!isOpen) return null;
-
-  const toggleDept = (deptKey: string) => {
-    setCollapsedDepts((prev) => ({ ...prev, [deptKey]: prev[deptKey] === false ? true : false }));
-  };
-
   const configuredDepts = storageAdapter.getDepartments();
   const customTemplates = storageAdapter.getFmsTemplates();
   const allMasterTemplates = storageAdapter.getAllMasterTemplates();
@@ -155,6 +149,12 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
       }));
     }
   }, [selectedWorkflowKey, selectedDepartment, customTemplates, flows]);
+
+  const toggleDept = (deptKey: string) => {
+    setCollapsedDepts((prev) => ({ ...prev, [deptKey]: prev[deptKey] === false ? true : false }));
+  };
+
+  if (!isOpen) return null;
 
   const detectedDeptKeys = new Set<string>();
   const archivedKeys = new Set(configuredDepts.filter((d) => d.isArchived).map((d) => d.key.toUpperCase()));

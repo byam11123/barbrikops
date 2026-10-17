@@ -1597,12 +1597,9 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                                 <div className="flex items-center justify-between gap-1.5">
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      setSelectedFlowId(flow.id);
-                                      setViewMode('FOCUS_FEED');
-                                    }}
+                                    onClick={() => onSelectFlow(flow)}
                                     className="text-indigo-600 hover:text-indigo-900 hover:underline cursor-pointer"
-                                    title="View audit & stage timeline"
+                                    title="View Detailed Audit Trail"
                                   >
                                     {refCode}
                                   </button>
@@ -1878,7 +1875,14 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                                 />
                               </td>
                               <td className="py-2.5 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
-                                {refCode}
+                                <button
+                                  type="button"
+                                  onClick={() => onSelectFlow(flow)}
+                                  className="text-slate-900 hover:text-indigo-600 hover:underline cursor-pointer font-bold text-left"
+                                  title="Open Detailed Audit Trail"
+                                >
+                                  {refCode}
+                                </button>
                               </td>
                               <td className="py-2.5 px-3 whitespace-nowrap">
                                 <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-100 text-slate-700 block w-max">
@@ -1962,12 +1966,10 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                                     })()
                                   )}
                                   <button
-                                    onClick={() => {
-                                      setSelectedFlowId(flow.id);
-                                      setViewMode('FOCUS_FEED');
-                                    }}
-                                    className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer"
-                                    title="Inspect Requisition Details"
+                                    type="button"
+                                    onClick={() => onSelectFlow(flow)}
+                                    className="p-1.5 hover:bg-indigo-50 rounded-lg text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer"
+                                    title="View Detailed Audit Trail"
                                   >
                                     <Eye className="w-4 h-4" />
                                   </button>
@@ -2126,11 +2128,10 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
                     </button>
                   )}
                   <button
-                    onClick={() => {
-                      setSelectedFlowId(flow.id);
-                      setViewMode('FOCUS_FEED');
-                    }}
+                    type="button"
+                    onClick={() => onSelectFlow(flow)}
                     className="px-2 py-0.5 text-slate-500 hover:text-slate-800 rounded text-[10px] font-semibold cursor-pointer"
+                    title="View Detailed Audit Trail"
                   >
                     Detail
                   </button>

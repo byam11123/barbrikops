@@ -82,6 +82,7 @@ export const SYSTEM_MODULES: ModuleDefinition[] = [
   // 3. Utilities & Tools
   { id: 'cs-sheet', name: 'Comparative Statement', description: 'Vendor rate comparison, L-1 analysis, and Excel CS generation for Barbrik Project Ltd.', category: 'UTILITIES', sectionKey: 'UTILITIES', iconName: 'Scale' },
   { id: 'bank-payments', name: 'Bank Payments', description: 'Vendor disbursements, beneficiary master verification, and interbank treasury transfers', category: 'UTILITIES', sectionKey: 'UTILITIES', iconName: 'Landmark' },
+  { id: 'vendor-directory', name: 'Vendor Directory', description: 'Vendor master profiles, commercial GSTIN/PAN details, and verified bank accounts', category: 'UTILITIES', sectionKey: 'UTILITIES', iconName: 'Users' },
 
   // 4. Department Modules (Individual controls per department)
   { id: 'dept-PURCHASE', name: 'Purchase Department', description: 'Central Procurement, Indents, RFQs, Vendor Comparison and PO Workflows', category: 'DEPARTMENTS', sectionKey: 'DEPARTMENTS', iconName: 'ShoppingCart' },
@@ -212,6 +213,23 @@ export function isUserProcessCoordinator(user?: UserProfile | null): boolean {
   );
 }
 
+export function isUserAuthorizedForVendorBanking(user?: UserProfile | null): boolean {
+  if (!user) return false;
+  if (isUserSuperAdmin(user) || isUserAdmin(user) || isUserDirector(user)) return true;
+  const role = (user.role || '').toUpperCase();
+  const sysRole = (user.systemRole || '').toUpperCase();
+  const deptName = (user.departmentName || '').toUpperCase();
+  const deptKeys = user.departmentKeys || [];
+  return (
+    deptKeys.includes('ACCOUNTS') ||
+    deptKeys.includes('FINANCE') ||
+    deptName.includes('ACCOUNT') ||
+    deptName.includes('FINANCE') ||
+    role.includes('ACCOUNT') ||
+    sysRole.includes('ACCOUNT')
+  );
+}
+
 export function getUserModulePermission(
   user: UserProfile | null | undefined,
   moduleId: string
@@ -249,9 +267,14 @@ export function getUserModulePermission(
   if (moduleId === 'registry' || moduleId === 'audit' || moduleId === 'super-admin') {
     return { visible: false, canEdit: false, canDelete: false };
   }
-  // Standard operational modules
   if (['fms', 'delegation', 'checklist', 'ims', 'fms-audit'].includes(moduleId)) {
     return { visible: true, canEdit: true, canDelete: false };
+  }
+  if (moduleId === 'vendor-directory') {
+    return { visible: true, canEdit: isUserAuthorizedForVendorBanking(user), canDelete: isUserSuperAdmin(user) };
+  }
+  if (moduleId === 'bank-payments') {
+    return { visible: true, canEdit: true, canDelete: isUserSuperAdmin(user) };
   }
   if (moduleId === 'cs-sheet') {
     return { visible: false, canEdit: false, canDelete: false };
@@ -483,6 +506,7 @@ export interface FmsStageExecution {
   notes?: string;
   formResponseRef?: string;
   evidenceDocumentUrl?: string;
+  googleFormUrl?: string;
   doerName?: string;
   processRemarks?: ProcessRemark[];
   lastNudgeTimestamp?: string;
@@ -492,6 +516,7 @@ export interface FmsStageExecution {
   checkpoints?: string[];
   checkedCheckpoints?: string[];
   subWorkflowTrigger?: FmsSubWorkflowTriggerConfig;
+  inheritedData?: Record<string, any>;
   linkedModuleRecord?: {
     moduleType: 'CS_SHEET' | 'PO' | 'GRN' | 'INVOICE' | 'APPROVAL' | string;
     recordId: string;
@@ -500,9 +525,36 @@ export interface FmsStageExecution {
   };
 }
 
+export interface FmsVendorQuote {
+  vendorId?: string;
+  vendorName: string;
+  ratePerUnit: number;
+  totalAmount: number;
+  quotedDate?: string;
+  isL1Selected?: boolean;
+  notes?: string;
+}
+
+export interface FmsLineItem {
+  id: string;
+  itemDescription: string;
+  qty: number;
+  unit: string;
+  urgency?: 'NORMAL' | 'URGENT' | 'HIGH';
+  remark?: string;
+  triageAllocation?: 'STORE_DISPATCH' | 'PURCHASE_REQUISITION' | 'HELD_ARCHIVED';
+  storeStockQtyAvailable?: number;
+  purchaseQtyRequired?: number;
+  vendorQuotes?: FmsVendorQuote[];
+  selectedL1Vendor?: string;
+  selectedL1Amount?: number;
+  status?: 'PENDING_TRIAGE' | 'IN_STORE_DISPATCH' | 'IN_PURCHASE_QUOTE' | 'L1_APPROVED' | 'PURCHASED' | 'DELIVERED_TO_SITE' | 'ARCHIVED';
+}
+
 export interface FmsInstance {
   id: string;
   flowId: string;
+  title?: string;
   flowType: 'CHECK_STOCK' | 'INDENT_PURCHASE' | 'PO_TO_PAYMENT' | 'PURCHASE_TO_STORE_DISPATCH' | 'STORE_TO_SITE_DISPATCH' | 'PAYMENT_TO_DISPATCH' | 'SITE_RECEIVE' | 'ACCOUNTS_INVOICE_COLLECTION' | 'HR_ATTENDANCE_PAYMENT' | 'BREAKDOWN_REPORTING' | 'EQUIPMENT_PART_REPAIR' | 'DPR_REPORTING' | 'SUBCONTRACTOR_BILLING' | 'FUEL_ISSUE' | 'LEAVE_SUBMISSION' | 'PAYROLL' | string;
   customTemplateId?: string;
   requisitionNumber?: string;
@@ -524,6 +576,13 @@ export interface FmsInstance {
   remarks?: string;
   totalDelayHours: number;
   overrideLogs?: FmsOverrideLog[];
+  // Universal Form Inheritance & Data Cascade Pool across stages:
+  instanceDataPool?: Record<string, any>;
+  lineItems?: FmsLineItem[];
+  subTracks?: {
+    storeDispatchTrack?: FmsStageExecution[];
+    purchaseTrack?: FmsStageExecution[];
+  };
   // Accounts PO to Payment & Invoice specific fields:
   poNumber?: string;
   vendorName?: string;
@@ -879,3 +938,56 @@ export interface VendorBeneficiaryMatch {
   cancelledChequeUrl?: string;
   category?: string;
 }
+
+export interface VendorBankAccount {
+  id: string;
+  beneficiaryName: string;       // Legal Bank Account Holder Title
+  tradeVendorName?: string;
+  bankName: string;
+  accountNo: string;
+  accountNoMasked: string;       // e.g. ••••••••3352
+  ifscCode: string;
+  accountType: 'CURRENT' | 'SAVINGS' | 'CASH_CREDIT';
+  isPrimary: boolean;
+  cancelledChequeUrl?: string;
+  verificationStatus: 'VERIFIED' | 'PENDING' | 'REJECTED';
+  verifiedBy?: string;
+  verifiedAt?: string;
+  linkedBeneficiarySheetNo?: string;
+  rejectionReason?: string;
+  notes?: string;
+}
+
+export interface VendorProfileRecord {
+  id: string;
+  vendorCode: string;            // e.g. "VEN-001"
+  tradeName: string;             // Commercial Name (e.g. "M/S ULTRA TECH CEMENT")
+  legalName?: string;            // Legal registered name
+  gstin?: string;                // 15-digit GSTIN
+  pan?: string;                  // 10-digit PAN
+  category: string;              // Cement, Electrical, Hardware, Fabrication, etc.
+  contactPerson?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  status: 'ACTIVE' | 'INACTIVE' | 'BLOCKED';
+  bankAccounts: VendorBankAccount[];
+  notes?: string;
+  createdAt: string;
+  createdBy: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface VendorSearchWithBankingResult {
+  vendor: VendorProfileRecord;
+  hasBankAccounts: boolean;
+  primaryAccount?: VendorBankAccount;
+  hasVerifiedBeneficiary: boolean;
+  hasCancelledCheque: boolean;
+  isNameMismatch: boolean;
+  matchScore: number;
+}
+

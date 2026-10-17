@@ -19,6 +19,7 @@ import { StageActionModal } from './components/fms/StageActionModal';
 import { FmsTemplateStudioModal } from './components/fms/FmsTemplateStudioModal';
 import { ComparativeSheetView } from './components/comparative/ComparativeSheetView';
 import { BankPaymentsSuiteView } from './components/banking/BankPaymentsSuiteView';
+import { VendorDirectoryView } from './components/vendor/VendorDirectoryView';
 import { DelegationBoard } from './components/delegation/DelegationBoard';
 import { NewTaskModal } from './components/delegation/NewTaskModal';
 import { ReviseTaskModal } from './components/delegation/ReviseTaskModal';
@@ -690,6 +691,14 @@ export default function App() {
     const formattedNow = now.toLocaleString('en-GB');
     currentStage.status = 'Done';
     currentStage.actualDateTime = formattedNow;
+    currentStage.actualTimestamp = now.toISOString();
+
+    if (currentStage.plannedTimestamp) {
+      const diffMs = now.getTime() - new Date(currentStage.plannedTimestamp).getTime();
+      const delayHrs = diffMs > 0 ? diffMs / (1000 * 3600) : 0;
+      currentStage.delayHours = Math.round(delayHrs * 10) / 10;
+    }
+
     if (decision) {
       currentStage.decisionValue = decision;
     }
@@ -699,6 +708,13 @@ export default function App() {
         currentStage.checkedCheckpoints = submittedData._checkpoints;
       }
     }
+
+    const updatedDataPool = {
+      ...(flow.instanceDataPool || {}),
+      ...(submittedData || {}),
+      [`stage_${currentIndex}_submittedAt`]: now.toISOString(),
+      [`stage_${currentIndex}_doer`]: currentUser.name,
+    };
 
     let nextIndex = currentIndex + 1;
 
@@ -908,6 +924,7 @@ export default function App() {
       status: isComplete ? 'Completed' : 'In Progress',
       updatedAt: formattedNow,
       stages: updatedStages,
+      instanceDataPool: updatedDataPool,
       ...(submittedData?.vendorName ? { vendorName: String(submittedData.vendorName) } : {}),
       ...(submittedData?.amountToBePaid ? { poAmount: parseFloat(submittedData.amountToBePaid) || flow.poAmount } : {}),
       ...(submittedData?.modeOfPayment ? { paymentMode: submittedData.modeOfPayment } : {}),
@@ -1894,6 +1911,10 @@ export default function App() {
                   setAuditLogs(storageAdapter.getAuditLogs());
                 }}
               />
+            )}
+
+            {activeTab === 'vendor-directory' && (
+              <VendorDirectoryView currentUser={currentUser} />
             )}
 
             {activeTab === 'delegation' && (isSuperAdmin || hasModulePermission(currentUser, 'delegation', 'view')) && (
