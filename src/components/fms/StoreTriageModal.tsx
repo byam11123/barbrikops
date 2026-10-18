@@ -128,14 +128,15 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
   const handleSubmitTriage = () => {
     setIsSubmitting(true);
 
-    const { storeFlow, purchaseFlow } = storageAdapter.splitIndentForPurchaseAndStore(
+    const { updatedParent } = storageAdapter.splitIndentForPurchaseAndStore(
       flow,
       lineItems,
       triageNotes,
       currentUser
     );
 
-    const resultingFlow = storeFlow || purchaseFlow || flow;
+    // Keep the current user (e.g. Store Manager Amanat Bharadwaj) on their active CHECK_STOCK flow
+    const resultingFlow = updatedParent || flow;
 
     setTimeout(() => {
       onCompleteTriage(resultingFlow, {

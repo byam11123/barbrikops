@@ -18,9 +18,19 @@ import {
   Link2,
   Paperclip,
   Lock,
-  Plus
+  Plus,
+  Trash2,
+  Boxes,
+  PackageCheck,
+  GitFork,
+  Archive,
+  MapPin,
+  TrendingDown,
+  TrendingUp,
+  Sparkles,
+  Split
 } from 'lucide-react';
-import { FmsInstance, FmsStageExecution, FmsStageFieldConfig, UserProfile, FmsStageTemplate, ComparativeStatement, isUserSuperAdmin, isUserAdminOrSuperAdmin } from '../../types';
+import { FmsInstance, FmsLineItem, FmsStageExecution, FmsStageFieldConfig, UserProfile, FmsStageTemplate, ComparativeStatement, isUserSuperAdmin, isUserAdminOrSuperAdmin } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { FileUploadField } from '../common/FileUploadField';
 import { FilePreviewModal } from '../common/FilePreviewModal';
@@ -173,24 +183,57 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
     if (flow.flowType === 'CHECK_STOCK') {
       if (stage.stageId === 'STG-STK-01' || stageIndex === 0) {
         return [
-          { id: 'storePhysicalCheck', label: 'Store Physical Stock Found', type: 'SELECT', options: ['FULL_STOCK_AVAILABLE', 'PARTIAL_AVAILABLE', 'NIL_STOCK'], required: true },
-          { id: 'availableQty', label: 'Available In-Stock Qty', type: 'NUMBER', required: true },
-          { id: 'storeKeeperRemarks', label: 'Store Keeper Notes', type: 'TEXTAREA' }
+          { id: 'requisitionItems', label: 'Material Requisition Items', type: 'MULTI_ITEM_TABLE', required: true },
+          { id: 'site', label: 'Site Location', type: 'TEXT', defaultValue: flow.siteName },
+          { id: 'workPurpose', label: 'Work / Activity Purpose Details', type: 'TEXT', placeholder: 'e.g. Pier 4 foundation pour' },
+          { id: 'remarks', label: 'Requester Remarks', type: 'TEXTAREA' }
+        ];
+      }
+      if (stage.stageId === 'STG-STK-02' || stageIndex === 1) {
+        return [
+          { id: 'storeKeeperRemarks', label: 'Store Keeper Inspection & Handover Notes', type: 'TEXTAREA', placeholder: 'Enter physical inspection summary, bin status, or dispatch handover remarks...' }
         ];
       }
     }
 
-    // Indent to PO Purchase Workflow Presets
+    // Indent to PO Purchase Workflow Presets (Construction Operations)
     if (flow.flowType === 'INDENT_PURCHASE') {
-      if (stage.stageId === 'STG-11' || stageIndex === 10) {
+      if (stage.stageId === 'STG-IND-02' || stage.stageName.includes('AVAILABLE IN STORE')) {
+        return [
+          { id: 'availabilityDecision', label: 'Store Availability Status', type: 'SELECT', options: ['PARTIAL', 'ALL', 'NONE'], required: true, defaultValue: 'PARTIAL' },
+          { id: 'availableQty', label: 'Available In-Store Qty / Items', type: 'TEXT', defaultValue: '5 items available for immediate site dispatch' },
+          { id: 'purchaseQty', label: 'Items Requiring Purchase Quotations', type: 'TEXT', defaultValue: '5 items sent to Purchase Dept' },
+          { id: 'storeKeeperRemarks', label: 'Store Keeper Notes / Bin Location', type: 'TEXTAREA', placeholder: 'Verify physical stock at central warehouse...' }
+        ];
+      }
+
+      if (stage.stageId === 'STG-IND-03' || stage.stageId === 'STG-05' || stage.stageName.includes('VENDOR QUOTATIONS')) {
+        return [
+          { id: 'quotationRfqReference', label: 'Quotation RFQ Reference', type: 'TEXT', defaultValue: `RFQ-BPL-${flow.indentNo}-2026` },
+          { id: 'comparativeSheetAction', label: 'Comparative Statement (CS)', type: 'SELECT', options: ['AUTO_CREATE_AND_OPEN_CS', 'LINK_MANUAL_QUOTES'], required: true, defaultValue: 'AUTO_CREATE_AND_OPEN_CS' },
+          { id: 'targetVendors', label: 'Invited Vendors for Rates', type: 'TEXT', defaultValue: 'M/S Mahavir Traders, Chhattisgarh Spares, OEM Ex-Stock' },
+          { id: 'remarks', label: 'Quotation Solicitation Notes', type: 'TEXTAREA', placeholder: 'Specify critical brand specs, warranty, delivery timeline...' }
+        ];
+      }
+
+      if (stage.stageId === 'STG-08' || stage.stageName.includes('L1 APPROVAL') || stage.stageName.includes('DIRECTOR')) {
+        return [
+          { id: 'approvalStatus', label: 'Director CS & L1 Approval', type: 'APPROVAL', options: ['APPROVED', 'REJECTED'], required: true, defaultValue: 'APPROVED' },
+          { id: 'directorSignature', label: 'Authorizing Signatory', type: 'TEXT', required: true, defaultValue: 'Director Pranjal Agrawal' },
+          { id: 'splitPoRule', label: 'Purchase Order Generation Mode', type: 'SELECT', options: ['SPLIT_PO_PER_AWARDED_VENDOR', 'SINGLE_L1_VENDOR'], required: true, defaultValue: 'SPLIT_PO_PER_AWARDED_VENDOR' },
+          { id: 'approvalRemarks', label: 'Director Approval Remarks & Terms', type: 'TEXTAREA', defaultValue: 'Approved with item-wise split PO allocation. Freight strictly OURS.' }
+        ];
+      }
+
+      if (stage.stageId === 'STG-IND-05' || stage.stageId === 'STG-11' || stageIndex === 10) {
         return [
           { id: 'poNumber', label: 'Purchase Order No. (PO)', type: 'TEXT', required: true, defaultValue: flow.poNumber || `RAO/PO/${flow.indentNo}-001` },
-          { id: 'vendorName', label: 'Authorized Vendor Name', type: 'TEXT', required: true, defaultValue: flow.vendorName || 'M/S AUTHORIZED OEM VENDOR' },
+          { id: 'vendorName', label: 'Authorized Vendor Name', type: 'TEXT', required: true, defaultValue: flow.vendorName || 'M/S MAHAVIR TRADERS & SPARES' },
           { id: 'amountToBePaid', label: 'Advance Payment Amount (₹)', type: 'NUMBER', required: true, defaultValue: String(flow.poAmount || 50000) },
-          { id: 'modeOfPayment', label: 'Payment Mode', type: 'SELECT', options: ['ACCOUNT', 'RTGS/NEFT', 'UPI', 'CHEQUE'], required: true, defaultValue: 'ACCOUNT' },
+          { id: 'modeOfPayment', label: 'Payment Mode', type: 'SELECT', options: ['ACCOUNT', 'UPI', 'RTGS/NEFT', 'CHEQUE'], required: true, defaultValue: 'ACCOUNT' },
           { id: 'urgency', label: 'Payment Urgency / SLA', type: 'SELECT', options: ['Normal', 'Urgent', 'Emergency'], required: true, defaultValue: 'Urgent' },
-          { id: 'purposeOfPayment', label: 'Payment Purpose', type: 'TEXT', required: true, defaultValue: `Advance payment for Indent #${flow.indentNo}` },
-          { id: 'poUploadLink', label: 'Signed PO Copy / Proforma Invoice URL', type: 'URL', placeholder: 'https://drive.google.com/...' },
+          { id: 'purposeOfPayment', label: 'Payment Purpose', type: 'TEXT', required: true, defaultValue: `Advance payment for Indent #${flow.indentNo} (${flow.siteName})` },
+          { id: 'poUploadLink', label: 'Signed PO Copy / Mandated Bill URL (Mandatory for UPI)', type: 'URL', placeholder: 'https://drive.google.com/...' },
           { id: 'paymentRemarks', label: 'Handover Instructions to Accounts', type: 'TEXTAREA', placeholder: 'Specify payment deadline, vendor contact, or settlement terms...' }
         ];
       }
@@ -291,15 +334,112 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
   const [checkedCheckpoints, setCheckedCheckpoints] = useState<string[]>([]);
   const [previewFile, setPreviewFile] = useState<{ url: string; name: string } | null>(null);
 
-  // Initialize defaults
+  const isStage2CheckStock = Boolean(
+    flow && stage && flow.flowType === 'CHECK_STOCK' && (stageIndex === 1 || stage.stageId === 'STG-STK-02' || stage.stageName.includes('CHECK STOCK'))
+  );
+
+  const [triageItems, setTriageItems] = useState<FmsLineItem[]>([]);
+  const [purchaserItems, setPurchaserItems] = useState<FmsLineItem[]>([]);
+
+  // Initialize defaults with intelligent auto-assignment from instanceDataPool & previous stages
   useEffect(() => {
     if (isOpen && flow && stage) {
       const initial: Record<string, any> = {};
       const prevData = stage.submittedData || {};
+      const pool = flow.instanceDataPool || {};
+
       fields.forEach((f) => {
-        initial[f.id] = prevData[f.id] !== undefined ? prevData[f.id] : (f.defaultValue || '');
+        if (prevData[f.id] !== undefined) {
+          initial[f.id] = prevData[f.id];
+        } else if (pool[f.id] !== undefined) {
+          initial[f.id] = pool[f.id];
+        } else if (f.type === 'MULTI_ITEM_TABLE') {
+          const inherited = pool[f.id] || pool.multiItems || pool.requisitionItems || pool.lineItems || (flow.lineItems && flow.lineItems.length > 0 ? flow.lineItems.map((item: any, i: number) => ({
+            id: item.id || `row_${i+1}`,
+            item_description: item.itemDescription || item.description || '',
+            quantity: item.requestedQty || item.storeQty || item.purchaseQty || item.quantity || 1,
+            unit: item.unit || 'Nos',
+            work_purpose: item.workPurpose || item.purpose || '',
+            remarks: item.remarks || item.remark || item.triageAllocation || ''
+          })) : []);
+          initial[f.id] = inherited;
+        } else if ((f.id === 'poNumber' || f.id === 'poNo' || f.id === 'billNoOrPo') && (pool.poNumber || flow.poNumber)) {
+          initial[f.id] = pool.poNumber || flow.poNumber;
+        } else if ((f.id === 'vendorName' || f.id === 'vendor') && (pool.vendorName || flow.vendorName)) {
+          initial[f.id] = pool.vendorName || flow.vendorName;
+        } else if ((f.id === 'amountToBePaid' || f.id === 'poAmount' || f.id === 'approvedAmount') && (pool.amountToBePaid || pool.poAmount || flow.poAmount)) {
+          initial[f.id] = String(pool.amountToBePaid || pool.poAmount || flow.poAmount);
+        } else if ((f.id === 'purposeOfPayment' || f.id === 'purpose') && (pool.purposeOfPayment || flow.remarks)) {
+          initial[f.id] = pool.purposeOfPayment || flow.remarks;
+        } else {
+          initial[f.id] = f.defaultValue || '';
+        }
       });
       setFormData(initial);
+
+      // Initialize Triage Line Items for Stage 2
+      if (isStage2CheckStock) {
+        let candidateItems: any[] = [];
+        if (stage.submittedData?.triageLineItems && Array.isArray(stage.submittedData.triageLineItems)) {
+          candidateItems = stage.submittedData.triageLineItems;
+        } else if (flow.lineItems && flow.lineItems.length > 0) {
+          candidateItems = flow.lineItems;
+        } else if (pool.multiItems || pool.requisitionItems || pool.lineItems) {
+          candidateItems = pool.multiItems || pool.requisitionItems || pool.lineItems;
+        } else {
+          // Look across prior stages
+          const priorSubmitted = flow.stages.slice(0, stageIndex);
+          for (const prior of priorSubmitted) {
+            const data = prior.submittedData || {};
+            const arr = Object.values(data).find((v) => Array.isArray(v) && v.length > 0 && typeof v[0] === 'object');
+            if (arr && Array.isArray(arr)) {
+              candidateItems = arr;
+              break;
+            }
+          }
+        }
+
+        if (candidateItems.length > 0) {
+          setTriageItems(
+            candidateItems.map((item, idx) => {
+              const reqQty = parseFloat(item.requestedQty || item.quantity || item.qty) || 1;
+              const verifiedQty = item.storeVerifiedQty !== undefined ? parseFloat(item.storeVerifiedQty) : reqQty;
+              const found = item.physicalStockFound !== undefined ? parseFloat(item.physicalStockFound) : 0;
+              const storeQ = item.storeQty !== undefined ? parseFloat(item.storeQty) : 0;
+              const purchaseQ = item.purchaseQty !== undefined ? parseFloat(item.purchaseQty) : verifiedQty;
+              const holdQ = item.holdQty !== undefined ? parseFloat(item.holdQty) : 0;
+
+              return {
+                id: item.id || `item_${Date.now()}_${idx + 1}`,
+                itemDescription: item.itemDescription || item.item_description || item.description || `Item #${idx + 1}`,
+                requestedQty: reqQty,
+                qty: verifiedQty,
+                unit: item.unit || 'Nos',
+                workPurpose: item.workPurpose || item.work_purpose || item.purpose || '',
+                physicalStockFound: found,
+                storeBinLocation: item.storeBinLocation || '',
+                storeVerifiedQty: verifiedQty,
+                qtyRevisionReason: item.qtyRevisionReason || '',
+                storeQty: storeQ,
+                purchaseQty: purchaseQ,
+                holdQty: holdQ,
+                remarks: item.remarks || item.remark || '',
+                triageAllocation: storeQ > 0 && purchaseQ > 0 ? 'SPLIT' : storeQ > 0 ? 'STORE' : holdQ === verifiedQty ? 'HOLD' : 'PURCHASE',
+              };
+            })
+          );
+        } else {
+          setTriageItems([]);
+        }
+      }
+
+      // Initialize purchaser items for non-stage-2 review and quantity adjustment
+      if (!isStage2CheckStock && flow.lineItems && flow.lineItems.length > 0) {
+        setPurchaserItems(flow.lineItems.map((item) => ({ ...item })));
+      } else {
+        setPurchaserItems([]);
+      }
+
       setCheckedCheckpoints(stage.checkedCheckpoints || (stage.submittedData?._checkpoints as string[]) || []);
       setError(null);
     }
@@ -355,6 +495,25 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
       }
     }
 
+    // Validate Stage 2 Physical Stock Check & Triage
+    if (isStage2CheckStock && triageItems.length > 0) {
+      for (const item of triageItems) {
+        const approved = item.storeVerifiedQty !== undefined ? Number(item.storeVerifiedQty) : Number(item.requestedQty || 1);
+        const storeQ = Number(item.storeQty || 0);
+        const purchaseQ = Number(item.purchaseQty || 0);
+        const holdQ = Number(item.holdQty || 0);
+        const totalAllocated = storeQ + purchaseQ + holdQ;
+        if (Math.abs(totalAllocated - approved) > 0.001) {
+          setError(`Item "${item.itemDescription}": Total allocated (${storeQ} Store + ${purchaseQ} Purchase + ${holdQ} Hold = ${totalAllocated}) must equal Approved Qty (${approved}).`);
+          return;
+        }
+        if (approved !== (item.requestedQty || 1) && !item.qtyRevisionReason?.trim()) {
+          setError(`Item "${item.itemDescription}": Please provide a brief reason for revising quantity from ${item.requestedQty} to ${approved}.`);
+          return;
+        }
+      }
+    }
+
     // Determine decision if approval stage
     let decision: 'Yes' | 'No' | undefined = undefined;
     const approvalField = fields.find((f) => f.type === 'APPROVAL' || f.id === 'status' || f.label.toLowerCase().includes('approval'));
@@ -362,8 +521,26 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
     if (approvalVal === 'APPROVED') decision = 'Yes';
     else if (approvalVal === 'REJECTED') decision = 'No';
 
+    const storeCount = triageItems.filter((i) => (i.storeQty || 0) > 0).length;
+    const purchaseCount = triageItems.filter((i) => (i.purchaseQty || 0) > 0).length;
+    const holdCount = triageItems.filter((i) => (i.holdQty || 0) > 0).length;
+
+    if (isStage2CheckStock && decision === undefined) {
+      decision = purchaseCount > 0 ? 'Yes' : 'No';
+    }
+
     const submissionPayload = {
       ...formData,
+      ...(isStage2CheckStock ? {
+        triageLineItems: triageItems,
+        storeItemsCount: storeCount,
+        purchaseItemsCount: purchaseCount,
+        holdItemsCount: holdCount,
+        availabilityDecision: purchaseCount === 0 ? 'ALL' : storeCount === 0 ? 'NONE' : 'PARTIAL',
+      } : {}),
+      ...(purchaserItems.length > 0 && !isStage2CheckStock ? {
+        purchaserLineItems: purchaserItems,
+      } : {}),
       _checkpoints: checkedCheckpoints,
       _totalCheckpoints: checkpoints.length,
     };
@@ -531,7 +708,8 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
           {/* Embedded Sub-Task Banner: CS Sheet Builder */}
           {(stage.stageName.toLowerCase().includes('cs') ||
             stage.stageName.toLowerCase().includes('quotation') ||
-            stage.stageId === 'STG-02') && (
+            stage.stageId === 'STG-05' ||
+            stage.stageId === 'STG-IND-03') && (
             <div className="p-4 bg-gradient-to-r from-indigo-900 via-indigo-950 to-slate-900 text-white rounded-2xl shadow-md border border-indigo-700/50 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -738,8 +916,616 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
             </div>
           )}
 
+          {/* Linked Parent / Sub-Flow Banners */}
+          {flow.parentFlowId && (
+            <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between text-xs shadow-2xs">
+              <div className="flex items-center gap-2">
+                <GitFork className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span className="font-bold text-indigo-950">
+                  Sub-Workflow spawned from Parent Requisition #{flow.parentFlowIndentNo || flow.parentFlowId}
+                </span>
+              </div>
+              <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 text-[10px] font-bold rounded">
+                Child Track
+              </span>
+            </div>
+          )}
+
+          {flow.linkedSubFlows && flow.linkedSubFlows.length > 0 && (
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <GitFork className="w-4 h-4 text-indigo-600" />
+                  Linked Sub-Workflows Spawned from Indent Triage
+                </span>
+                <span className="text-[10px] text-slate-500 font-medium">
+                  {flow.linkedSubFlows.length} Active Tracks
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {flow.linkedSubFlows.map((sub, sIdx) => (
+                  <div key={sIdx} className="p-2.5 bg-white border border-slate-200 rounded-lg flex items-center justify-between shadow-2xs">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-slate-900 block">{sub.name}</span>
+                      <span className="text-[10px] text-slate-500 font-mono">Ref: {sub.indentNo || sub.id} • {sub.itemCount} items</span>
+                    </div>
+                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                      sub.type === 'STORE_DISPATCH' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {sub.status || 'Active'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Current Stage Form Inputs */}
           <form id="stage-action-form" onSubmit={handleSubmit} className="space-y-4">
+            {/* STAGE 2: PHYSICAL STORE CHECK & TRIAGE REGISTER */}
+            {isStage2CheckStock && (
+              <div className="p-4 bg-emerald-50/50 border border-emerald-200 rounded-xl space-y-4">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <span className="text-xs font-extrabold text-emerald-950 flex items-center gap-1.5 uppercase tracking-wide">
+                      <Boxes className="w-4 h-4 text-emerald-700 shrink-0" />
+                      Physical Store Check &amp; Triage Register
+                    </span>
+                    <p className="text-[11px] text-emerald-800/80 mt-0.5">
+                      Verify physical count on the shelf (no computer inventory record needed). Adjust approved quantities based on actual work necessity, and allocate items to Store Dispatch or Purchase.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newId = `item_stk_${Date.now()}`;
+                      setTriageItems([
+                        ...triageItems,
+                        {
+                          id: newId,
+                          itemDescription: '',
+                          requestedQty: 1,
+                          qty: 1,
+                          unit: 'Nos',
+                          workPurpose: '',
+                          physicalStockFound: 0,
+                          storeBinLocation: '',
+                          storeVerifiedQty: 1,
+                          qtyRevisionReason: '',
+                          storeQty: 0,
+                          purchaseQty: 1,
+                          holdQty: 0,
+                          triageAllocation: 'PURCHASE',
+                        },
+                      ]);
+                    }}
+                    className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer shadow-xs shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Item Line</span>
+                  </button>
+                </div>
+
+                {triageItems.length === 0 ? (
+                  <div className="p-6 bg-white border border-emerald-200 rounded-xl text-center space-y-2">
+                    <p className="text-xs text-slate-500 italic">No line items received yet from Stage 1 requisition.</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newId = `item_stk_${Date.now()}`;
+                        setTriageItems([
+                          {
+                            id: newId,
+                            itemDescription: 'Item 1',
+                            requestedQty: 10,
+                            qty: 10,
+                            unit: 'Nos',
+                            workPurpose: 'Site Work',
+                            physicalStockFound: 5,
+                            storeBinLocation: 'Rack A-01',
+                            storeVerifiedQty: 10,
+                            qtyRevisionReason: '',
+                            storeQty: 5,
+                            purchaseQty: 5,
+                            holdQty: 0,
+                            triageAllocation: 'SPLIT',
+                          },
+                        ]);
+                      }}
+                      className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-lg cursor-pointer"
+                    >
+                      + Add Item Entry to Check Stock
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {triageItems.map((item, idx) => {
+                      const approved = item.storeVerifiedQty !== undefined ? Number(item.storeVerifiedQty) : Number(item.requestedQty || 1);
+                      const requested = Number(item.requestedQty || 1);
+                      const isQtyChanged = approved !== requested;
+                      const storeQ = Number(item.storeQty || 0);
+                      const purchaseQ = Number(item.purchaseQty || 0);
+                      const holdQ = Number(item.holdQty || 0);
+                      const totalAllocated = storeQ + purchaseQ + holdQ;
+                      const isAllocValid = Math.abs(totalAllocated - approved) < 0.001;
+
+                      return (
+                        <div key={item.id || idx} className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs space-y-3">
+                          {/* Item Title & Purpose Banner */}
+                          <div className="flex items-start justify-between gap-2 flex-wrap border-b border-slate-100 pb-2">
+                            <div className="space-y-0.5 flex-1 min-w-[200px]">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-[11px] font-bold text-slate-400">#{idx + 1}</span>
+                                <input
+                                  type="text"
+                                  value={item.itemDescription}
+                                  onChange={(e) => {
+                                    const next = [...triageItems];
+                                    next[idx] = { ...item, itemDescription: e.target.value };
+                                    setTriageItems(next);
+                                  }}
+                                  placeholder="Item Description"
+                                  className="font-bold text-xs text-slate-900 border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none px-1 py-0.5 w-full max-w-sm"
+                                />
+                              </div>
+                              <div className="flex items-center gap-2 text-[11px] text-slate-500 pl-5">
+                                <span>Purpose / Work:</span>
+                                <input
+                                  type="text"
+                                  value={item.workPurpose || ''}
+                                  onChange={(e) => {
+                                    const next = [...triageItems];
+                                    next[idx] = { ...item, workPurpose: e.target.value };
+                                    setTriageItems(next);
+                                  }}
+                                  placeholder="e.g. Pier 4 foundation pour"
+                                  className="text-slate-700 font-medium italic border-b border-slate-200 focus:border-indigo-500 focus:outline-none px-1 py-0.5 w-full max-w-xs"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[11px] font-bold rounded">
+                                Requested: {requested} {item.unit || 'Nos'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setTriageItems(triageItems.filter((_, i) => i !== idx));
+                                }}
+                                className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors cursor-pointer"
+                                title="Remove item"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* 3 Step Execution Grid: Physical Check -> Approved Qty -> Triage Split */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            {/* Step 1: Physical Store Verification */}
+                            <div className="p-2.5 bg-emerald-50/60 border border-emerald-200 rounded-lg space-y-2">
+                              <span className="text-[10px] font-extrabold text-emerald-900 uppercase tracking-wide block">
+                                1. Physical Store Verification
+                              </span>
+                              <div className="space-y-1.5">
+                                <div>
+                                  <label className="text-[10px] font-semibold text-emerald-800 block">
+                                    Physical Stock Found on Shelf:
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    value={item.physicalStockFound ?? 0}
+                                    onChange={(e) => {
+                                      const found = parseFloat(e.target.value) || 0;
+                                      const next = [...triageItems];
+                                      // Suggest storeQty up to found count, balance to purchase
+                                      const autoStore = Math.min(found, approved);
+                                      const autoPurch = Math.max(0, approved - autoStore);
+                                      next[idx] = {
+                                        ...item,
+                                        physicalStockFound: found,
+                                        storeQty: autoStore,
+                                        purchaseQty: autoPurch,
+                                        holdQty: 0,
+                                        triageAllocation: autoStore > 0 && autoPurch > 0 ? 'SPLIT' : autoStore > 0 ? 'STORE' : 'PURCHASE',
+                                      };
+                                      setTriageItems(next);
+                                    }}
+                                    className="w-full text-xs bg-white border border-emerald-300 rounded px-2 py-1 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-semibold text-emerald-800 block">
+                                    Bin / Shelf / Rack Location:
+                                  </label>
+                                  <div className="relative">
+                                    <input
+                                      type="text"
+                                      value={item.storeBinLocation || ''}
+                                      onChange={(e) => {
+                                        const next = [...triageItems];
+                                        next[idx] = { ...item, storeBinLocation: e.target.value };
+                                        setTriageItems(next);
+                                      }}
+                                      placeholder="e.g. Rack A-04 or Yard Bay 2"
+                                      className="w-full text-xs bg-white border border-emerald-300 rounded pl-6 pr-2 py-1 font-medium text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                    />
+                                    <MapPin className="w-3 h-3 text-emerald-600 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Step 2: Store Approved / Revised Quantity */}
+                            <div className="p-2.5 bg-blue-50/60 border border-blue-200 rounded-lg space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-extrabold text-blue-900 uppercase tracking-wide">
+                                  2. Store Approved Qty
+                                </span>
+                                {isQtyChanged && (
+                                  <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded flex items-center gap-0.5 ${
+                                    approved < requested ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-800'
+                                  }`}>
+                                    {approved < requested ? <TrendingDown className="w-2.5 h-2.5" /> : <TrendingUp className="w-2.5 h-2.5" />}
+                                    {approved < requested ? `Reduced -${requested - approved}` : `Increased +${approved - requested}`}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <div>
+                                  <label className="text-[10px] font-semibold text-blue-800 block">
+                                    Approved Total Quantity:
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    value={item.storeVerifiedQty ?? requested}
+                                    onChange={(e) => {
+                                      const nextApproved = parseFloat(e.target.value) || 0;
+                                      const next = [...triageItems];
+                                      const currentStore = item.storeQty || 0;
+                                      const autoStore = Math.min(currentStore, nextApproved);
+                                      const autoPurch = Math.max(0, nextApproved - autoStore);
+                                      next[idx] = {
+                                        ...item,
+                                        storeVerifiedQty: nextApproved,
+                                        qty: nextApproved,
+                                        storeQty: autoStore,
+                                        purchaseQty: autoPurch,
+                                        holdQty: 0,
+                                        triageAllocation: autoStore > 0 && autoPurch > 0 ? 'SPLIT' : autoStore > 0 ? 'STORE' : 'PURCHASE',
+                                      };
+                                      setTriageItems(next);
+                                    }}
+                                    className="w-full text-xs bg-white border border-blue-300 rounded px-2 py-1 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  />
+                                </div>
+
+                                {isQtyChanged ? (
+                                  <div>
+                                    <label className="text-[10px] font-bold text-rose-700 block">
+                                      Revision Reason <span className="text-rose-500">*</span>:
+                                    </label>
+                                    <input
+                                      type="text"
+                                      required
+                                      value={item.qtyRevisionReason || ''}
+                                      onChange={(e) => {
+                                        const next = [...triageItems];
+                                        next[idx] = { ...item, qtyRevisionReason: e.target.value };
+                                        setTriageItems(next);
+                                      }}
+                                      placeholder="e.g. Reduced based on Pier 4 site check"
+                                      className="w-full text-xs bg-white border border-rose-300 rounded px-2 py-1 font-medium text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                                    />
+                                  </div>
+                                ) : (
+                                  <p className="text-[10px] text-blue-700/80 pt-1 italic">
+                                    Approved quantity matches requested ({requested} {item.unit}).
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Step 3: Multi-Route Triage Allocation Split */}
+                            <div className="p-2.5 bg-amber-50/60 border border-amber-200 rounded-lg space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-extrabold text-amber-900 uppercase tracking-wide">
+                                  3. Indent Triage Split
+                                </span>
+                                {!isAllocValid && (
+                                  <span className="text-[9px] font-bold text-rose-600 bg-rose-100 px-1 py-0.5 rounded">
+                                    Sum ({totalAllocated}) ≠ Approved ({approved})
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-1.5">
+                                <div>
+                                  <label className="text-[9px] font-bold text-emerald-800 block truncate" title="Store Dispatch">
+                                    Store Qty:
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    value={item.storeQty ?? 0}
+                                    onChange={(e) => {
+                                      const sq = parseFloat(e.target.value) || 0;
+                                      const next = [...triageItems];
+                                      const pq = Math.max(0, approved - sq);
+                                      next[idx] = {
+                                        ...item,
+                                        storeQty: sq,
+                                        purchaseQty: pq,
+                                        holdQty: 0,
+                                        triageAllocation: sq > 0 && pq > 0 ? 'SPLIT' : sq > 0 ? 'STORE' : 'PURCHASE',
+                                      };
+                                      setTriageItems(next);
+                                    }}
+                                    className="w-full text-xs bg-white border border-emerald-300 rounded px-1.5 py-1 font-bold text-emerald-900 focus:outline-none"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[9px] font-bold text-amber-800 block truncate" title="Purchase Indent">
+                                    Purchase Qty:
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    value={item.purchaseQty ?? 0}
+                                    onChange={(e) => {
+                                      const pq = parseFloat(e.target.value) || 0;
+                                      const next = [...triageItems];
+                                      next[idx] = {
+                                        ...item,
+                                        purchaseQty: pq,
+                                        triageAllocation: (item.storeQty || 0) > 0 && pq > 0 ? 'SPLIT' : (item.storeQty || 0) > 0 ? 'STORE' : 'PURCHASE',
+                                      };
+                                      setTriageItems(next);
+                                    }}
+                                    className="w-full text-xs bg-white border border-amber-300 rounded px-1.5 py-1 font-bold text-amber-900 focus:outline-none"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[9px] font-bold text-slate-600 block truncate" title="Hold / Deferred">
+                                    Hold Qty:
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    value={item.holdQty ?? 0}
+                                    onChange={(e) => {
+                                      const hq = parseFloat(e.target.value) || 0;
+                                      const next = [...triageItems];
+                                      next[idx] = {
+                                        ...item,
+                                        holdQty: hq,
+                                        triageAllocation: hq === approved ? 'HOLD' : item.triageAllocation,
+                                      };
+                                      setTriageItems(next);
+                                    }}
+                                    className="w-full text-xs bg-white border border-slate-300 rounded px-1.5 py-1 font-bold text-slate-700 focus:outline-none"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Quick Fill Action Buttons */}
+                              <div className="flex items-center gap-1 pt-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const next = [...triageItems];
+                                    next[idx] = { ...item, storeQty: approved, purchaseQty: 0, holdQty: 0, triageAllocation: 'STORE' };
+                                    setTriageItems(next);
+                                  }}
+                                  className="text-[9px] px-1.5 py-0.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold rounded cursor-pointer"
+                                  title="Fulfill 100% from store"
+                                >
+                                  Store 100%
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const next = [...triageItems];
+                                    next[idx] = { ...item, storeQty: 0, purchaseQty: approved, holdQty: 0, triageAllocation: 'PURCHASE' };
+                                    setTriageItems(next);
+                                  }}
+                                  className="text-[9px] px-1.5 py-0.5 bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold rounded cursor-pointer"
+                                  title="Send 100% to purchase"
+                                >
+                                  Purchase 100%
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const half = Math.floor(approved / 2);
+                                    const next = [...triageItems];
+                                    next[idx] = { ...item, storeQty: half, purchaseQty: approved - half, holdQty: 0, triageAllocation: 'SPLIT' };
+                                    setTriageItems(next);
+                                  }}
+                                  className="text-[9px] px-1.5 py-0.5 bg-blue-100 hover:bg-blue-200 text-blue-800 font-bold rounded cursor-pointer"
+                                  title="Split 50/50"
+                                >
+                                  50/50
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const next = [...triageItems];
+                                    next[idx] = { ...item, storeQty: 0, purchaseQty: 0, holdQty: approved, triageAllocation: 'HOLD' };
+                                    setTriageItems(next);
+                                  }}
+                                  className="text-[9px] px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded cursor-pointer"
+                                  title="Hold item"
+                                >
+                                  Hold
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Allocation Destination Status Badge */}
+                          <div className="pt-1 flex items-center justify-between text-[11px] border-t border-slate-100">
+                            <span className="text-slate-500">Destination Workflow Routing:</span>
+                            {storeQ > 0 && purchaseQ > 0 ? (
+                              <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 flex items-center gap-1">
+                                <Split className="w-3 h-3" />
+                                Split: {storeQ} {item.unit} to Store Dispatch + {purchaseQ} {item.unit} to Purchase Indent
+                              </span>
+                            ) : storeQ > 0 ? (
+                              <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
+                                <PackageCheck className="w-3 h-3" />
+                                100% Store Material Dispatch ({storeQ} {item.unit})
+                              </span>
+                            ) : holdQ === approved && approved > 0 ? (
+                              <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-300 flex items-center gap-1">
+                                <Archive className="w-3 h-3" />
+                                Held / Deferred ({holdQ} {item.unit})
+                              </span>
+                            ) : (
+                              <span className="font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
+                                <ArrowRight className="w-3 h-3" />
+                                100% Purchase Indent to PO ({purchaseQ} {item.unit})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Triage Summary Footer */}
+                {triageItems.length > 0 && (
+                  <div className="p-3 bg-white border border-emerald-300 rounded-xl flex items-center justify-between flex-wrap gap-2 text-xs shadow-2xs">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-extrabold text-slate-900">Summary:</span>
+                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-900 font-bold rounded flex items-center gap-1">
+                        <PackageCheck className="w-3 h-3" />
+                        Store Dispatch: {triageItems.filter((i) => (i.storeQty || 0) > 0).length} Items
+                      </span>
+                      <span className="px-2 py-0.5 bg-amber-100 text-amber-900 font-bold rounded flex items-center gap-1">
+                        <ArrowRight className="w-3 h-3" />
+                        Purchase Indent: {triageItems.filter((i) => (i.purchaseQty || 0) > 0).length} Items
+                      </span>
+                      {triageItems.some((i) => (i.holdQty || 0) > 0) && (
+                        <span className="px-2 py-0.5 bg-slate-100 text-slate-800 font-bold rounded flex items-center gap-1">
+                          <Archive className="w-3 h-3" />
+                          Hold: {triageItems.filter((i) => (i.holdQty || 0) > 0).length} Items
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-emerald-800 font-medium">
+                      ⚡ Automatically spawns linked sub-workflows on stage submit
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* PURCHASER / ASSIGNEE LINE ITEM REVIEW & QUANTITY REVISION */}
+            {purchaserItems.length > 0 && !isStage2CheckStock && (
+              <div className="p-3.5 bg-indigo-50/60 border border-indigo-200 rounded-xl space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div>
+                    <span className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5 uppercase tracking-wide">
+                      <Layers className="w-4 h-4 text-indigo-700 shrink-0" />
+                      Requisition Line Items ({purchaserItems.length} Items)
+                    </span>
+                    <p className="text-[11px] text-indigo-900/80 mt-0.5">
+                      Verify requisition quantities against work purpose. Adjust or revise quantities if required (with revision reason).
+                    </p>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-100 text-slate-800 font-bold border-b border-slate-200">
+                      <tr>
+                        <th className="py-2 px-2 w-8 text-center">#</th>
+                        <th className="py-2 px-2 min-w-[140px]">Item Description</th>
+                        <th className="py-2 px-2 min-w-[120px]">Work / Purpose</th>
+                        <th className="py-2 px-2 w-24 text-center">Requested</th>
+                        <th className="py-2 px-2 w-28 text-center">Effective Qty</th>
+                        <th className="py-2 px-2 w-16">Unit</th>
+                        <th className="py-2 px-2 min-w-[160px]">Revision Reason (if altered)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {purchaserItems.map((item, pIdx) => {
+                        const origReq = item.requestedQty || item.qty;
+                        const isQtyAltered = item.qty !== origReq;
+
+                        return (
+                          <tr key={item.id || pIdx} className="hover:bg-indigo-50/30">
+                            <td className="py-2 px-2 text-center font-mono text-slate-400 text-[11px]">
+                              {pIdx + 1}
+                            </td>
+                            <td className="py-2 px-2 font-bold text-slate-800">
+                              {item.itemDescription}
+                            </td>
+                            <td className="py-2 px-2 text-slate-600 text-[11px] italic">
+                              {item.workPurpose || '-'}
+                            </td>
+                            <td className="py-2 px-2 text-center font-semibold text-slate-500 text-[11px]">
+                              {origReq}
+                            </td>
+                            <td className="py-1.5 px-2 text-center">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={item.qty}
+                                onChange={(e) => {
+                                  const nextQty = parseFloat(e.target.value) || 0;
+                                  const next = [...purchaserItems];
+                                  next[pIdx] = {
+                                    ...item,
+                                    qty: nextQty,
+                                    purchaserQty: nextQty,
+                                  };
+                                  setPurchaserItems(next);
+                                }}
+                                className="w-20 text-center text-xs bg-slate-50 focus:bg-white border border-slate-300 focus:border-indigo-500 rounded px-1.5 py-1 font-bold text-slate-800 focus:outline-none"
+                              />
+                            </td>
+                            <td className="py-2 px-2 font-medium text-slate-600">
+                              {item.unit || 'Nos'}
+                            </td>
+                            <td className="py-1.5 px-2">
+                              {isQtyAltered ? (
+                                <input
+                                  type="text"
+                                  value={item.qtyRevisionReason || ''}
+                                  onChange={(e) => {
+                                    const next = [...purchaserItems];
+                                    next[pIdx] = { ...item, qtyRevisionReason: e.target.value };
+                                    setPurchaserItems(next);
+                                  }}
+                                  placeholder="Reason (e.g. MOQ / package size)"
+                                  className="w-full text-xs bg-rose-50 border border-rose-300 focus:border-rose-500 rounded px-2 py-1 font-medium text-rose-900 focus:outline-none"
+                                />
+                              ) : (
+                                <span className="text-slate-400 text-[11px] italic">Matches requested</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             <div className="p-4 bg-white rounded-xl border border-indigo-100 shadow-2xs space-y-3.5">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <span className="font-bold text-indigo-950 text-xs uppercase tracking-wider flex items-center gap-1.5">
@@ -905,6 +1691,146 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                           value={val}
                           onChange={(uploadedVal) => handleFieldChange(field.id, uploadedVal)}
                         />
+                      </div>
+                    );
+                  }
+
+                  if (field.type === 'MULTI_ITEM_TABLE') {
+                    const rows = Array.isArray(val) ? val : [];
+                    const columns = (field.columns && field.columns.length > 0)
+                      ? field.columns
+                      : typeof field.defaultValue === 'string' && field.defaultValue.trim()
+                      ? field.defaultValue.split(',').map(s => s.trim()).filter(Boolean).map(colLabel => ({
+                          key: colLabel.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+                          label: colLabel,
+                          type: (colLabel.toLowerCase().includes('rate') || colLabel.toLowerCase().includes('qty') || colLabel.toLowerCase().includes('quantity') || colLabel.toLowerCase().includes('amount') || colLabel.toLowerCase().includes('nos') || colLabel.toLowerCase().includes('price')) ? ('NUMBER' as const) : ('TEXT' as const)
+                        }))
+                      : [
+                          { key: 'item_description', label: 'Item Description', type: 'TEXT' as const },
+                          { key: 'quantity', label: 'Quantity', type: 'NUMBER' as const },
+                          { key: 'unit', label: 'Unit', type: 'TEXT' as const },
+                          { key: 'work_purpose', label: 'Work / Purpose Details', type: 'TEXT' as const },
+                          { key: 'remarks', label: 'Remarks', type: 'TEXT' as const },
+                        ];
+
+                    const handleAddRow = () => {
+                      const newRow: Record<string, any> = { id: `row_${Date.now()}` };
+                      columns.forEach((col) => {
+                        newRow[col.key] = col.type === 'NUMBER' ? 0 : '';
+                      });
+                      handleFieldChange(field.id, [...rows, newRow]);
+                    };
+
+                    const handleRowChange = (rowIdx: number, colKey: string, colValue: any) => {
+                      const updatedRows = [...rows];
+                      const row = { ...updatedRows[rowIdx], [colKey]: colValue };
+                      updatedRows[rowIdx] = row;
+                      handleFieldChange(field.id, updatedRows);
+                    };
+
+                    const handleDeleteRow = (rowIdx: number) => {
+                      const updatedRows = rows.filter((_, idx) => idx !== rowIdx);
+                      handleFieldChange(field.id, updatedRows);
+                    };
+
+                    const hasAmountCol = columns.some((c) => c.key === 'amount' || c.key.includes('amount') || c.key === 'total_amount');
+                    const totalSum = hasAmountCol ? rows.reduce((acc, row) => acc + (parseFloat(row.amount) || 0), 0) : 0;
+
+                    return (
+                      <div key={field.id} className="sm:col-span-2 space-y-2 p-3.5 bg-slate-50 border border-indigo-200 rounded-xl">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <span className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
+                              <Layers className="w-4 h-4 text-indigo-600" />
+                              <span>{field.label} ({rows.length} Multi-Item Entries)</span>
+                            </span>
+                            <p className="text-[10px] text-slate-500 font-medium">
+                              ⚡ Auto-assigned &amp; inherited from master requisition data. Modify or add entries below.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleAddRow}
+                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold rounded-lg transition-all flex items-center gap-1 shadow-xs cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Add Item Row</span>
+                          </button>
+                        </div>
+
+                        <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
+                          <table className="w-full text-xs text-left">
+                            <thead className="bg-slate-100 text-slate-800 font-bold border-b border-slate-200">
+                              <tr>
+                                <th className="py-2 px-2 w-8 text-center">#</th>
+                                {columns.map((col) => (
+                                  <th key={col.key} className="py-2 px-2 min-w-[110px]">
+                                    {col.label}
+                                  </th>
+                                ))}
+                                <th className="py-2 px-1 w-8 text-center"></th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {rows.length === 0 ? (
+                                <tr>
+                                  <td colSpan={columns.length + 2} className="py-4 text-center text-slate-400 italic text-[11px]">
+                                    No item rows added yet. Click &quot;Add Item Row&quot; above to add entry.
+                                  </td>
+                                </tr>
+                              ) : (
+                                rows.map((row, rIdx) => (
+                                  <tr key={row.id || rIdx} className="hover:bg-indigo-50/30">
+                                    <td className="py-2 px-2 text-center font-mono text-slate-400 text-[11px]">
+                                      {rIdx + 1}
+                                    </td>
+                                    {columns.map((col) => (
+                                      <td key={col.key} className="py-1.5 px-1.5">
+                                        <input
+                                          type={col.type === 'NUMBER' ? 'number' : 'text'}
+                                          step={col.type === 'NUMBER' ? 'any' : undefined}
+                                          value={row[col.key] !== undefined ? row[col.key] : ''}
+                                          onChange={(e) =>
+                                            handleRowChange(
+                                              rIdx,
+                                              col.key,
+                                              col.type === 'NUMBER' ? parseFloat(e.target.value) || 0 : e.target.value
+                                            )
+                                          }
+                                          placeholder={col.label}
+                                          className="w-full text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-md px-2 py-1 font-semibold text-slate-800 focus:outline-none"
+                                        />
+                                      </td>
+                                    ))}
+                                    <td className="py-1.5 px-1 text-center">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteRow(rIdx)}
+                                        className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                                        title="Delete row"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                            {hasAmountCol && totalSum > 0 && (
+                              <tfoot className="bg-slate-50 border-t border-slate-200 font-bold">
+                                <tr>
+                                  <td colSpan={columns.length} className="py-2 px-3 text-right text-slate-600 text-[11px]">
+                                    Total Itemized Value:
+                                  </td>
+                                  <td className="py-2 px-2 text-indigo-700 font-mono text-xs font-black">
+                                    ₹{totalSum.toLocaleString('en-IN')}
+                                  </td>
+                                  <td></td>
+                                </tr>
+                              </tfoot>
+                            )}
+                          </table>
+                        </div>
                       </div>
                     );
                   }

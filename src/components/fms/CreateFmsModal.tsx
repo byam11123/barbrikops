@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, GitBranch, AlertCircle, Plus, Check, CreditCard, ShoppingCart, Boxes, Truck, PackageCheck, FileText, UserCheck, Wrench, Cog, FileSpreadsheet, Sparkles, Link2, RotateCcw, Trash2, Lock } from 'lucide-react';
-import { FmsInstance, Priority, UserProfile, FmsTemplateDefinition, FmsStageTemplate, isUserSuperAdmin, isUserAdminOrSuperAdmin } from '../../types';
+import { X, GitBranch, AlertCircle, Plus, Check, CreditCard, ShoppingCart, Boxes, Truck, PackageCheck, FileText, UserCheck, Wrench, Cog, FileSpreadsheet, Sparkles, Link2, RotateCcw, Trash2, Lock, Layers } from 'lucide-react';
+import { FmsInstance, Priority, UserProfile, FmsTemplateDefinition, FmsStageTemplate, FmsLineItem, isUserSuperAdmin, isUserAdminOrSuperAdmin } from '../../types';
 import { generateCounterTrackingId, generateUniqueCounterTrackingId, getWorkflowIdTitle } from '../../utils/fmsUtils';
 import { 
   FMS_CHECK_STOCK_STAGES, 
@@ -36,6 +36,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
   onCreate,
   onOpenTemplateStudio,
 }) => {
+  const allMasterTemplates = storageAdapter.getAllMasterTemplates();
   const customTemplates = storageAdapter.getFmsTemplates();
   const [selectedCustomTemplateId, setSelectedCustomTemplateId] = useState<string | null>(null);
   const [customFormData, setCustomFormData] = useState<Record<string, any>>({});
@@ -138,7 +139,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
 
   const handleSelectCustomTemplate = (tplId: string) => {
     setSelectedCustomTemplateId(tplId);
-    const tpl = customTemplates.find((t) => t.id === tplId);
+    const tpl = allMasterTemplates.find((t) => t.id === tplId);
     if (tpl) {
       const initialData: Record<string, any> = {};
       const s1Fields = tpl.stages[0]?.fields || [];
@@ -166,10 +167,10 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
 
   const getStagesForCurrentWorkflow = () => {
     if (selectedCustomTemplateId) {
-      const tpl = customTemplates.find((t) => t.id === selectedCustomTemplateId);
+      const tpl = allMasterTemplates.find((t) => t.id === selectedCustomTemplateId);
       return tpl ? tpl.stages.map((s) => s.stageName) : [];
     }
-    const customizedBuiltin = customTemplates.find((t) => t.templateKey === flowType);
+    const customizedBuiltin = allMasterTemplates.find((t) => t.templateKey === flowType);
     if (customizedBuiltin) {
       return customizedBuiltin.stages.map((s) => s.stageName);
     }
@@ -205,10 +206,10 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
 
   const getFullTemplateStagesForCurrentWorkflow = (): FmsStageTemplate[] => {
     if (selectedCustomTemplateId) {
-      const tpl = customTemplates.find((t) => t.id === selectedCustomTemplateId);
+      const tpl = allMasterTemplates.find((t) => t.id === selectedCustomTemplateId);
       return tpl ? tpl.stages : [];
     }
-    const customizedBuiltin = customTemplates.find((t) => t.templateKey === flowType);
+    const customizedBuiltin = allMasterTemplates.find((t) => t.templateKey === flowType);
     if (customizedBuiltin && customizedBuiltin.stages && customizedBuiltin.stages.length > 0) {
       return customizedBuiltin.stages;
     }
@@ -226,7 +227,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
           stageName: s.name,
           whoRole: s.whoRole,
           whoDefaultAssignee: s.whoDefaultAssignee,
-          slaHours: s.slaHours || 4,
+          slaHours: s.slaHours !== undefined ? s.slaHours : 0,
           fields: s.fields,
           checkpoints: (s as any).checkpoints,
         }));
@@ -236,7 +237,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
           stageName: s.name,
           whoRole: s.whoRole,
           whoDefaultAssignee: s.whoDefaultAssignee,
-          slaHours: s.slaHours || 2,
+          slaHours: s.slaHours !== undefined ? s.slaHours : 0,
           fields: s.fields,
           checkpoints: (s as any).checkpoints,
         }));
@@ -246,7 +247,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
           stageName: s.name,
           whoRole: s.whoRole,
           whoDefaultAssignee: s.whoDefaultAssignee,
-          slaHours: s.slaHours || 1,
+          slaHours: s.slaHours !== undefined ? s.slaHours : 0,
           fields: s.fields,
           logic: (s as any).logic,
           checkpoints: (s as any).checkpoints,
@@ -257,7 +258,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
           stageName: s.name,
           whoRole: s.whoRole,
           whoDefaultAssignee: s.whoDefaultAssignee,
-          slaHours: s.slaHours || 3,
+          slaHours: s.slaHours !== undefined ? s.slaHours : 0,
           fields: s.fields,
           checkpoints: (s as any).checkpoints,
         }));
@@ -267,7 +268,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
           stageName: s.name,
           whoRole: s.whoRole,
           whoDefaultAssignee: s.whoDefaultAssignee,
-          slaHours: s.slaHours || 3,
+          slaHours: s.slaHours !== undefined ? s.slaHours : 0,
           fields: s.fields,
           checkpoints: (s as any).checkpoints,
         }));
@@ -277,7 +278,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
           stageName: s.name,
           whoRole: s.whoRole,
           whoDefaultAssignee: s.whoDefaultAssignee,
-          slaHours: s.slaHours || 4,
+          slaHours: s.slaHours !== undefined ? s.slaHours : 0,
           fields: s.fields,
           checkpoints: (s as any).checkpoints,
         }));
@@ -287,7 +288,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
           stageName: s.name,
           whoRole: s.whoRole,
           whoDefaultAssignee: s.whoDefaultAssignee,
-          slaHours: s.slaHours || 3,
+          slaHours: s.slaHours !== undefined ? s.slaHours : 0,
           fields: s.fields,
           checkpoints: (s as any).checkpoints,
         }));
@@ -297,7 +298,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
           stageName: s.name,
           whoRole: s.whoRole,
           whoDefaultAssignee: s.whoDefaultAssignee,
-          slaHours: s.slaHours || 4,
+          slaHours: s.slaHours !== undefined ? s.slaHours : 0,
           fields: s.fields,
           checkpoints: (s as any).checkpoints,
         }));
@@ -307,7 +308,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
           stageName: s.name,
           whoRole: s.whoRole,
           whoDefaultAssignee: s.whoDefaultAssignee,
-          slaHours: s.slaHours || 2,
+          slaHours: s.slaHours !== undefined ? s.slaHours : 0,
           fields: s.fields,
           checkpoints: (s as any).checkpoints,
         }));
@@ -317,7 +318,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
           stageName: s.name,
           whoRole: s.whoRole,
           whoDefaultAssignee: s.whoDefaultAssignee,
-          slaHours: s.slaHours || 2,
+          slaHours: s.slaHours !== undefined ? s.slaHours : 0,
           fields: s.fields,
           checkpoints: (s as any).checkpoints,
         }));
@@ -327,7 +328,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
           stageName: s.name,
           whoRole: s.whoRole,
           whoDefaultAssignee: s.whoDefaultAssignee,
-          slaHours: s.slaHours || 2,
+          slaHours: s.slaHours !== undefined ? s.slaHours : 0,
           fields: s.fields,
           checkpoints: (s as any).checkpoints,
         }));
@@ -337,7 +338,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
           stageName: s.name,
           whoRole: s.whoRole,
           whoDefaultAssignee: s.whoDefaultAssignee,
-          slaHours: s.slaHours || 3,
+          slaHours: s.slaHours !== undefined ? s.slaHours : 0,
           fields: s.fields,
           checkpoints: (s as any).checkpoints,
         }));
@@ -369,12 +370,12 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
 
     // Re-generate auto counter tracking ID
     if (selectedCustomTemplateId) {
-      const tpl = customTemplates.find((t) => t.id === selectedCustomTemplateId);
+      const tpl = allMasterTemplates.find((t) => t.id === selectedCustomTemplateId);
       if (tpl) {
         setIndentNo(generateCounterTrackingId(tpl.referenceLabel, tpl.name, allExistingFlows));
       }
     } else {
-      const tpl = customTemplates.find((t) => t.templateKey === flowType);
+      const tpl = allMasterTemplates.find((t) => t.templateKey === flowType);
       setIndentNo(generateCounterTrackingId(tpl?.referenceLabel, flowType, allExistingFlows));
     }
   };
@@ -389,7 +390,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
     const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
 
     if (selectedCustomTemplateId) {
-      const template = customTemplates.find((t) => t.id === selectedCustomTemplateId);
+      const template = allMasterTemplates.find((t) => t.id === selectedCustomTemplateId);
       if (!template) {
         setError('Selected custom template not found');
         return;
@@ -460,7 +461,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
       const workShiftConfig = storageAdapter.getRegistryConfig().workShiftConfig || DEFAULT_WORK_SHIFT_CONFIG;
 
       const initialStages = template.stages.map((stg, idx) => {
-        const sla = stg.slaHours || 4;
+        const sla = stg.slaHours !== undefined ? stg.slaHours : 0;
         const cumulativeSla = idx === 0 ? sla : (idx + 1) * sla;
         const plannedTime = addWorkingSlaHours(now, cumulativeSla, workShiftConfig);
         return {
@@ -481,6 +482,20 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
           submittedData: idx === 0 ? orderedStage1Data : undefined,
         };
       });
+
+      // Extract lineItems if Stage 1 contained MULTI_ITEM_TABLE entries
+      const multiItemField = stage1DefFields.find((f) => f.type === 'MULTI_ITEM_TABLE');
+      const rawMultiItems = multiItemField && Array.isArray(customFormData[multiItemField.id]) ? customFormData[multiItemField.id] : [];
+      const extractedLineItems: FmsLineItem[] = rawMultiItems.map((r: any, idx: number) => ({
+        id: r.id || `item_${Date.now()}_${idx + 1}`,
+        itemDescription: r.item_description || r.description || r.item || `Requisition Item #${idx + 1}`,
+        qty: parseFloat(r.quantity || r.qty) || 1,
+        requestedQty: parseFloat(r.quantity || r.qty) || 1,
+        unit: r.unit || 'Nos',
+        workPurpose: r.work_purpose || r.purpose || r.work || effectiveRemarks,
+        remarks: r.remarks || r.remark || '',
+        status: 'PENDING_TRIAGE' as const,
+      }));
 
       const newFlow: FmsInstance = {
         id: `fms-inst-cust-${Date.now()}`,
@@ -503,6 +518,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
         poAmount: effectiveAmount,
         remarks: effectiveRemarks.trim() || undefined,
         stages: initialStages,
+        lineItems: extractedLineItems.length > 0 ? extractedLineItems : undefined,
       };
 
       onCreate(newFlow);
@@ -517,12 +533,24 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
       }
 
       const flowId = `FLOW-STK-${indentNo.trim().replace(/[^a-zA-Z0-9]/g, '-')}`;
-      const customizedTpl = customTemplates.find((t) => t.templateKey === 'CHECK_STOCK' || t.id === 'builtin_CHECK_STOCK');
+      const customizedTpl = allMasterTemplates.find((t) => t.templateKey === 'CHECK_STOCK' || t.id === 'builtin_CHECK_STOCK');
       const workShiftConfig = storageAdapter.getRegistryConfig().workShiftConfig || DEFAULT_WORK_SHIFT_CONFIG;
+
+      const rawMultiItems = Array.isArray(customFormData.requisitionItems) ? customFormData.requisitionItems : [];
+      const extractedLineItems: FmsLineItem[] = rawMultiItems.map((r: any, idx: number) => ({
+        id: r.id || `item_${Date.now()}_${idx + 1}`,
+        itemDescription: r.item_description || r.description || r.item || `Requisition Item #${idx + 1}`,
+        qty: parseFloat(r.quantity || r.qty) || 1,
+        requestedQty: parseFloat(r.quantity || r.qty) || 1,
+        unit: r.unit || 'Nos',
+        workPurpose: r.work_purpose || r.purpose || r.work || remarks,
+        remarks: r.remarks || r.remark || '',
+        status: 'PENDING_TRIAGE' as const,
+      }));
 
       const initialStages = customizedTpl
         ? customizedTpl.stages.map((stg, idx) => {
-            const sla = stg.slaHours || 4;
+            const sla = stg.slaHours !== undefined ? stg.slaHours : 0;
             const cumulativeSla = idx === 0 ? sla : (idx + 1) * sla;
             const plannedTime = addWorkingSlaHours(now, cumulativeSla, workShiftConfig);
             return {
@@ -536,11 +564,17 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
               fields: stg.fields,
               logic: stg.logic,
               checkpoints: stg.checkpoints,
-              submittedData: idx === 0 ? { requisitionNumber: indentNo.trim(), site: siteName, priority, remarks } : undefined,
+              submittedData: idx === 0 ? {
+                requisitionNumber: indentNo.trim(),
+                site: siteName,
+                priority,
+                remarks,
+                requisitionItems: rawMultiItems,
+              } : undefined,
             };
           })
         : FMS_CHECK_STOCK_STAGES.map((def, idx) => {
-            const sla = def.slaHours || 4;
+            const sla = def.slaHours !== undefined ? def.slaHours : 0;
             const cumulativeSla = idx === 0 ? sla : (idx + 1) * sla;
             const plannedTime = addWorkingSlaHours(now, cumulativeSla, workShiftConfig);
             return {
@@ -551,7 +585,14 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
               status: idx === 0 ? ('Done' as const) : idx === 1 ? ('In Progress' as const) : ('Pending' as const),
               plannedDateTime: formatToStandardDateTime(plannedTime),
               actualDateTime: idx === 0 ? formatToStandardDateTime(now) : undefined,
-              submittedData: idx === 0 ? { requisitionNumber: indentNo.trim(), site: siteName, priority, remarks } : undefined,
+              fields: def.fields,
+              submittedData: idx === 0 ? {
+                requisitionNumber: indentNo.trim(),
+                site: siteName,
+                priority,
+                remarks,
+                requisitionItems: rawMultiItems,
+              } : undefined,
             };
           });
 
@@ -573,10 +614,20 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
         totalDelayHours: 0,
         remarks: remarks.trim() || undefined,
         stages: initialStages,
+        lineItems: extractedLineItems.length > 0 ? extractedLineItems : undefined,
+        instanceDataPool: {
+          requisitionNumber: indentNo.trim(),
+          site: siteName,
+          priority,
+          remarks,
+          requisitionItems: rawMultiItems,
+          lineItems: extractedLineItems,
+        },
       };
 
       onCreate(newFlow);
       onClose();
+      return;
     } else if (flowType === 'INDENT_PURCHASE') {
       const flowId = `FLOW-IND-${indentNo.trim()}`;
       const validation = FmsCreateInputSchema.safeParse({
@@ -1065,10 +1116,10 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
       }
 
       const flowId = `FLOW-PAY-${poNumber.trim().replace(/[^a-zA-Z0-9]/g, '-')}`;
-      const customizedTpl = customTemplates.find((t) => t.templateKey === 'PO_TO_PAYMENT' || t.id === 'builtin_PO_TO_PAYMENT');
+      const customizedTpl = allMasterTemplates.find((t) => t.templateKey === 'PO_TO_PAYMENT' || t.id === 'builtin_PO_TO_PAYMENT');
       const initialStages = customizedTpl
         ? customizedTpl.stages.map((stg, idx) => {
-            const sla = stg.slaHours || 1;
+            const sla = stg.slaHours !== undefined ? stg.slaHours : 0;
             const plannedTime = new Date(now.getTime() + (idx === 0 ? sla : (idx + 1) * sla) * 3600000);
             return {
               stageId: stg.stageId,
@@ -1243,7 +1294,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
 
           {selectedCustomTemplateId ? (
             (() => {
-              const tpl = customTemplates.find((t) => t.id === selectedCustomTemplateId);
+              const tpl = allMasterTemplates.find((t) => t.id === selectedCustomTemplateId);
               if (!tpl) return null;
               const stage1Fields = tpl.stages[0]?.fields || [];
 
@@ -1275,14 +1326,142 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
                         {stage1Fields.map((field) => {
-                          const isFullWidth = field.type === 'TEXTAREA' || field.label.length > 25;
+                          const isFullWidth = field.type === 'TEXTAREA' || field.type === 'MULTI_ITEM_TABLE' || field.label.length > 25;
                           return (
                             <div key={field.id} className={isFullWidth ? 'sm:col-span-2' : ''}>
-                              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                {field.label} {field.required && <span className="text-rose-500">*</span>}
-                              </label>
+                              {field.type !== 'MULTI_ITEM_TABLE' && (
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  {field.label} {field.required && <span className="text-rose-500">*</span>}
+                                </label>
+                              )}
 
-                              {field.type === 'SELECT' ? (
+                              {field.type === 'MULTI_ITEM_TABLE' ? (() => {
+                                const columns = (field.columns && field.columns.length > 0)
+                                  ? field.columns
+                                  : typeof field.defaultValue === 'string' && field.defaultValue.trim()
+                                  ? field.defaultValue.split(',').map(s => s.trim()).filter(Boolean).map(colLabel => ({
+                                      key: colLabel.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+                                      label: colLabel,
+                                      type: (colLabel.toLowerCase().includes('rate') || colLabel.toLowerCase().includes('qty') || colLabel.toLowerCase().includes('quantity') || colLabel.toLowerCase().includes('amount') || colLabel.toLowerCase().includes('nos') || colLabel.toLowerCase().includes('price')) ? ('NUMBER' as const) : ('TEXT' as const)
+                                    }))
+                                  : [
+                                      { key: 'item_description', label: 'Item Description', type: 'TEXT' as const },
+                                      { key: 'quantity', label: 'Quantity', type: 'NUMBER' as const },
+                                      { key: 'unit', label: 'Unit', type: 'TEXT' as const },
+                                      { key: 'work_purpose', label: 'Work / Purpose Details', type: 'TEXT' as const },
+                                      { key: 'remarks', label: 'Remarks', type: 'TEXT' as const },
+                                    ];
+
+                                const currentVal = customFormData[field.id];
+                                const rows: Record<string, any>[] = Array.isArray(currentVal) ? currentVal : [];
+
+                                const handleAddRow = () => {
+                                  const newRow: Record<string, any> = { id: `row_${Date.now()}_${Math.random().toString(36).substr(2, 4)}` };
+                                  columns.forEach((col) => {
+                                    newRow[col.key] = col.type === 'NUMBER' ? 0 : '';
+                                  });
+                                  handleCustomFieldChange(field.id, [...rows, newRow]);
+                                };
+
+                                const handleRowChange = (rowIdx: number, colKey: string, colValue: any) => {
+                                  const updatedRows = [...rows];
+                                  const row = { ...updatedRows[rowIdx], [colKey]: colValue };
+                                  updatedRows[rowIdx] = row;
+                                  handleCustomFieldChange(field.id, updatedRows);
+                                };
+
+                                const handleDeleteRow = (rowIdx: number) => {
+                                  const updatedRows = rows.filter((_, idx) => idx !== rowIdx);
+                                  handleCustomFieldChange(field.id, updatedRows);
+                                };
+
+                                return (
+                                  <div className="space-y-2 p-3.5 bg-slate-50 border border-indigo-200 rounded-xl shadow-2xs">
+                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                      <div>
+                                        <span className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
+                                          <Layers className="w-4 h-4 text-indigo-600 shrink-0" />
+                                          <span>{field.label} ({rows.length} {rows.length === 1 ? 'Item Entry' : 'Item Entries'})</span>
+                                          {field.required && <span className="text-rose-500">*</span>}
+                                        </span>
+                                        <p className="text-[10px] text-slate-500 font-medium">
+                                          Multi-Item Requisition Table. Enter item description, requested quantity, unit, and work/purpose details.
+                                        </p>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={handleAddRow}
+                                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold rounded-lg transition-all flex items-center gap-1 shadow-xs cursor-pointer shrink-0"
+                                      >
+                                        <Plus className="w-3.5 h-3.5" />
+                                        <span>Add Item Row</span>
+                                      </button>
+                                    </div>
+
+                                    <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
+                                      <table className="w-full text-xs text-left">
+                                        <thead className="bg-slate-100 text-slate-800 font-bold border-b border-slate-200">
+                                          <tr>
+                                            <th className="py-2 px-2 w-8 text-center">#</th>
+                                            {columns.map((col) => (
+                                              <th key={col.key} className="py-2 px-2 min-w-[100px]">
+                                                {col.label}
+                                              </th>
+                                            ))}
+                                            <th className="py-2 px-1 w-8 text-center"></th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                          {rows.length === 0 ? (
+                                            <tr>
+                                              <td colSpan={columns.length + 2} className="py-4 text-center text-slate-400 italic text-[11px]">
+                                                No item rows added yet. Click &quot;Add Item Row&quot; above to add entry.
+                                              </td>
+                                            </tr>
+                                          ) : (
+                                            rows.map((row, rIdx) => (
+                                              <tr key={row.id || rIdx} className="hover:bg-indigo-50/30">
+                                                <td className="py-2 px-2 text-center font-mono text-slate-400 text-[11px]">
+                                                  {rIdx + 1}
+                                                </td>
+                                                {columns.map((col) => (
+                                                  <td key={col.key} className="py-1.5 px-1.5">
+                                                    <input
+                                                      type={col.type === 'NUMBER' ? 'number' : 'text'}
+                                                      step={col.type === 'NUMBER' ? 'any' : undefined}
+                                                      value={row[col.key] !== undefined ? row[col.key] : ''}
+                                                      onChange={(e) =>
+                                                        handleRowChange(
+                                                          rIdx,
+                                                          col.key,
+                                                          col.type === 'NUMBER' ? parseFloat(e.target.value) || 0 : e.target.value
+                                                        )
+                                                      }
+                                                      placeholder={col.label}
+                                                      className="w-full text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-md px-2 py-1 font-semibold text-slate-800 focus:outline-none"
+                                                    />
+                                                  </td>
+                                                ))}
+                                                <td className="py-1.5 px-1 text-center">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleDeleteRow(rIdx)}
+                                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded cursor-pointer transition-colors"
+                                                    title="Remove row"
+                                                  >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                  </button>
+                                                </td>
+                                              </tr>
+                                            ))
+                                          )}
+                                        </tbody>
+
+                                      </table>
+                                    </div>
+                                  </div>
+                                );
+                              })() : field.type === 'SELECT' ? (
                                 <div className="flex items-center gap-1.5">
                                   <select
                                     required={field.required}
@@ -1405,21 +1584,141 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
               );
             })()
           ) : flowType === 'CHECK_STOCK' ? (
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Material Requisition Number / Indent Ref <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. Indent no-477 or REQ-477"
-                value={indentNo}
-                onChange={(e) => setIndentNo(e.target.value)}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-              />
-              <p className="text-[11px] text-slate-400 mt-1">
-                Store Manager (Amanat Bhardwaj) will verify physical stock and decide whether to dispatch or trigger Purchase Indent.
-              </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Material Requisition Number / Indent Ref <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Indent no-477 or REQ-477"
+                  value={indentNo}
+                  onChange={(e) => setIndentNo(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Store Manager (Amanat Bhardwaj) will verify physical stock and decide whether to dispatch from store or trigger Purchase Indent.
+                </p>
+              </div>
+
+              {/* Multi-Item Requisition Grid */}
+              {(() => {
+                const columns = [
+                  { key: 'item_description', label: 'Item Description', type: 'TEXT' as const },
+                  { key: 'quantity', label: 'Quantity', type: 'NUMBER' as const },
+                  { key: 'unit', label: 'Unit', type: 'TEXT' as const },
+                  { key: 'work_purpose', label: 'Work / Purpose Details', type: 'TEXT' as const },
+                  { key: 'remarks', label: 'Remarks', type: 'TEXT' as const },
+                ];
+                const currentVal = customFormData.requisitionItems;
+                const rows: Record<string, any>[] = Array.isArray(currentVal) ? currentVal : [];
+
+                const handleAddRow = () => {
+                  const newRow: Record<string, any> = { id: `row_${Date.now()}_${Math.random().toString(36).substr(2, 4)}` };
+                  columns.forEach((col) => {
+                    newRow[col.key] = col.type === 'NUMBER' ? 1 : '';
+                  });
+                  newRow.unit = 'Nos';
+                  handleCustomFieldChange('requisitionItems', [...rows, newRow]);
+                };
+
+                const handleRowChange = (rowIdx: number, colKey: string, colValue: any) => {
+                  const updatedRows = [...rows];
+                  updatedRows[rowIdx] = { ...updatedRows[rowIdx], [colKey]: colValue };
+                  handleCustomFieldChange('requisitionItems', updatedRows);
+                };
+
+                const handleDeleteRow = (rowIdx: number) => {
+                  const updatedRows = rows.filter((_, idx) => idx !== rowIdx);
+                  handleCustomFieldChange('requisitionItems', updatedRows);
+                };
+
+                return (
+                  <div className="space-y-2 p-3.5 bg-slate-50 border border-emerald-200 rounded-xl shadow-2xs">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div>
+                        <span className="text-xs font-extrabold text-emerald-950 flex items-center gap-1.5">
+                          <Layers className="w-4 h-4 text-emerald-700 shrink-0" />
+                          <span>Material Requisition Items ({rows.length} {rows.length === 1 ? 'Item Entry' : 'Item Entries'})</span>
+                        </span>
+                        <p className="text-[10px] text-slate-500 font-medium">
+                          Itemized requisition entries. Specify what work each item is required for (rates omitted).
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddRow}
+                        className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] font-bold rounded-lg transition-all flex items-center gap-1 shadow-xs cursor-pointer shrink-0"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add Item Row</span>
+                      </button>
+                    </div>
+
+                    <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
+                      <table className="w-full text-xs text-left">
+                        <thead className="bg-slate-100 text-slate-800 font-bold border-b border-slate-200">
+                          <tr>
+                            <th className="py-2 px-2 w-8 text-center">#</th>
+                            {columns.map((col) => (
+                              <th key={col.key} className="py-2 px-2 min-w-[100px]">
+                                {col.label}
+                              </th>
+                            ))}
+                            <th className="py-2 px-1 w-8 text-center"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {rows.length === 0 ? (
+                            <tr>
+                              <td colSpan={columns.length + 2} className="py-4 text-center text-slate-400 italic text-[11px]">
+                                No item rows added yet. Click &quot;Add Item Row&quot; above to add item entries.
+                              </td>
+                            </tr>
+                          ) : (
+                            rows.map((row, rIdx) => (
+                              <tr key={row.id || rIdx} className="hover:bg-emerald-50/30">
+                                <td className="py-2 px-2 text-center font-mono text-slate-400 text-[11px]">
+                                  {rIdx + 1}
+                                </td>
+                                {columns.map((col) => (
+                                  <td key={col.key} className="py-1.5 px-1.5">
+                                    <input
+                                      type={col.type === 'NUMBER' ? 'number' : 'text'}
+                                      step={col.type === 'NUMBER' ? 'any' : undefined}
+                                      value={row[col.key] !== undefined ? row[col.key] : ''}
+                                      onChange={(e) =>
+                                        handleRowChange(
+                                          rIdx,
+                                          col.key,
+                                          col.type === 'NUMBER' ? parseFloat(e.target.value) || 0 : e.target.value
+                                        )
+                                      }
+                                      placeholder={col.label}
+                                      className="w-full text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-emerald-500 rounded-md px-2 py-1 font-semibold text-slate-800 focus:outline-none"
+                                    />
+                                  </td>
+                                ))}
+                                <td className="py-1.5 px-1 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteRow(rIdx)}
+                                    className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                                    title="Delete row"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           ) : flowType === 'STORE_TO_SITE_DISPATCH' ? (
             <div className="space-y-3">
@@ -1930,7 +2229,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
 
           {/* Only show generic Site, Priority, Remarks if NO custom template is selected OR custom template does not provide them */}
           {(() => {
-            const currentTpl = selectedCustomTemplateId ? customTemplates.find((t) => t.id === selectedCustomTemplateId) : null;
+            const currentTpl = selectedCustomTemplateId ? allMasterTemplates.find((t) => t.id === selectedCustomTemplateId) : null;
             const s1Fields = currentTpl?.stages[0]?.fields || [];
             const hasSiteField = s1Fields.some((f) => f.label.toLowerCase().includes('site') || f.id.toLowerCase().includes('site'));
             const hasPriorityField = s1Fields.some((f) => f.label.toLowerCase().includes('priority') || f.id.toLowerCase().includes('priority'));

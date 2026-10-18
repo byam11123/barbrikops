@@ -340,6 +340,9 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
     if (stageExec.submittedData && stageExec.submittedData[fieldId] !== undefined) {
       const val = stageExec.submittedData[fieldId];
       if (typeof val === 'boolean') return val ? 'Yes' : 'No';
+      if (Array.isArray(val)) {
+        return `${val.length} item(s)`;
+      }
       return String(val);
     }
     if (fallbackKey && stageExec[fallbackKey] !== undefined) {

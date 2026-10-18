@@ -38,7 +38,8 @@ import {
   AlertCircle,
   Flag,
   FileSpreadsheet,
-  Layers
+  Layers,
+  Landmark
 } from 'lucide-react';
 import { downloadCsv } from '../../utils/csvExporter';
 import { CustomSelect } from '../common/CustomSelect';
@@ -77,7 +78,7 @@ export function getDynamicGreeting(name: string): string {
 
 export interface UnifiedItem {
   id: string;
-  sourceModule: 'FMS' | 'CHECKLIST' | 'DELEGATION';
+  sourceModule: 'FMS' | 'CHECKLIST' | 'DELEGATION' | 'BANKING';
   sourceId: string;
   title: string;
   subtitle: string;
@@ -187,14 +188,14 @@ interface UnifiedWorkSummaryProps {
   onSelectFmsDetail: (flow: FmsInstance) => void;
   onNavigateTab: (tab: any) => void;
   onAddProcessRemark?: (
-    module: 'FMS' | 'CHECKLIST' | 'DELEGATION',
+    module: 'FMS' | 'CHECKLIST' | 'DELEGATION' | 'BANKING',
     targetId: string,
     category: ProcessRemark['category'],
     remarkText: string,
     stageIndex?: number
   ) => void;
   onNudgeItem?: (
-    module: 'FMS' | 'CHECKLIST' | 'DELEGATION',
+    module: 'FMS' | 'CHECKLIST' | 'DELEGATION' | 'BANKING',
     targetId: string,
     stageIndex?: number
   ) => void;
@@ -224,7 +225,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   onOpenStageAction,
 }) => {
   const [selectedCondition, setSelectedCondition] = useState<StatCondition>('DUE_TODAY');
-  const [moduleFilter, setModuleFilter] = useState<'ALL' | 'FMS' | 'CHECKLIST' | 'DELEGATION'>('ALL');
+  const [moduleFilter, setModuleFilter] = useState<'ALL' | 'FMS' | 'CHECKLIST' | 'DELEGATION' | 'BANKING'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [assigneeFilter, setAssigneeFilter] = useState<string>('ALL');
 
@@ -266,6 +267,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
 
   // Weekly Director Digest Modal State (PC)
   const [showWeeklyDigestModal, setShowWeeklyDigestModal] = useState<boolean>(false);
+  const [bankingActionRefresh, setBankingActionRefresh] = useState<number>(0);
 
   // Split-Screen Operational Cockpit State
   const [cockpitTarget, setCockpitTarget] = useState<{
@@ -378,7 +380,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   // Modal state for adding Process Coordinator Remark
   const [remarkModalTarget, setRemarkModalTarget] = useState<{
     item: UnifiedItem;
-    module: 'FMS' | 'CHECKLIST' | 'DELEGATION';
+    module: 'FMS' | 'CHECKLIST' | 'DELEGATION' | 'BANKING';
     targetId: string;
     stageIndex?: number;
   } | null>(null);
@@ -527,7 +529,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       isCompleted,
       isOverdue,
       isDueToday,
-      isMine: isDirectlyAssignedChecklist(chk),
+      isMine: isMineChecklist(chk),
       channelOrFreq: chk.frequency,
       rawItem: chk,
       processRemarks: chk.processRemarks || [],
@@ -565,7 +567,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       isCompleted,
       isOverdue,
       isDueToday,
-      isMine: isDirectlyAssignedDelegation(del),
+      isMine: isMineDelegation(del),
       priority: del.priority,
       rawItem: del,
       processRemarks: del.processRemarks || [],
@@ -693,7 +695,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           isCompleted,
           isOverdue,
           isDueToday,
-          isMine: isDirectlyAssignedFms(def, stage),
+          isMine: isMineFmsStage(def, stage),
           priority: flow.priority,
           channelOrFreq: def.howChannel,
           rawItem: { flow, stage, stageIndex: idx, def },
@@ -704,6 +706,138 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       }
     });
   });
+
+  // 2.5 Banking Tasks Integration (Director Authorization & Accounts Settlement Queues)
+  // Driven by storageAdapter.getMyWorkBankingTasks(currentUser)
+  try {
+    const bankingTasks = storageAdapter.getMyWorkBankingTasks(currentUser);
+
+    // Director Queue: Pending Bank Payment Approvals
+    bankingTasks.directorPendingPayments.forEach((bp) => {
+      const isCompleted = bp.approvalStatus !== 'PENDING';
+      const dateObj = parseDate(bp.plannedDate) || parseDateTimeStr(bp.plannedDate) || new Date();
+      dateObj.setHours(0, 0, 0, 0);
+      const diffDays = Math.round((dateObj.getTime() - today.getTime()) / 86400000);
+      const isDueToday = diffDays === 0 || !isCompleted;
+      const isOverdue = !isCompleted && dateObj.getTime() < today.getTime();
+
+      unifiedItems.push({
+        id: `unified-banking-pay-${bp.id}`,
+        sourceModule: 'BANKING',
+        sourceId: bp.id,
+        referenceCode: bp.sheetNo,
+        title: `Authorize Payment: ${bp.vendorName} (₹${bp.amountToBePaid.toLocaleString('en-IN')})`,
+        subtitle: `Bank Request • Site: ${bp.site} • Mode: ${bp.modeOfPayment} • Beneficiary: ${bp.beneficiaryName}`,
+        targetDateStr: bp.plannedDate,
+        plannedDateTimeStr: `${bp.plannedDate} 05:00 PM`,
+        actualDateTimeStr: bp.approvalTimestamp || '—',
+        delayHours: isOverdue ? 4 : 0,
+        targetDateObj: dateObj,
+        status: bp.approvalStatus,
+        isCompleted,
+        isOverdue,
+        isDueToday,
+        isMine: true,
+        priority: bp.amountToBePaid > 100000 ? 'Urgent' : 'Normal',
+        channelOrFreq: bp.modeOfPayment,
+        rawItem: { bankPayment: bp, taskType: 'DIRECTOR_PAYMENT_APPROVAL' },
+        assigneeName: 'Director Pranjal Agrawal',
+      });
+    });
+
+    // Accounts Queue: Approved Payments Pending Portal Entry
+    bankingTasks.accountsPendingEntry.forEach((bp) => {
+      const isCompleted = bp.paymentEntry === 'DONE';
+      const dateObj = parseDate(bp.plannedDate) || new Date();
+      dateObj.setHours(0, 0, 0, 0);
+      const diffDays = Math.round((dateObj.getTime() - today.getTime()) / 86400000);
+      const isDueToday = diffDays === 0 || !isCompleted;
+      const isOverdue = !isCompleted && dateObj.getTime() < today.getTime();
+
+      unifiedItems.push({
+        id: `unified-banking-entry-${bp.id}`,
+        sourceModule: 'BANKING',
+        sourceId: bp.id,
+        referenceCode: bp.sheetNo,
+        title: `Bank Portal Entry: ${bp.vendorName} (₹${bp.amountToBePaid.toLocaleString('en-IN')})`,
+        subtitle: `Accounts Task • A/C: ${bp.accountNoMasked || 'Verified Bank'} • Ref: ${bp.billNoPo || bp.sheetNo}`,
+        targetDateStr: bp.plannedDate,
+        plannedDateTimeStr: `${bp.plannedDate} 02:00 PM`,
+        actualDateTimeStr: bp.paymentEntryTimestamp || '—',
+        delayHours: isOverdue ? 2 : 0,
+        targetDateObj: dateObj,
+        status: bp.paymentEntry,
+        isCompleted,
+        isOverdue,
+        isDueToday,
+        isMine: true,
+        priority: 'Normal',
+        channelOrFreq: 'BANK ERP ENTRY',
+        rawItem: { bankPayment: bp, taskType: 'ACCOUNTS_PORTAL_ENTRY' },
+        assigneeName: 'Accounts Team',
+      });
+    });
+
+    // Accounts Queue: Approved Payments Pending UTR Settlement
+    bankingTasks.accountsPendingSettlement.forEach((bp) => {
+      const isCompleted = bp.paymentStatus === 'DONE';
+      const dateObj = parseDate(bp.plannedDate) || new Date();
+      dateObj.setHours(0, 0, 0, 0);
+      const diffDays = Math.round((dateObj.getTime() - today.getTime()) / 86400000);
+      const isDueToday = diffDays === 0 || !isCompleted;
+      const isOverdue = !isCompleted && dateObj.getTime() < today.getTime();
+
+      unifiedItems.push({
+        id: `unified-banking-settle-${bp.id}`,
+        sourceModule: 'BANKING',
+        sourceId: bp.id,
+        referenceCode: bp.sheetNo,
+        title: `Disburse & Record UTR: ${bp.vendorName} (₹${bp.amountToBePaid.toLocaleString('en-IN')})`,
+        subtitle: `Settlement • Bank: ${bp.bankName || 'HDFC/SBI'} • Mode: ${bp.modeOfPayment}`,
+        targetDateStr: bp.plannedDate,
+        plannedDateTimeStr: `${bp.plannedDate} 06:00 PM`,
+        actualDateTimeStr: bp.paymentDoneTimestamp || '—',
+        delayHours: isOverdue ? 2 : 0,
+        targetDateObj: dateObj,
+        status: bp.paymentStatus,
+        isCompleted,
+        isOverdue,
+        isDueToday,
+        isMine: true,
+        priority: 'Normal',
+        channelOrFreq: 'BANK UTR RELEASE',
+        rawItem: { bankPayment: bp, taskType: 'ACCOUNTS_UTR_SETTLEMENT' },
+        assigneeName: 'Accounts Team',
+      });
+    });
+
+    // Director Queue: Pending Beneficiary Approvals
+    bankingTasks.directorPendingBeneficiaries.forEach((ben) => {
+      const isCompleted = ben.approvalStatus !== 'PENDING';
+      unifiedItems.push({
+        id: `unified-ben-appr-${ben.id}`,
+        sourceModule: 'BANKING',
+        sourceId: ben.id,
+        referenceCode: ben.sheetNo,
+        title: `Approve Beneficiary: ${ben.beneficiaryName} (${ben.bankName})`,
+        subtitle: `Vendor: ${ben.tradeVendorName || ben.beneficiaryName} • IFSC: ${ben.ifscCode}`,
+        targetDateStr: todayStr,
+        plannedDateTimeStr: `${todayStr} 04:00 PM`,
+        delayHours: 0,
+        status: ben.approvalStatus,
+        isCompleted,
+        isOverdue: false,
+        isDueToday: true,
+        isMine: true,
+        priority: 'Urgent',
+        channelOrFreq: 'BENEFICIARY VERIFICATION',
+        rawItem: { beneficiary: ben, taskType: 'DIRECTOR_BENEFICIARY_APPROVAL' },
+        assigneeName: 'Director Pranjal Agrawal',
+      });
+    });
+  } catch (err) {
+    console.warn('Banking tasks My Work load note:', err);
+  }
 
   // 3. Count matching items for the 4 Stat Cards
   const dueTodayItems = unifiedItems.filter((i) => !i.isCompleted && i.isDueToday);
@@ -748,15 +882,21 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   const paginatedItems = displayedItems.slice(startIndex, startIndex + pageSize);
 
   const isItemActionable = (item: UnifiedItem): boolean => {
-    if (!item.isMine || item.isCompleted) return false;
+    if (item.isCompleted) return false;
+    const canManage = item.isMine || isAdminOrSuperAdmin || pcDeskActive || isDirectorUser;
+    if (!canManage) return false;
+
     if (item.sourceModule === 'CHECKLIST') {
-      return item.isDueToday || item.isOverdue;
+      return Boolean(item.isDueToday || item.isOverdue || isAdminOrSuperAdmin || pcDeskActive);
     }
     if (item.sourceModule === 'DELEGATION') return true;
     if (item.sourceModule === 'FMS') {
       const { flow, stageIndex } = item.rawItem;
       // FMS stage can ONLY be actioned if flow is in progress AND this is the current active stage
       return flow.status === 'In Progress' && stageIndex === flow.currentStageIndex;
+    }
+    if (item.sourceModule === 'BANKING') {
+      return true;
     }
     return false;
   };
@@ -840,7 +980,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   const renderItemQuickActions = (item: UnifiedItem, isMobile = false) => {
     // 1. CHECKLIST
     if (item.sourceModule === 'CHECKLIST') {
-      if (!item.isMine) return null;
+      if (!item.isMine && !isAdminOrSuperAdmin && !pcDeskActive) return null;
       if (item.isCompleted) {
         return (
           <button
@@ -859,7 +999,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           </button>
         );
       }
-      if (item.isDueToday || item.isOverdue) {
+      if (item.isDueToday || item.isOverdue || isAdminOrSuperAdmin || pcDeskActive) {
         return (
           <div className="flex items-center gap-1">
             <button
@@ -899,7 +1039,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
 
     // 2. DELEGATION
     if (item.sourceModule === 'DELEGATION') {
-      if (!item.isMine) return null;
+      if (!item.isMine && !isAdminOrSuperAdmin && !pcDeskActive) return null;
       return (
         <div className="flex items-center gap-1">
           <button
@@ -948,117 +1088,144 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       const hasApprovalField = stageExec?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval')) ||
         stageDef?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval'));
 
-      // When stage has configured form fields, Fill Form / Approve is the single primary action
-      if (onOpenStageAction && hasFormFields) {
+      // For all FMS stages, Execute Stage via onOpenStageAction is the primary execution path
+      if (onOpenStageAction) {
         return (
           <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => handleOpenSplitCockpit(item)}
-              className={`${isMobile ? 'px-2.5 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded flex items-center gap-1 transition-all shadow-xs cursor-pointer`}
-              title="Open Split-Screen Operational Cockpit with link panel & mandatory verification checklist"
-            >
-              <Layers className="w-3.5 h-3.5 text-indigo-200" />
-              <span>Split Cockpit</span>
-            </button>
             <button
               type="button"
               onClick={() => onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex)}
               className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} ${
                 hasApprovalField
-                  ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
-                  : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
-              } font-bold rounded flex items-center gap-1.5 transition-colors cursor-pointer border shadow-2xs`}
-              title={hasApprovalField ? 'Review & Take Approval Decision' : 'Fill Form'}
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+              } font-bold rounded flex items-center gap-1.5 transition-all shadow-xs cursor-pointer`}
+              title={hasApprovalField ? 'Review & Take Approval Decision' : 'Execute Stage Dialog'}
             >
               {hasApprovalField ? (
                 <>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> <span>Approve / Reject</span>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200" />
+                  <span>Approve / Reject</span>
                 </>
               ) : (
                 <>
-                  <FileText className="w-3.5 h-3.5" /> <span>Fill Form</span>
+                  <FileText className="w-3.5 h-3.5 text-indigo-200" />
+                  <span>Execute Stage</span>
                 </>
               )}
             </button>
-          </div>
-        );
-      }
-
-      // For non-form stages with decision logic: Yes / No
-      if (stageDef?.hasYesNoDecision || stageExec?.logic?.gatewayType === 'CONDITIONAL_JUMP') {
-        return (
-          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => handleOpenSplitCockpit(item)}
-              className={`${isMobile ? 'px-2.5 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded flex items-center gap-1 transition-all shadow-xs cursor-pointer`}
-              title="Open Split-Screen Operational Cockpit"
+              className={`${isMobile ? 'px-2 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded flex items-center gap-1 transition-all shadow-xs cursor-pointer border border-slate-200`}
+              title="Open Split-Screen Operational Cockpit with link panel & mandatory verification checklist"
             >
-              <Layers className="w-3.5 h-3.5 text-indigo-200" />
+              <Layers className="w-3.5 h-3.5 text-slate-500" />
               <span>Cockpit</span>
             </button>
+          </div>
+        );
+      }
+    }
+
+    // 4. BANKING
+    if (item.sourceModule === 'BANKING') {
+      if (item.rawItem?.taskType === 'DIRECTOR_PAYMENT_APPROVAL') {
+        if (item.isCompleted) {
+          return (
+            <span className="text-[10px] text-emerald-700 font-bold px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded">
+              Payment Approved
+            </span>
+          );
+        }
+        return (
+          <div className="flex items-center gap-1">
             <button
-              type="button"
               onClick={() => {
-                if (onOpenStageAction) {
-                  onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex);
-                } else {
-                  onAdvanceFmsStage(item.rawItem.flow, 'Yes');
-                }
+                storageAdapter.approveBankPayment(item.rawItem.bankPayment.id, true, currentUser);
+                setBankingActionRefresh(k => k + 1);
               }}
-              className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded transition-colors cursor-pointer border border-emerald-200`}
-              title="Yes / Approve"
+              className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded transition-colors cursor-pointer flex items-center gap-1 shadow-xs`}
             >
-              Yes
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Approve Voucher</span>
             </button>
             <button
-              type="button"
-              onClick={() => {
-                if (onOpenStageAction) {
-                  onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex);
-                } else {
-                  onAdvanceFmsStage(item.rawItem.flow, 'No');
-                }
-              }}
-              className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded transition-colors cursor-pointer`}
-              title={stageExec?.stageId === 'STG-10' ? 'No: Skip Stage 11 and jump directly to Stage 12' : 'No / Reject'}
+              onClick={() => onNavigateTab('bankPayments')}
+              className={`${isMobile ? 'px-2.5 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded transition-colors cursor-pointer flex items-center gap-1`}
             >
-              {stageExec?.stageId === 'STG-10' ? 'No (Skip Stg 11)' : 'No'}
+              <ExternalLink className="w-3 h-3" />
+              <span>Details</span>
             </button>
           </div>
         );
       }
 
-      // For non-form sequential steps: Mark Done
-      return (
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => handleOpenSplitCockpit(item)}
-            className={`${isMobile ? 'px-2.5 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded flex items-center gap-1 transition-all shadow-xs cursor-pointer`}
-            title="Open Split-Screen Operational Cockpit with link panel & mandatory verification checklist"
-          >
-            <Layers className="w-3.5 h-3.5 text-indigo-200" />
-            <span>Split Cockpit</span>
-          </button>
+      if (item.rawItem?.taskType === 'ACCOUNTS_PORTAL_ENTRY') {
+        if (item.isCompleted) {
+          return (
+            <span className="text-[10px] text-blue-700 font-bold px-2 py-0.5 bg-blue-50 border border-blue-200 rounded">
+              Portal Entry Done
+            </span>
+          );
+        }
+        return (
           <button
             onClick={() => {
-              if (onOpenStageAction) {
-                onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex);
-              } else if (onCompleteFmsStage) {
-                onCompleteFmsStage(item.rawItem.flow, item.rawItem.stageIndex);
-              } else {
-                onAdvanceFmsStage(item.rawItem.flow);
-              }
+              storageAdapter.recordBankPaymentEntry(item.rawItem.bankPayment.id, 'DONE', undefined, currentUser);
+              setBankingActionRefresh(k => k + 1);
             }}
-            className={`${isMobile ? 'px-3.5 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded flex items-center gap-1 transition-colors cursor-pointer border border-amber-200`}
+            className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-blue-600 hover:bg-blue-700 text-white font-bold rounded transition-colors cursor-pointer flex items-center gap-1 shadow-xs`}
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Mark Done</span>
+            <span>Mark Entry Done</span>
           </button>
-        </div>
-      );
+        );
+      }
+
+      if (item.rawItem?.taskType === 'ACCOUNTS_UTR_SETTLEMENT') {
+        if (item.isCompleted) {
+          return (
+            <span className="text-[10px] text-emerald-700 font-bold px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded">
+              Settled (UTR Released)
+            </span>
+          );
+        }
+        return (
+          <button
+            onClick={() => {
+              let utr: string | null = null;
+              try {
+                utr = window.prompt('Enter Bank UTR / Transaction Reference No:', `UTR-${Date.now().toString().slice(-6)}`);
+              } catch (e) {
+                utr = `UTR-${Date.now().toString().slice(-6)}`;
+              }
+              const finalUtr = utr || `UTR-${Date.now().toString().slice(-6)}`;
+              storageAdapter.finalizeBankPaymentSettlement(item.rawItem.bankPayment.id, 'DONE', finalUtr, undefined, currentUser);
+              setBankingActionRefresh(k => k + 1);
+            }}
+            className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded transition-colors cursor-pointer flex items-center gap-1 shadow-xs`}
+          >
+            <Landmark className="w-3.5 h-3.5" />
+            <span>Release UTR</span>
+          </button>
+        );
+      }
+
+      if (item.rawItem?.taskType === 'DIRECTOR_BENEFICIARY_APPROVAL') {
+        return (
+          <button
+            onClick={() => {
+              storageAdapter.approveBeneficiaryRecord(item.rawItem.beneficiary.id, true, currentUser);
+              setBankingActionRefresh(k => k + 1);
+            }}
+            className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded transition-colors cursor-pointer flex items-center gap-1 shadow-xs`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Verify & Approve</span>
+          </button>
+        );
+      }
     }
 
     return null;
@@ -1276,24 +1443,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       </div>
       )}
 
-      {/* Split-Screen Cockpit Feature Banner */}
-      <div className="bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-900 text-white px-4 py-2.5 rounded-xl border border-indigo-800/60 shadow-xs flex items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="p-1.5 bg-indigo-500/20 text-indigo-300 rounded-lg shrink-0">
-            <Layers className="w-4 h-4 text-indigo-300" />
-          </div>
-          <div className="truncate">
-            <span className="font-bold text-white">Split-Screen Operational Cockpit Active:</span>
-            <span className="text-slate-300 ml-1.5 hidden sm:inline">
-              Click <span className="text-indigo-300 font-bold">Split Cockpit</span> on any task below to execute with live link viewport (Google Forms / Sheets / Netbanking) & mandatory anti-fraud verification checklist.
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-semibold text-indigo-200 bg-indigo-900/60 px-2.5 py-1 rounded-lg border border-indigo-700/60">
-          <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Proof-Gated Actions</span>
-        </div>
-      </div>
+
 
       {/* Control & Filter Bar (Sticky top bar for easy filtering at all times) */}
       {workspaceMode === 'TASKS' && (
@@ -1336,12 +1486,13 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
               { value: 'FMS', label: 'FMS Pipeline' },
               { value: 'CHECKLIST', label: 'Compliance Checklist' },
               { value: 'DELEGATION', label: 'Delegated Tasks' },
+              { value: 'BANKING', label: 'Bank Approvals & Payments' },
             ]}
             value={moduleFilter}
-            onChange={(val) => setModuleFilter(val as 'ALL' | 'FMS' | 'CHECKLIST' | 'DELEGATION')}
+            onChange={(val) => setModuleFilter(val as 'ALL' | 'FMS' | 'CHECKLIST' | 'DELEGATION' | 'BANKING')}
             size="xs"
             variant="default"
-            className="w-40"
+            className="w-44"
           />
 
           {/* View Mode Toggle (Standard Card vs Enterprise Matrix 1000+ Scale) */}
@@ -1580,6 +1731,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                     onClick={() => {
                       if (item.sourceModule === 'FMS') {
                         onSelectFmsDetail(item.rawItem.flow);
+                      } else if (item.sourceModule === 'BANKING') {
+                        onNavigateTab('bankPayments');
                       } else {
                         setViewDetailItem(item);
                       }
@@ -1665,6 +1818,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                             ? 'bg-amber-100 text-amber-800'
                             : item.sourceModule === 'CHECKLIST'
                             ? 'bg-blue-100 text-blue-800'
+                            : item.sourceModule === 'BANKING'
+                            ? 'bg-emerald-100 text-emerald-800'
                             : 'bg-purple-100 text-purple-800'
                         }`}
                       >
@@ -1796,6 +1951,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                         onClick={() => {
                           if (item.sourceModule === 'FMS') {
                             onSelectFmsDetail(item.rawItem.flow);
+                          } else if (item.sourceModule === 'BANKING') {
+                            onNavigateTab('bankPayments');
                           } else {
                             setViewDetailItem(item);
                           }
@@ -1882,12 +2039,15 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                               ? 'bg-amber-100 text-amber-800'
                               : item.sourceModule === 'CHECKLIST'
                               ? 'bg-blue-100 text-blue-800'
+                              : item.sourceModule === 'BANKING'
+                              ? 'bg-emerald-100 text-emerald-800'
                               : 'bg-purple-100 text-purple-800'
                           }`}
                         >
                           {item.sourceModule === 'FMS' && <GitBranch className="w-3 h-3" />}
                           {item.sourceModule === 'CHECKLIST' && <CheckSquare className="w-3 h-3" />}
                           {item.sourceModule === 'DELEGATION' && <ListTodo className="w-3 h-3" />}
+                          {item.sourceModule === 'BANKING' && <Landmark className="w-3 h-3" />}
                           <span>{item.sourceModule}</span>
                         </span>
                       </td>
@@ -1984,7 +2144,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                       <td className="py-2.5 px-3 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
                           {/* CHECKLIST: Mark Done / Reopen only for assigned user, and Mark Done visible ONLY for Due Today or Overdue */}
-                          {item.sourceModule === 'CHECKLIST' && item.isMine && (
+                          {item.sourceModule === 'CHECKLIST' && (item.isMine || isAdminOrSuperAdmin || pcDeskActive) && (
                             item.isCompleted ? (
                               <button
                                 onClick={() => {
@@ -2000,7 +2160,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                               >
                                 Reopen
                               </button>
-                            ) : (item.isDueToday || item.isOverdue) ? (
+                            ) : (item.isDueToday || item.isOverdue || isAdminOrSuperAdmin || pcDeskActive) ? (
                               <div className="flex items-center gap-1">
                                 <button
                                   type="button"
@@ -2035,7 +2195,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                           )}
 
                           {/* DELEGATION: Complete / Reopen / Revise only for assigned user */}
-                          {item.sourceModule === 'DELEGATION' && item.isMine && (
+                          {item.sourceModule === 'DELEGATION' && (item.isMine || isAdminOrSuperAdmin || pcDeskActive) && (
                             <div className="flex items-center gap-1">
                               <button
                                 onClick={() => {
@@ -2169,9 +2329,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                                 return (
                                   <button
                                     onClick={() => {
-                                      if (onOpenStageAction) {
-                                        onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex);
-                                      } else if (onCompleteFmsStage) {
+                                      if (onCompleteFmsStage) {
                                         onCompleteFmsStage(item.rawItem.flow, item.rawItem.stageIndex);
                                       } else {
                                         onAdvanceFmsStage(item.rawItem.flow);
@@ -2186,11 +2344,20 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                             </div>
                           )}
 
+                          {/* BANKING: Direct One-Click Action for Matrix Table */}
+                          {item.sourceModule === 'BANKING' && (
+                            <div className="flex items-center gap-1">
+                              {renderItemQuickActions(item, false)}
+                            </div>
+                          )}
+
                           {/* Single Context View Button (Available to ALL users to inspect progress and stages) */}
                           <button
                             onClick={() => {
                               if (item.sourceModule === 'FMS') {
                                 onSelectFmsDetail(item.rawItem.flow);
+                              } else if (item.sourceModule === 'BANKING') {
+                                onNavigateTab('bankPayments');
                               } else {
                                 setViewDetailItem(item);
                               }

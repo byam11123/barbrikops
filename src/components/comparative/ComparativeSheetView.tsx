@@ -29,8 +29,14 @@ import {
   FileDown,
   X,
   Lock,
+  Upload,
+  Image as ImageIcon,
+  Loader2,
+  Bot,
+  Check,
+  Camera,
 } from 'lucide-react';
-import { ComparativeStatement, CsItem, CsVendorQuote, UserProfile, FmsInstance } from '../../types';
+import { ComparativeStatement, CsItem, CsVendorQuote, UserProfile, FmsInstance, CsVendorItemRate } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { 
   downloadComparativeStatementExcel, 
@@ -38,7 +44,7 @@ import {
 } from '../../services/comparativeExcelService';
 import { downloadComparativeStatementPdf } from '../../services/comparativePdfService';
 import { ComparativeDirectoryView } from './ComparativeDirectoryView';
-import { parseRawQuoteText } from '../../utils/quoteTextParser';
+import { parseRawQuoteText, extractQuotationWithAI, ExtractedVendorQuoteData } from '../../utils/quoteTextParser';
 
 interface ComparativeSheetViewProps {
   currentUser: UserProfile;
@@ -148,6 +154,40 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
   const [isImportIndentOpen, setIsImportIndentOpen] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
 
+  // AI WhatsApp & Photo Quote Extraction States
+  const [importTab, setImportTab] = useState<'image' | 'text'>('image');
+  const [quoteImageBase64, setQuoteImageBase64] = useState<string | null>(null);
+  const [quoteMimeType, setQuoteMimeType] = useState<string | null>(null);
+  const [isExtractingAi, setIsExtractingAi] = useState(false);
+  const [extractedData, setExtractedData] = useState<ExtractedVendorQuoteData | null>(null);
+  const [extractedVendorName, setExtractedVendorName] = useState('');
+  const [extractedGstTerms, setExtractedGstTerms] = useState('');
+  const [extractedPaymentTerms, setExtractedPaymentTerms] = useState('');
+  const [extractedItemsReview, setExtractedItemsReview] = useState<
+    Array<{
+      id: string;
+      itemRawName: string;
+      brandMake: string;
+      unit: string;
+      qty: number;
+      baseRate: number;
+      gstPercent: number;
+      matchedItemId: string | null;
+      confidenceScore: number;
+      included: boolean;
+    }>
+  >([]);
+
+  // Check if Comparative Statement is digitally signed and locked
+  const isRecordLocked = useMemo(() => {
+    return (
+      cs.status === 'Approved' ||
+      cs.status === 'PO Created' ||
+      Boolean(cs.approvalDetails?.signatureStamp) ||
+      Boolean(cs.approvedBy)
+    );
+  }, [cs.status, cs.approvalDetails?.signatureStamp, cs.approvedBy]);
+
   // Compute L-1 analytics
   const analytics = useMemo(() => {
     return calculateCsL1Analytics(cs);
@@ -192,6 +232,7 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
 
   // Header update handler
   const handleUpdateHeader = (field: keyof ComparativeStatement, val: string) => {
+    if (isRecordLocked) return;
     setCs((prev) => ({
       ...prev,
       [field]: val,
@@ -200,6 +241,11 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
 
   // Add Item
   const handleAddItem = () => {
+    if (isRecordLocked) {
+      setSaveSuccessMsg('Record is digitally signed & locked. No edits allowed.');
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+      return;
+    }
     const newItem: CsItem = {
       id: `it-${Date.now()}`,
       sn: cs.items.length + 1,
@@ -233,6 +279,11 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
 
   // Delete Item
   const handleDeleteItem = (itemId: string) => {
+    if (isRecordLocked) {
+      setSaveSuccessMsg('Error: Record is digitally signed & locked. No edits allowed.');
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+      return;
+    }
     const updatedItems = cs.items.filter((it) => it.id !== itemId).map((it, idx) => ({ ...it, sn: idx + 1 }));
     const updatedVendors = cs.vendors.map((v) => {
       const copyRates = { ...v.itemRates };
@@ -252,6 +303,7 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
 
   // Update Item Metadata
   const handleUpdateItemMeta = (itemId: string, field: keyof CsItem, value: any) => {
+    if (isRecordLocked) return;
     setCs((prev) => {
       const updatedItems = prev.items.map((it) => {
         if (it.id === itemId) {
@@ -292,6 +344,11 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
 
   // Add Vendor Column
   const handleAddVendor = () => {
+    if (isRecordLocked) {
+      setSaveSuccessMsg('Error: Record is digitally signed & locked. No edits allowed.');
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+      return;
+    }
     const newVendorId = `vnd-${Date.now()}`;
     const newVendorIndex = cs.vendors.length + 1;
     const itemRates: Record<string, any> = {};
@@ -330,6 +387,11 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
 
   // Delete Vendor
   const handleDeleteVendor = (vendorId: string) => {
+    if (isRecordLocked) {
+      setSaveSuccessMsg('Error: Record is digitally signed & locked. No edits allowed.');
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+      return;
+    }
     if (cs.vendors.length <= 1) {
       alert('At least one vendor is required for rate comparison.');
       return;
@@ -342,6 +404,7 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
 
   // Update Vendor Metadata
   const handleUpdateVendorMeta = (vendorId: string, field: keyof CsVendorQuote, value: string) => {
+    if (isRecordLocked) return;
     setCs((prev) => ({
       ...prev,
       vendors: prev.vendors.map((v) => (v.vendorId === vendorId ? { ...v, [field]: value } : v)),
@@ -355,6 +418,7 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
     baseRate: number,
     gstPercent: number = 18
   ) => {
+    if (isRecordLocked) return;
     const targetItem = cs.items.find((it) => it.id === itemId);
     const qty = targetItem ? targetItem.qty : 1;
     const gstAmount = (baseRate * gstPercent) / 100;
@@ -388,6 +452,11 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
 
   // Save CS Sheet
   const handleSaveSheet = () => {
+    if (isRecordLocked) {
+      setSaveSuccessMsg('Record is digitally signed & locked (Read-Only).');
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+      return;
+    }
     const saved = storageAdapter.saveComparativeStatement(cs);
     const all = storageAdapter.getComparativeStatements();
     setStatements(all);
@@ -457,6 +526,11 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
 
   // Parse Raw Quote Text
   const handleApplyParsedText = () => {
+    if (isRecordLocked) {
+      setSaveSuccessMsg('Error: Record is digitally signed & locked.');
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+      return;
+    }
     if (!rawQuoteInput.trim()) return;
     const parsed = parseRawQuoteText(rawQuoteInput, cs.items);
 
@@ -476,8 +550,155 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
     setTimeout(() => setSaveSuccessMsg(null), 3000);
   };
 
+  const handleImageFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setQuoteMimeType(file.type || 'image/png');
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setQuoteImageBase64(event.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRunAiExtraction = async () => {
+    setIsExtractingAi(true);
+    try {
+      const res = await extractQuotationWithAI({
+        rawText: importTab === 'text' ? rawQuoteInput : undefined,
+        imageBase64: importTab === 'image' ? (quoteImageBase64 || undefined) : undefined,
+        mimeType: importTab === 'image' ? (quoteMimeType || undefined) : undefined,
+        existingItems: cs.items,
+      });
+
+      setExtractedData(res);
+      setExtractedVendorName(res.vendorName || 'WhatsApp Vendor');
+      setExtractedGstTerms(res.gstTerms || '18% GST Applicable');
+      setExtractedPaymentTerms(res.paymentTerms || '30 Days Credit');
+
+      const reviewList = res.extractedItems.map((item, idx) => ({
+        id: `rev-${idx}-${Date.now()}`,
+        itemRawName: item.itemRawName,
+        brandMake: item.brandMake || '—',
+        unit: item.unit || 'NOS',
+        qty: item.qty || 1,
+        baseRate: item.baseRate || 0,
+        gstPercent: item.gstPercent !== undefined ? item.gstPercent : 18,
+        matchedItemId: item.matchedItemId,
+        confidenceScore: item.confidenceScore || 0,
+        included: true,
+      }));
+
+      setExtractedItemsReview(reviewList);
+    } catch (err) {
+      console.error('AI Extraction Error:', err);
+    } finally {
+      setIsExtractingAi(false);
+    }
+  };
+
+  const handleApplyImportedVendorToCs = () => {
+    if (isRecordLocked) {
+      setSaveSuccessMsg('Error: Record is digitally signed & locked.');
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+      return;
+    }
+    if (!extractedVendorName.trim()) return;
+
+    const activeVendorName = extractedVendorName.trim();
+    let targetVendorId = cs.vendors.find(
+      (v) => v.vendorName.toLowerCase() === activeVendorName.toLowerCase()
+    )?.vendorId;
+
+    if (!targetVendorId) {
+      targetVendorId = `vnd-${Date.now()}`;
+    }
+
+    setCs((prev) => {
+      const existingVendor = prev.vendors.find((v) => v.vendorId === targetVendorId);
+      const updatedRates: Record<string, CsVendorItemRate> = existingVendor
+        ? { ...existingVendor.itemRates }
+        : {};
+
+      prev.items.forEach((it) => {
+        if (!updatedRates[it.id]) {
+          updatedRates[it.id] = {
+            baseRate: 0,
+            gstPercent: 18,
+            gstAmount: 0,
+            landedRate: 0,
+            amount: 0,
+            isQuoted: false,
+          };
+        }
+      });
+
+      extractedItemsReview.forEach((rev) => {
+        if (rev.included && rev.matchedItemId) {
+          const targetCsItem = prev.items.find((it) => it.id === rev.matchedItemId);
+          const qty = targetCsItem ? targetCsItem.qty : rev.qty;
+          const baseRate = Number(rev.baseRate) || 0;
+          const gstPercent = Number(rev.gstPercent) || 0;
+          const gstAmount = (baseRate * gstPercent) / 100;
+          const landedRate = baseRate + gstAmount;
+          const amount = landedRate * qty;
+
+          updatedRates[rev.matchedItemId] = {
+            baseRate,
+            gstPercent,
+            gstAmount,
+            landedRate,
+            amount,
+            isQuoted: baseRate > 0,
+          };
+        }
+      });
+
+      const updatedVendor: CsVendorQuote = {
+        vendorId: targetVendorId!,
+        vendorName: activeVendorName,
+        rating: existingVendor?.rating || '4.5 / 5.0 (WhatsApp Extracted)',
+        contactPersonMobile: existingVendor?.contactPersonMobile || 'Mo: +91-9876543210',
+        storeOfficeAddress: existingVendor?.storeOfficeAddress || 'Local Market, CG',
+        paymentTerms: extractedPaymentTerms || '30 Days Credit',
+        warrantyPeriod: existingVendor?.warrantyPeriod || '01 Year Comprehensive Warranty',
+        gstTerms: extractedGstTerms || '18% GST Applicable',
+        freightDeliveryTerms: 'OURS (Barbrik Project Ltd.)',
+        quotationDateValidity: `${new Date().toLocaleDateString('en-GB')} | 30 Days Validity`,
+        primaryProductFocus: existingVendor?.primaryProductFocus || 'Heavy Equipment Spares',
+        itemRates: updatedRates,
+      };
+
+      const vendorExists = prev.vendors.some((v) => v.vendorId === targetVendorId);
+      const updatedVendors = vendorExists
+        ? prev.vendors.map((v) => (v.vendorId === targetVendorId ? updatedVendor : v))
+        : [...prev.vendors, updatedVendor];
+
+      const updatedCs = {
+        ...prev,
+        vendors: updatedVendors,
+        updatedAt: new Date().toLocaleString('en-GB'),
+      };
+
+      storageAdapter.saveComparativeStatement(updatedCs);
+      return updatedCs;
+    });
+
+    setIsPasteModalOpen(false);
+    setExtractedData(null);
+    setQuoteImageBase64(null);
+    setRawQuoteInput('');
+    setSaveSuccessMsg(`Quotation auto-filled for vendor "${activeVendorName}"!`);
+    setTimeout(() => setSaveSuccessMsg(null), 3500);
+  };
+
   // Import from Purchase FMS Flow
   const handleImportFromFlow = (flow: FmsInstance) => {
+    if (isRecordLocked) {
+      setSaveSuccessMsg('Error: Record is digitally signed & locked.');
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+      return;
+    }
     const indentNo = flow.indentNo || flow.requisitionNumber || flow.flowId;
     const indentDate = flow.indentDate || flow.createdAt?.slice(0, 10) || new Date().toLocaleDateString('en-GB');
     const site = flow.siteName || 'BIJETALA';
@@ -544,6 +765,11 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
 
   // Award specific item to vendor (Director Item Selection)
   const handleAwardVendor = (itemId: string, vendorId: string) => {
+    if (isRecordLocked) {
+      setSaveSuccessMsg('Record is digitally signed & locked. Award selection cannot be altered.');
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+      return;
+    }
     const updatedMap = {
       ...(cs.awardedVendorMap || {}),
       [itemId]: vendorId,
@@ -562,6 +788,11 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
 
   // Auto-Fill All items to their respective L-1 lowest bidder
   const handleAutoFillAllL1 = () => {
+    if (isRecordLocked) {
+      setSaveSuccessMsg('Record is digitally signed & locked. Award selection cannot be altered.');
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+      return;
+    }
     const newAwardedMap: Record<string, string> = {};
     cs.items.forEach((item) => {
       const l1 = analytics.itemL1Map[item.id];
@@ -585,6 +816,12 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
 
   // Delete current active statement
   const handleConfirmDeleteCurrentCs = () => {
+    if (isRecordLocked) {
+      setSaveSuccessMsg('Error: Digitally signed and approved records cannot be deleted.');
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+      setIsDeleteModalOpen(false);
+      return;
+    }
     storageAdapter.deleteComparativeStatement(cs.id);
     const remaining = storageAdapter.getComparativeStatements();
     setStatements(remaining);
@@ -634,11 +871,65 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
     };
 
     const saved = storageAdapter.saveComparativeStatement(updatedCs);
+
+    // Auto-generate Split POs and advance parent FMS flow
+    let splitPosCount = 0;
+    try {
+      const splitResult = storageAdapter.createSplitPurchaseOrdersFromCs(saved, currentUser);
+      splitPosCount = splitResult.createdFlows.length;
+      setCreatedSplitPos(splitResult.createdFlows);
+
+      // Advance parent FMS flow
+      const allFlows = storageAdapter.getFmsFlows();
+      const parentFlowIdx = allFlows.findIndex(
+        (f) => (f.indentNo && f.indentNo === cs.indentNo) || f.comparativeSheetId === cs.id || f.linkedModuleRecord?.recordId === cs.id
+      );
+
+      if (parentFlowIdx >= 0) {
+        const parent = allFlows[parentFlowIdx];
+        const updatedStages = [...parent.stages];
+        const l1StageIdx = updatedStages.findIndex(
+          (s) => s.stageId === 'STG-08' || s.stageName.includes('L1') || s.stageName.includes('DIRECTOR')
+        );
+
+        const targetStageIdx = l1StageIdx >= 0 ? l1StageIdx : parent.currentStageIndex;
+        if (updatedStages[targetStageIdx]) {
+          updatedStages[targetStageIdx].status = 'Done';
+          updatedStages[targetStageIdx].actualDateTime = timestamp;
+          updatedStages[targetStageIdx].notes = `Approved by Director Pranjal Agrawal in CS #${cs.id}. Item-wise split POs generated: ${splitResult.createdFlows.map(f => f.poNumber).join(', ')}`;
+        }
+
+        const nextStageIdx = Math.min(targetStageIdx + 1, updatedStages.length - 1);
+        if (updatedStages[nextStageIdx] && updatedStages[nextStageIdx].status !== 'Done') {
+          updatedStages[nextStageIdx].status = 'In Progress';
+        }
+
+        const updatedParent: FmsInstance = {
+          ...parent,
+          currentStageIndex: nextStageIdx,
+          currentStageId: updatedStages[nextStageIdx]?.stageId || 'STG-09',
+          updatedAt: timestamp,
+          stages: updatedStages,
+          instanceDataPool: {
+            ...(parent.instanceDataPool || {}),
+            csId: saved.id,
+            awardedVendorMap: awardedMap,
+            generatedPoIds: splitResult.createdFlows.map((f) => f.poNumber),
+          },
+        };
+
+        allFlows[parentFlowIdx] = updatedParent;
+        storageAdapter.saveFmsFlows(allFlows);
+      }
+    } catch (err) {
+      console.warn('Split PO generation or FMS advancement note:', err);
+    }
+
     setStatements(storageAdapter.getComparativeStatements());
     setCs(saved);
     setIsApproveModalOpen(false);
-    setSaveSuccessMsg('Comparative Statement digitally approved and signed by Director Pranjal Agrawal!');
-    setTimeout(() => setSaveSuccessMsg(null), 3500);
+    setSaveSuccessMsg(`Comparative Statement digitally signed by Director Pranjal Agrawal! Generated ${splitPosCount} split POs and advanced parent FMS.`);
+    setTimeout(() => setSaveSuccessMsg(null), 4000);
   };
 
   // Generate Split Purchase Orders from Approved CS Sheet
@@ -763,18 +1054,20 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsPasteModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-indigo-200 border border-indigo-400/30 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                  title="Paste WhatsApp or email quotes to auto-populate items & vendor rates"
+                  disabled={isRecordLocked}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-indigo-950/80 hover:bg-indigo-900 text-indigo-100 border border-indigo-400/40 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={isRecordLocked ? "Record is digitally signed & locked." : "Upload vendor quote photo/PDF or paste WhatsApp chat to extract items & auto-fill CS"}
                 >
-                  <ClipboardPaste className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Paste Quotes to Auto-Fill</span>
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  <span>AI WhatsApp &amp; Image Import</span>
                 </button>
 
                 {purchaseFlows.length > 0 && (
                   <button
                     type="button"
                     onClick={() => setIsImportIndentOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+                    disabled={isRecordLocked}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <FolderOpen className="w-3.5 h-3.5 text-blue-400" />
                     <span>Load From Indent</span>
@@ -784,25 +1077,27 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                 <button
                   type="button"
                   onClick={handleSaveSheet}
-                  className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                  disabled={isRecordLocked}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Save className="w-3.5 h-3.5" />
-                  <span>Save CS</span>
+                  <span>{isRecordLocked ? 'Saved (Locked)' : 'Save CS'}</span>
                 </button>
 
                 {/* DELETE CS ACTION */}
                 <button
                   type="button"
                   onClick={() => setIsDeleteModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-rose-950 text-rose-300 hover:text-white border border-rose-500/30 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
-                  title="Delete this Comparative Statement"
+                  disabled={isRecordLocked}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-rose-950 text-rose-300 hover:text-white border border-rose-500/30 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  title={isRecordLocked ? "Digitally signed records cannot be deleted" : "Delete this Comparative Statement"}
                 >
                   <Trash2 className="w-3.5 h-3.5 text-rose-400" />
                   <span>Delete CS</span>
                 </button>
 
                 {/* DIGITAL APPROVAL ACTION - STRICTLY PRANJAL AGRAWAL */}
-                {cs.status !== 'Approved' && cs.status !== 'PO Created' ? (
+                {!isRecordLocked ? (
                   isPranjal ? (
                     <button
                       type="button"
@@ -826,10 +1121,10 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsApproveModalOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-emerald-900/60 hover:bg-emerald-800 text-emerald-200 border border-emerald-500/50 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    className="flex items-center gap-1.5 px-3 py-2 bg-emerald-900/80 text-emerald-200 border border-emerald-500/60 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
                   >
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Signed by {cs.approvalDetails?.approverName || 'Pranjal Agrawal'}</span>
+                    <Lock className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Digitally Signed: {cs.approvalDetails?.approverName || 'Pranjal Agrawal'}</span>
                   </button>
                 )}
 
@@ -879,6 +1174,37 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
             )}
           </div>
 
+      {/* RECORD LOCKED NOTICE BANNER */}
+      {isRecordLocked && (
+        <div className="bg-gradient-to-r from-slate-900 via-amber-950 to-slate-900 border-2 border-amber-500/50 text-amber-100 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/40 shrink-0">
+              <Lock className="w-6 h-6" />
+            </div>
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-black uppercase tracking-wider text-amber-300">
+                  RECORD DIGITALLY LOCKED &bull; READ ONLY
+                </span>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-emerald-500/30 text-emerald-300 border border-emerald-400/40 rounded flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  <span>DIGITALLY SIGNED BY DIRECTOR PRANJAL AGRAWAL</span>
+                </span>
+              </div>
+              <p className="text-xs text-amber-100/90 font-medium">
+                This Comparative Statement is officially signed and approved. All item rates, GST calculations, and vendor selection checkboxes are locked to prevent tampering.
+              </p>
+            </div>
+          </div>
+          {cs.approvalDetails && (
+            <div className="text-right shrink-0 text-xs font-mono text-amber-200/90 bg-amber-900/60 px-3.5 py-2 rounded-xl border border-amber-500/30 shadow-2xs space-y-0.5">
+              <div>Approved: {cs.approvalDetails.approvalDate}</div>
+              <div className="text-[10px] text-amber-400 font-bold">Token: {cs.approvalDetails.signatureStamp}</div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 2. CS SHEET SELECTOR & MANDATORY HEADER BLOCK */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
@@ -892,7 +1218,7 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
             >
               {statements.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.site} — IND: {s.indentNo || 'N/A'} ({s.forPurpose?.slice(0, 30) || 'General'}) [{s.statementDate}]
+                  {s.site} — IND: {s.indentNo || 'N/A'} ({s.forPurpose?.slice(0, 30) || 'General'}) [{s.statementDate}] {s.status === 'Approved' ? '🔒' : ''}
                 </option>
               ))}
             </select>
@@ -901,8 +1227,8 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
           <div className="flex items-center gap-3 text-xs">
             <span className="text-slate-500">
               Status:{' '}
-              <strong className={cs.status === 'Approved' ? 'text-emerald-700' : 'text-amber-700'}>
-                {cs.status}
+              <strong className={cs.status === 'Approved' ? 'text-emerald-700 font-extrabold' : 'text-amber-700 font-extrabold'}>
+                {cs.status} {isRecordLocked ? '(Locked)' : ''}
               </strong>
             </span>
             <span className="text-slate-300">•</span>
@@ -921,9 +1247,10 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
             <input
               type="text"
               value={cs.site}
+              disabled={isRecordLocked}
               onChange={(e) => handleUpdateHeader('site', e.target.value)}
               placeholder="e.g. BIJETALA, SILADEHI"
-              className="w-full px-3 py-1.5 text-xs font-bold text-slate-900 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase"
+              className="w-full px-3 py-1.5 text-xs font-bold text-slate-900 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase disabled:bg-slate-100 disabled:text-slate-600"
             />
           </div>
 
@@ -936,9 +1263,10 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
             <input
               type="text"
               value={cs.indentNo}
+              disabled={isRecordLocked}
               onChange={(e) => handleUpdateHeader('indentNo', e.target.value)}
               placeholder="e.g. 466, 778"
-              className="w-full px-3 py-1.5 text-xs font-bold text-slate-900 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+              className="w-full px-3 py-1.5 text-xs font-bold text-slate-900 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono disabled:bg-slate-100 disabled:text-slate-600"
             />
           </div>
 
@@ -951,9 +1279,10 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
             <input
               type="text"
               value={cs.indentDate}
+              disabled={isRecordLocked}
               onChange={(e) => handleUpdateHeader('indentDate', e.target.value)}
               placeholder="DD/MM/YYYY"
-              className="w-full px-3 py-1.5 text-xs font-bold text-slate-900 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+              className="w-full px-3 py-1.5 text-xs font-bold text-slate-900 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono disabled:bg-slate-100 disabled:text-slate-600"
             />
           </div>
 
@@ -966,9 +1295,10 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
             <input
               type="text"
               value={cs.forPurpose}
+              disabled={isRecordLocked}
               onChange={(e) => handleUpdateHeader('forPurpose', e.target.value)}
               placeholder="e.g. HM LOADER & DG-82.5KVA"
-              className="w-full px-3 py-1.5 text-xs font-bold text-slate-900 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-3 py-1.5 text-xs font-bold text-slate-900 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:text-slate-600"
             />
           </div>
 
@@ -981,9 +1311,10 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
             <input
               type="text"
               value={cs.statementDate}
+              disabled={isRecordLocked}
               onChange={(e) => handleUpdateHeader('statementDate', e.target.value)}
               placeholder="DD/MM/YYYY"
-              className="w-full px-3 py-1.5 text-xs font-bold text-slate-900 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+              className="w-full px-3 py-1.5 text-xs font-bold text-slate-900 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono disabled:bg-slate-100 disabled:text-slate-600"
             />
           </div>
         </div>
@@ -1181,8 +1512,9 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
             <button
               type="button"
               onClick={handleAutoFillAllL1}
-              className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
-              title="One-click reset all items to their lowest bidder"
+              disabled={isRecordLocked}
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              title={isRecordLocked ? "Record is digitally signed & locked" : "One-click reset all items to their lowest bidder"}
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-300" />
               <span>Set All to L-1</span>
@@ -1191,7 +1523,8 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
             <button
               type="button"
               onClick={handleAddItem}
-              className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
+              disabled={isRecordLocked}
+              className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Item</span>
@@ -1200,7 +1533,8 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
             <button
               type="button"
               onClick={handleAddVendor}
-              className="flex items-center gap-1 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-bold transition-all cursor-pointer"
+              disabled={isRecordLocked}
+              className="flex items-center gap-1 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-bold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Vendor</span>
@@ -1214,30 +1548,33 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
             <thead className="sticky top-0 z-20 bg-slate-900 text-white select-none">
               {/* TIER 1: VENDOR HEADERS */}
               <tr className="border-b border-slate-800">
-                <th colSpan={6} className="py-2.5 px-3 bg-slate-950 text-white font-black uppercase tracking-wider border-r border-slate-800">
+                <th colSpan={5} className="py-2.5 px-3 bg-slate-950 text-white font-black uppercase tracking-wider border-r border-slate-800">
                   REQUISITION SPECIFICATION &amp; DIGITAL AWARD
                 </th>
                 {cs.vendors.map((v) => (
                   <th
                     key={`vhdr-${v.vendorId}`}
-                    colSpan={3}
+                    colSpan={4}
                     className="py-2.5 px-3 bg-indigo-950 text-indigo-100 font-extrabold text-center border-r border-slate-800 uppercase tracking-wide whitespace-nowrap text-xs"
                   >
                     <div className="flex items-center justify-between gap-2 px-1">
                       <input
                         type="text"
                         value={v.vendorName}
+                        disabled={isRecordLocked}
                         onChange={(e) => handleUpdateVendorMeta(v.vendorId, 'vendorName', e.target.value)}
-                        className="bg-transparent text-white font-bold text-center border-b border-transparent hover:border-indigo-400 focus:border-indigo-400 focus:outline-none"
+                        className="bg-transparent text-white font-bold text-center border-b border-transparent hover:border-indigo-400 focus:border-indigo-400 focus:outline-none disabled:opacity-80"
                       />
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteVendor(v.vendorId)}
-                        className="p-1 text-slate-400 hover:text-rose-400 rounded cursor-pointer"
-                        title="Remove Vendor"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+                      {!isRecordLocked && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteVendor(v.vendorId)}
+                          className="p-1 text-slate-400 hover:text-rose-400 rounded cursor-pointer"
+                          title="Remove Vendor"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
                     </div>
                   </th>
                 ))}
@@ -1245,13 +1582,13 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
 
               {/* TIER 2: VENDOR RATINGS */}
               <tr className="border-b border-slate-800 text-[10px]">
-                <th colSpan={6} className="py-1 px-3 bg-slate-900 text-slate-400 font-bold uppercase border-r border-slate-800">
+                <th colSpan={5} className="py-1 px-3 bg-slate-900 text-slate-400 font-bold uppercase border-r border-slate-800">
                   COMPANY: BARBRIK PROJECT LTD.
                 </th>
                 {cs.vendors.map((v) => (
                   <th
                     key={`vrate-${v.vendorId}`}
-                    colSpan={3}
+                    colSpan={4}
                     className="py-1 px-3 bg-slate-850 text-amber-300 font-semibold text-center border-r border-slate-800 whitespace-nowrap"
                   >
                     <span className="flex items-center justify-center gap-1">
@@ -1262,22 +1599,13 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                 ))}
               </tr>
 
-              {/* TIER 3: SUB-COLUMNS (Rate, GST Amount, Amount) */}
+              {/* TIER 3: SUB-COLUMNS (Rate, GST Amount, Amount, Director Select) */}
               <tr className="bg-slate-100 text-slate-700 border-b border-slate-300 text-[10px] font-black uppercase tracking-wider">
                 <th className="py-2 px-2 w-8 text-center border-r border-slate-200">S.N.</th>
                 <th className="py-2 px-3 border-r border-slate-200 min-w-[190px]">ITEM NAME</th>
                 <th className="py-2 px-2.5 border-r border-slate-200 min-w-[110px]">BRAND / MAKE</th>
                 <th className="py-2 px-2 border-r border-slate-200 w-14 text-center">UNIT</th>
-                <th className="py-2 px-2 border-r border-slate-200 w-14 text-center">QTY</th>
-                <th className="py-2 px-2.5 border-r-2 border-slate-300 min-w-[155px] bg-indigo-100 text-indigo-950 font-black text-center">
-                  <div className="flex items-center justify-center gap-1">
-                    <Award className="w-3.5 h-3.5 text-indigo-700" />
-                    <span>DIRECTOR'S SELECTION</span>
-                  </div>
-                  <div className="text-[9px] font-semibold text-indigo-700/80 normal-case">
-                    Executive Awarded Vendor
-                  </div>
-                </th>
+                <th className="py-2 px-2 border-r-2 border-slate-300 w-14 text-center">QTY</th>
 
                 {cs.vendors.map((v) => (
                   <React.Fragment key={`subcols-${v.vendorId}`}>
@@ -1287,8 +1615,17 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                     <th className="py-2 px-2 text-center bg-slate-50 text-slate-700 border-r border-slate-200 min-w-[90px]">
                       GST AMT (₹)
                     </th>
-                    <th className="py-2 px-2.5 text-center bg-slate-100 text-slate-900 border-r-2 border-slate-300 min-w-[105px]">
+                    <th className="py-2 px-2.5 text-center bg-slate-100 text-slate-900 border-r border-slate-200 min-w-[105px]">
                       AMOUNT (₹)
+                    </th>
+                    <th className="py-2 px-2 text-center bg-indigo-100/90 text-indigo-950 border-r-2 border-slate-300 min-w-[85px]">
+                      <div className="flex items-center justify-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-indigo-700" />
+                        <span>DIRECTOR</span>
+                      </div>
+                      <div className="text-[9px] font-semibold text-indigo-800 normal-case">
+                        Select (✓)
+                      </div>
                     </th>
                   </React.Fragment>
                 ))}
@@ -1317,10 +1654,11 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                         <input
                           type="text"
                           value={item.itemName}
+                          disabled={isRecordLocked}
                           onChange={(e) => handleUpdateItemMeta(item.id, 'itemName', e.target.value)}
-                          className="w-full font-bold text-slate-900 bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-indigo-400 rounded px-1"
+                          className="w-full font-bold text-slate-900 bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-indigo-400 rounded px-1 disabled:opacity-80"
                         />
-                        {cs.items.length > 1 && (
+                        {cs.items.length > 1 && !isRecordLocked && (
                           <button
                             type="button"
                             onClick={() => handleDeleteItem(item.id)}
@@ -1338,8 +1676,9 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                       <input
                         type="text"
                         value={item.brandMake}
+                        disabled={isRecordLocked}
                         onChange={(e) => handleUpdateItemMeta(item.id, 'brandMake', e.target.value)}
-                        className="w-full text-slate-700 bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-indigo-400 rounded px-1"
+                        className="w-full text-slate-700 bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-indigo-400 rounded px-1 disabled:opacity-80"
                       />
                     </td>
 
@@ -1348,60 +1687,22 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                       <input
                         type="text"
                         value={item.unit}
+                        disabled={isRecordLocked}
                         onChange={(e) => handleUpdateItemMeta(item.id, 'unit', e.target.value.toUpperCase())}
-                        className="w-full text-center font-mono text-[11px] text-slate-700 bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-indigo-400 rounded"
+                        className="w-full text-center font-mono text-[11px] text-slate-700 bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-indigo-400 rounded disabled:opacity-80"
                       />
                     </td>
 
                     {/* Qty */}
-                    <td className="py-1.5 px-2 border-r border-slate-200 text-center font-mono font-bold text-slate-900">
+                    <td className="py-1.5 px-2 border-r-2 border-slate-300 text-center font-mono font-bold text-slate-900">
                       <input
                         type="number"
                         min="1"
                         value={item.qty}
+                        disabled={isRecordLocked}
                         onChange={(e) => handleUpdateItemMeta(item.id, 'qty', Number(e.target.value))}
-                        className="w-full text-center font-mono font-bold text-slate-900 bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-indigo-400 rounded"
+                        className="w-full text-center font-mono font-bold text-slate-900 bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-indigo-400 rounded disabled:opacity-80"
                       />
-                    </td>
-
-                    {/* DIRECTOR'S AWARDED VENDOR SELECTOR */}
-                    <td className="py-1.5 px-2 border-r-2 border-slate-300 bg-indigo-50/40">
-                      <select
-                        aria-label={`Award vendor for ${item.itemName}`}
-                        value={assignedVendorId}
-                        onChange={(e) => handleAwardVendor(item.id, e.target.value)}
-                        className={`w-full text-[11px] font-bold py-1 px-1.5 rounded border focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer ${
-                          isAssignedL1
-                            ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-black shadow-2xs'
-                            : 'bg-indigo-50 border-indigo-200 text-indigo-950 font-bold'
-                        }`}
-                      >
-                        {cs.vendors.map((v) => {
-                          const isVndL1 = l1 && l1.l1Rate > 0 && l1.l1VendorId === v.vendorId;
-                          const qRate = v.itemRates[item.id]?.baseRate || 0;
-                          return (
-                            <option key={`opt-${item.id}-${v.vendorId}`} value={v.vendorId}>
-                              {v.vendorName.slice(0, 15)} {isVndL1 ? '★ [L-1]' : `(₹${qRate})`}
-                            </option>
-                          );
-                        })}
-                      </select>
-                      <div className="mt-1 flex items-center justify-between text-[9px]">
-                        {isAssignedL1 ? (
-                          <span className="font-extrabold text-emerald-700 flex items-center gap-0.5">
-                            <Award className="w-2.5 h-2.5 shrink-0" />
-                            <span>Lowest L-1</span>
-                          </span>
-                        ) : (
-                          <span className="font-bold text-indigo-700 flex items-center gap-0.5">
-                            <Sparkles className="w-2.5 h-2.5 shrink-0" />
-                            <span>Dual Split</span>
-                          </span>
-                        )}
-                        <span className="text-slate-500 font-mono font-bold">
-                          ₹{cs.vendors.find((v) => v.vendorId === assignedVendorId)?.itemRates[item.id]?.amount?.toFixed(0) || 0}
-                        </span>
-                      </div>
                     </td>
 
                     {/* Vendor Quoted Rate Columns */}
@@ -1433,6 +1734,7 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                               type="number"
                               step="0.01"
                               value={q.baseRate || ''}
+                              disabled={isRecordLocked}
                               onChange={(e) =>
                                 handleUpdateVendorRate(
                                   v.vendorId,
@@ -1442,37 +1744,18 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                                 )
                               }
                               placeholder="0.00"
-                              className={`w-full text-right font-mono font-bold bg-transparent border-none focus:outline-none rounded ${
+                              className={`w-full text-right font-mono font-bold bg-transparent border-none focus:outline-none rounded disabled:opacity-80 ${
                                 isAwarded ? 'text-emerald-950 font-black' : 'text-slate-900'
                               }`}
                             />
-                            <div className="mt-1 flex items-center justify-between gap-1 pt-1 border-t border-slate-200/50">
-                              {isL1 && (
+                            {isL1 && (
+                              <div className="mt-1 flex items-center justify-end pt-0.5 border-t border-slate-200/50">
                                 <span className="text-[9px] font-sans font-black uppercase text-emerald-700 flex items-center gap-0.5 tracking-tight">
                                   <Award className="w-2.5 h-2.5 shrink-0" />
                                   <span>L-1</span>
                                 </span>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => handleAwardVendor(item.id, v.vendorId)}
-                                className={`ml-auto text-[9px] font-sans font-bold px-1.5 py-0.5 rounded cursor-pointer transition-all flex items-center gap-0.5 ${
-                                  isAwarded
-                                    ? 'bg-emerald-600 text-white shadow-2xs font-black ring-1 ring-emerald-700'
-                                    : 'bg-slate-200 hover:bg-indigo-100 text-slate-700 hover:text-indigo-900'
-                                }`}
-                                title={isAwarded ? 'Currently selected & awarded by Director' : `Click to select & award this item to ${v.vendorName}`}
-                              >
-                                {isAwarded ? (
-                                  <>
-                                    <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />
-                                    <span>Awarded</span>
-                                  </>
-                                ) : (
-                                  <span>Select Bid</span>
-                                )}
-                              </button>
-                            </div>
+                              </div>
+                            )}
                           </td>
 
                           {/* GST AMOUNT */}
@@ -1489,11 +1772,29 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
 
                           {/* AMOUNT */}
                           <td
-                            className={`py-1.5 px-2.5 text-right border-r-2 border-slate-300 font-mono font-extrabold ${
+                            className={`py-1.5 px-2.5 text-right border-r border-slate-200 font-mono font-extrabold ${
                               isL1 ? 'bg-emerald-100/90 text-emerald-950 ring-1 ring-inset ring-emerald-300' : 'text-slate-900'
                             }`}
                           >
                             ₹{q.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+
+                          {/* DIRECTOR SELECTION CHECKBOX */}
+                          <td
+                            className={`py-1.5 px-2 text-center border-r-2 border-slate-300 transition-colors ${
+                              isAwarded ? 'bg-emerald-100/90 text-emerald-950 font-bold' : 'bg-slate-50/20'
+                            }`}
+                          >
+                            <label className={`inline-flex items-center justify-center p-1 rounded ${isRecordLocked ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover:bg-slate-200/50'}`} title={isRecordLocked ? 'Record digitally signed & locked' : isAwarded ? 'Vendor selected by Director' : `Select ${v.vendorName}`}>
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${v.vendorName} for ${item.itemName}`}
+                                checked={isAwarded}
+                                disabled={isRecordLocked}
+                                onChange={() => handleAwardVendor(item.id, v.vendorId)}
+                                className="w-4.5 h-4.5 text-emerald-600 rounded border-slate-400 focus:ring-emerald-500 cursor-pointer accent-emerald-600 disabled:cursor-not-allowed"
+                              />
+                            </label>
                           </td>
                         </React.Fragment>
                       );
@@ -1504,7 +1805,7 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
 
               {/* TOTAL ROW */}
               <tr className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300 text-xs">
-                <td colSpan={6} className="py-2.5 px-4 uppercase tracking-wider text-right border-r-2 border-slate-300">
+                <td colSpan={5} className="py-2.5 px-4 uppercase tracking-wider text-right border-r-2 border-slate-300">
                   GRAND TOTAL (ALL ITEMS)
                 </td>
 
@@ -1521,7 +1822,7 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                         ₹{vTotal ? vTotal.gstTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '0.00'}
                       </td>
                       <td
-                        className={`py-2.5 px-2.5 text-right border-r-2 border-slate-300 font-mono font-black ${
+                        className={`py-2.5 px-2.5 text-right border-r border-slate-200 font-mono font-black ${
                           isOverallLowest ? 'bg-emerald-200 text-emerald-950 ring-2 ring-emerald-500' : 'text-slate-950'
                         }`}
                       >
@@ -1532,6 +1833,9 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                           </span>
                         )}
                       </td>
+                      <td className="py-2.5 px-2 text-center border-r-2 border-slate-300 font-mono text-slate-400 font-bold text-[10px]">
+                        —
+                      </td>
                     </React.Fragment>
                   );
                 })}
@@ -1539,7 +1843,7 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
 
               {/* APPROVED BY ROW (Strict Rule - Below Comparative Table) */}
               <tr className="bg-slate-50 border-t-2 border-slate-400">
-                <td colSpan={6} className="py-4 px-4 bg-slate-100 border-r-2 border-slate-300">
+                <td colSpan={5} className="py-4 px-4 bg-slate-100 border-r-2 border-slate-300">
                   {cs.approvalDetails ? (
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-emerald-700 text-white flex items-center justify-center font-black shadow-xs shrink-0 text-xs">
@@ -1607,7 +1911,7 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                   return (
                     <td
                       key={`appr-${v.vendorId}`}
-                      colSpan={3}
+                      colSpan={4}
                       className={`py-4 px-3 border-r-2 border-slate-300 text-center ${
                         isAwarded ? 'bg-emerald-50/50' : 'bg-white'
                       }`}
@@ -1795,8 +2099,9 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                     <input
                       type="text"
                       value={v.rating}
+                      disabled={isRecordLocked}
                       onChange={(e) => handleUpdateVendorMeta(v.vendorId, 'rating', e.target.value)}
-                      className="w-full bg-transparent border-none text-slate-800 font-medium focus:ring-1 focus:ring-indigo-400 rounded px-1"
+                      className="w-full bg-transparent border-none text-slate-800 font-medium focus:ring-1 focus:ring-indigo-400 rounded px-1 disabled:opacity-80"
                     />
                   </td>
                 ))}
@@ -1812,8 +2117,9 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                     <input
                       type="text"
                       value={v.contactPersonMobile}
+                      disabled={isRecordLocked}
                       onChange={(e) => handleUpdateVendorMeta(v.vendorId, 'contactPersonMobile', e.target.value)}
-                      className="w-full bg-transparent border-none text-slate-800 font-medium focus:ring-1 focus:ring-indigo-400 rounded px-1"
+                      className="w-full bg-transparent border-none text-slate-800 font-medium focus:ring-1 focus:ring-indigo-400 rounded px-1 disabled:opacity-80"
                     />
                   </td>
                 ))}
@@ -1829,8 +2135,9 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                     <input
                       type="text"
                       value={v.storeOfficeAddress}
+                      disabled={isRecordLocked}
                       onChange={(e) => handleUpdateVendorMeta(v.vendorId, 'storeOfficeAddress', e.target.value)}
-                      className="w-full bg-transparent border-none text-slate-800 font-medium focus:ring-1 focus:ring-indigo-400 rounded px-1"
+                      className="w-full bg-transparent border-none text-slate-800 font-medium focus:ring-1 focus:ring-indigo-400 rounded px-1 disabled:opacity-80"
                     />
                   </td>
                 ))}
@@ -1846,8 +2153,9 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                     <input
                       type="text"
                       value={v.paymentTerms}
+                      disabled={isRecordLocked}
                       onChange={(e) => handleUpdateVendorMeta(v.vendorId, 'paymentTerms', e.target.value)}
-                      className="w-full bg-transparent border-none text-slate-800 font-medium focus:ring-1 focus:ring-indigo-400 rounded px-1"
+                      className="w-full bg-transparent border-none text-slate-800 font-medium focus:ring-1 focus:ring-indigo-400 rounded px-1 disabled:opacity-80"
                     />
                   </td>
                 ))}
@@ -1863,8 +2171,9 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                     <input
                       type="text"
                       value={v.warrantyPeriod}
+                      disabled={isRecordLocked}
                       onChange={(e) => handleUpdateVendorMeta(v.vendorId, 'warrantyPeriod', e.target.value)}
-                      className="w-full bg-transparent border-none text-slate-800 font-medium focus:ring-1 focus:ring-indigo-400 rounded px-1"
+                      className="w-full bg-transparent border-none text-slate-800 font-medium focus:ring-1 focus:ring-indigo-400 rounded px-1 disabled:opacity-80"
                     />
                   </td>
                 ))}
@@ -1880,8 +2189,9 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                     <input
                       type="text"
                       value={v.gstTerms}
+                      disabled={isRecordLocked}
                       onChange={(e) => handleUpdateVendorMeta(v.vendorId, 'gstTerms', e.target.value)}
-                      className="w-full bg-transparent border-none text-slate-800 font-medium focus:ring-1 focus:ring-indigo-400 rounded px-1"
+                      className="w-full bg-transparent border-none text-slate-800 font-medium focus:ring-1 focus:ring-indigo-400 rounded px-1 disabled:opacity-80"
                     />
                   </td>
                 ))}
@@ -1909,8 +2219,9 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
                     <input
                       type="text"
                       value={v.quotationDateValidity}
+                      disabled={isRecordLocked}
                       onChange={(e) => handleUpdateVendorMeta(v.vendorId, 'quotationDateValidity', e.target.value)}
-                      className="w-full bg-transparent border-none text-slate-800 font-medium focus:ring-1 focus:ring-indigo-400 rounded px-1"
+                      className="w-full bg-transparent border-none text-slate-800 font-medium focus:ring-1 focus:ring-indigo-400 rounded px-1 disabled:opacity-80"
                     />
                   </td>
                 ))}
@@ -2013,55 +2324,355 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
         </div>
       </div>
 
-      {/* MODAL: PASTE RAW QUOTATION TEXT */}
+      {/* MODAL: AI WHATSAPP & IMAGE QUOTATION IMPORT STUDIO */}
       {isPasteModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <ClipboardPaste className="w-5 h-5 text-indigo-600" />
-                <h3 className="text-base font-black text-slate-900">
-                  Paste Vendor Quotes or WhatsApp Messages
-                </h3>
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 my-0 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-900 text-white shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-indigo-600 rounded-xl">
+                  <Sparkles className="w-5 h-5 text-amber-300" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black tracking-wide text-white">
+                    AI WhatsApp &amp; Image Quotation Import Studio
+                  </h3>
+                  <p className="text-xs text-indigo-200">
+                    Barbrik Smart OCR &amp; Fuzzy Item Matching Engine
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
-                onClick={() => setIsPasteModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                onClick={() => {
+                  setIsPasteModalOpen(false);
+                  setExtractedData(null);
+                }}
+                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
                 aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs text-slate-500">
-              Paste quotations received via WhatsApp, email, or text. The smart parser automatically extracts Indent No,
-              Site, items, quantities, brands, and vendor rates for Barbrik Project Ltd.
-            </p>
+            {/* Modal Scrollable Body */}
+            <div className="p-6 overflow-y-auto min-h-0 flex-1 space-y-5 bg-slate-50">
+              {/* Input Type Selector Tabs */}
+              <div className="flex items-center gap-2 p-1 bg-slate-200/80 rounded-xl w-fit">
+                <button
+                  type="button"
+                  onClick={() => setImportTab('image')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    importTab === 'image'
+                      ? 'bg-white text-indigo-700 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Camera className="w-4 h-4 text-indigo-600" />
+                  <span>Photo / PDF Quote Upload</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportTab('text')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    importTab === 'text'
+                      ? 'bg-white text-indigo-700 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <ClipboardPaste className="w-4 h-4 text-amber-600" />
+                  <span>WhatsApp Chat Text</span>
+                </button>
+              </div>
 
-            <textarea
-              rows={9}
-              value={rawQuoteInput}
-              onChange={(e) => setRawQuoteInput(e.target.value)}
-              placeholder={`Example:\nSITE: BIJETALA\nINDENT NO: 466\nFOR: HM LOADER & DG SET\n\nVENDOR: M/s Shanti Earthmovers\n1. GREASE NIPPLE 8NO (HINO) - 10 NOS @ 42/- GST 18%\n2. OIL FILTER LF-3959 - 2 NOS @ 850/- GST 18%\n\nVENDOR: M/s Chhattisgarh Diesel\n1. GREASE NIPPLE 8NO - 10 NOS @ 46/- GST 18%\n2. OIL FILTER LF-3959 - 2 NOS @ 890/- GST 18%`}
-              className="w-full p-3 font-mono text-xs bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
+              {/* TAB 1: Image / Photo Upload */}
+              {importTab === 'image' && (
+                <div className="space-y-3">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Upload Vendor Quotation Bill, Photo, or PDF
+                  </label>
+                  <div className="border-2 border-dashed border-indigo-200 rounded-2xl p-6 bg-white hover:bg-indigo-50/40 transition-colors text-center cursor-pointer relative">
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={handleImageFileUpload}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                    <div className="flex flex-col items-center justify-center space-y-2">
+                      <div className="p-3 bg-indigo-100 rounded-full text-indigo-600">
+                        <Upload className="w-6 h-6" />
+                      </div>
+                      <p className="text-xs font-bold text-slate-800">
+                        Click or drag handwritten or printed vendor bill photo / PDF
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        Supports JPEG, PNG, WebP, PDF up to 20MB. AI extracts items, rates, and taxes automatically.
+                      </p>
+                    </div>
+                  </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  {quoteImageBase64 && (
+                    <div className="flex items-center gap-3 p-3 bg-indigo-50 border border-indigo-200 rounded-xl">
+                      <div className="w-12 h-12 rounded-lg bg-slate-200 overflow-hidden shrink-0 border border-slate-300">
+                        <img src={quoteImageBase64} alt="Quotation preview" className="w-full h-full object-cover" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-slate-800 truncate">Quotation File Loaded</p>
+                        <p className="text-[11px] text-slate-500">Ready for AI multimodal analysis</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setQuoteImageBase64(null)}
+                        className="text-xs font-bold text-rose-600 hover:text-rose-800 cursor-pointer"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 2: WhatsApp Chat Text */}
+              {importTab === 'text' && (
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Paste WhatsApp Quote Message
+                  </label>
+                  <textarea
+                    rows={6}
+                    value={rawQuoteInput}
+                    onChange={(e) => setRawQuoteInput(e.target.value)}
+                    placeholder={`Example WhatsApp Message:\nVendor: M/s Chhattisgarh Spares\n1. GREASE NIPPLE 8NO - 10 NOS @ 42/- GST 18%\n2. OIL FILTER LF-3959 - 2 NOS @ 850/- GST 18%\nPayment: 30 days credit\nGST: Extra 18%`}
+                    className="w-full p-3 font-mono text-xs bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs"
+                  />
+                </div>
+              )}
+
+              {/* Run AI Extraction Button */}
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleRunAiExtraction}
+                  disabled={isExtractingAi || (importTab === 'image' && !quoteImageBase64) || (importTab === 'text' && !rawQuoteInput.trim())}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer transition-all"
+                >
+                  {isExtractingAi ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-amber-300" />
+                      <span>Extracting Quotes &amp; Matching Items...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Bot className="w-4 h-4 text-amber-300" />
+                      <span>Run AI Extraction &amp; Auto-Match</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* EXTRACTION REVIEW RESULT SECTION */}
+              {extractedData && (
+                <div className="space-y-4 pt-4 border-t border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>Extracted Quotation &amp; Smart Match Review</span>
+                    </h4>
+                    <span className="text-[11px] font-bold text-slate-500 bg-slate-200 px-2.5 py-1 rounded-full">
+                      {extractedItemsReview.length} Line Items Detected
+                    </span>
+                  </div>
+
+                  {/* Vendor Header Metadata Inputs */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 bg-white rounded-xl border border-slate-200 shadow-xs">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Vendor / Party Name</label>
+                      <input
+                        type="text"
+                        value={extractedVendorName}
+                        onChange={(e) => setExtractedVendorName(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs font-bold bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">GST / Tax Terms</label>
+                      <input
+                        type="text"
+                        value={extractedGstTerms}
+                        onChange={(e) => setExtractedGstTerms(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs font-medium bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Payment Credit Terms</label>
+                      <input
+                        type="text"
+                        value={extractedPaymentTerms}
+                        onChange={(e) => setExtractedPaymentTerms(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs font-medium bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Smart Match Items Review Table */}
+                  <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-900 text-white text-[11px] uppercase font-bold">
+                        <tr>
+                          <th className="py-2.5 px-3 w-8 text-center">Inc</th>
+                          <th className="py-2.5 px-3">Vendor Extracted Quote Item</th>
+                          <th className="py-2.5 px-3">Matched CS Requisition Item</th>
+                          <th className="py-2.5 px-3 text-center">Confidence</th>
+                          <th className="py-2.5 px-3 text-right">Base Rate (₹)</th>
+                          <th className="py-2.5 px-3 text-right">GST %</th>
+                          <th className="py-2.5 px-3 text-right">Landed Unit (₹)</th>
+                          <th className="py-2.5 px-3 text-right">Line Total (₹)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 text-slate-800">
+                        {extractedItemsReview.map((rev, idx) => {
+                          const base = Number(rev.baseRate) || 0;
+                          const gst = Number(rev.gstPercent) || 0;
+                          const landed = base + (base * gst) / 100;
+                          const total = landed * (rev.qty || 1);
+
+                          const score = rev.confidenceScore || 0;
+                          const badgeColor =
+                            score >= 0.8
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                              : score >= 0.5
+                              ? 'bg-amber-100 text-amber-800 border-amber-300'
+                              : 'bg-rose-100 text-rose-800 border-rose-300';
+
+                          return (
+                            <tr key={rev.id} className={rev.included ? 'bg-white' : 'bg-slate-100 opacity-60'}>
+                              <td className="py-2.5 px-3 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={rev.included}
+                                  onChange={(e) => {
+                                    const val = e.target.checked;
+                                    setExtractedItemsReview((prev) =>
+                                      prev.map((item, i) => (i === idx ? { ...item, included: val } : item))
+                                    );
+                                  }}
+                                  className="w-4 h-4 text-indigo-600 rounded cursor-pointer"
+                                />
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <p className="font-bold text-slate-900">{rev.itemRawName}</p>
+                                <p className="text-[11px] text-slate-500">
+                                  Brand: {rev.brandMake} | Qty: {rev.qty} {rev.unit}
+                                </p>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <select
+                                  value={rev.matchedItemId || ''}
+                                  onChange={(e) => {
+                                    const selectedId = e.target.value || null;
+                                    setExtractedItemsReview((prev) =>
+                                      prev.map((item, i) =>
+                                        i === idx
+                                          ? {
+                                              ...item,
+                                              matchedItemId: selectedId,
+                                              confidenceScore: selectedId ? 1.0 : 0,
+                                            }
+                                          : item
+                                      )
+                                    );
+                                  }}
+                                  className="w-full px-2 py-1 text-xs border border-slate-300 rounded-md bg-slate-50 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
+                                >
+                                  <option value="">-- Select CS Requisition Item --</option>
+                                  {cs.items.map((csIt) => (
+                                    <option key={csIt.id} value={csIt.id}>
+                                      {csIt.sn}. {csIt.itemName} ({csIt.qty} {csIt.unit})
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <span className={`inline-block px-2 py-0.5 text-[10px] font-black rounded-full border ${badgeColor}`}>
+                                  {Math.round(score * 100)}%
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-right">
+                                <input
+                                  type="number"
+                                  value={rev.baseRate}
+                                  onChange={(e) => {
+                                    const val = parseFloat(e.target.value) || 0;
+                                    setExtractedItemsReview((prev) =>
+                                      prev.map((item, i) => (i === idx ? { ...item, baseRate: val } : item))
+                                    );
+                                  }}
+                                  className="w-20 px-1.5 py-1 text-right text-xs border border-slate-300 rounded focus:ring-1 focus:ring-indigo-500 font-bold"
+                                />
+                              </td>
+                              <td className="py-2.5 px-3 text-right">
+                                <input
+                                  type="number"
+                                  value={rev.gstPercent}
+                                  onChange={(e) => {
+                                    const val = parseFloat(e.target.value) || 0;
+                                    setExtractedItemsReview((prev) =>
+                                      prev.map((item, i) => (i === idx ? { ...item, gstPercent: val } : item))
+                                    );
+                                  }}
+                                  className="w-14 px-1.5 py-1 text-right text-xs border border-slate-300 rounded focus:ring-1 focus:ring-indigo-500 font-medium"
+                                />
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-bold text-slate-800">
+                                ₹{landed.toFixed(2)}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-black text-indigo-950">
+                                ₹{total.toFixed(2)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div className="flex items-center justify-between px-6 py-3.5 bg-slate-100 border-t border-slate-200 shrink-0">
               <button
                 type="button"
-                onClick={() => setIsPasteModalOpen(false)}
-                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
+                onClick={() => {
+                  setIsPasteModalOpen(false);
+                  setExtractedData(null);
+                }}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-lg cursor-pointer transition-colors"
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={handleApplyParsedText}
-                className="px-5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm cursor-pointer"
-              >
-                Extract &amp; Populate CS Sheet
-              </button>
+
+              {extractedData ? (
+                <button
+                  type="button"
+                  onClick={handleApplyImportedVendorToCs}
+                  className="flex items-center gap-2 px-6 py-2.5 text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-md cursor-pointer transition-all"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Apply &amp; Auto-Fill CS Vendor Column</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleRunAiExtraction}
+                  disabled={isExtractingAi || (importTab === 'image' && !quoteImageBase64) || (importTab === 'text' && !rawQuoteInput.trim())}
+                  className="flex items-center gap-2 px-5 py-2.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl shadow-sm cursor-pointer transition-all"
+                >
+                  <Bot className="w-4 h-4 text-amber-300" />
+                  <span>Extract Quotes &amp; Auto-Match</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -2133,11 +2744,12 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
 
       {/* MODAL: DIGITAL APPROVAL & SIGNATURE (PRANJAL AGRAWAL) */}
       {isApproveModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in duration-200">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 my-0 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 animate-in fade-in duration-200 overflow-hidden my-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 shrink-0 bg-slate-50/50">
               <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-xs">
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-xs shrink-0">
                   PA
                 </div>
                 <div>
@@ -2155,163 +2767,176 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
               <button
                 type="button"
                 onClick={() => setIsApproveModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
                 aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Requisition Context */}
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase font-bold block">Site</span>
-                <span className="font-extrabold text-slate-900">{cs.site || 'BIJETALA'}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase font-bold block">Indent No</span>
-                <span className="font-extrabold text-slate-900 font-mono">{cs.indentNo || 'IND-466'}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase font-bold block">Scope</span>
-                <span className="font-extrabold text-slate-900">{cs.items.length} Items</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase font-bold block">Award Value</span>
-                <span className="font-extrabold text-emerald-700 font-mono">
-                  ₹{awardedSummary.totalAwardedValue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-            </div>
-
-            {/* Split Awarded Summary */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-black uppercase text-slate-700 flex items-center justify-between">
-                <span>Award Allocation Summary Across Vendors:</span>
-                <span className="text-[11px] font-normal text-slate-500 font-sans lowercase">
-                  ({awardedSummary.vendorsWithAwards} suppliers allocated)
-                </span>
-              </label>
-              <div className="max-h-36 overflow-y-auto divide-y divide-slate-100 rounded-xl border border-slate-200">
-                {cs.vendors.map((v) => {
-                  const stats = awardedSummary.vendorStats[v.vendorId] || { itemCount: 0, totalAmount: 0, items: [] };
-                  if (stats.itemCount === 0) return null;
-
-                  return (
-                    <div key={`m-alloc-${v.vendorId}`} className="p-2.5 flex items-center justify-between text-xs bg-white">
-                      <div>
-                        <span className="font-extrabold text-slate-900">{v.vendorName}</span>
-                        <div className="text-[10px] text-slate-500 truncate max-w-sm">
-                          {stats.itemCount} Items: {stats.items.map((it) => it.itemName).join(', ')}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-mono font-black text-emerald-700">
-                          ₹{stats.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </div>
-                        <div className="text-[9px] text-slate-400 font-semibold">
-                          Delivery: OURS
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Item-Wise Director Selection Review */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-black uppercase text-slate-700 flex items-center justify-between">
-                <span>Item-Wise Director Selection &amp; Award:</span>
-                <span className="text-[11px] font-normal text-slate-500 lowercase">
-                  ({cs.items.length} items reviewed)
-                </span>
-              </label>
-              <div className="max-h-40 overflow-y-auto divide-y divide-slate-100 rounded-xl border border-slate-200">
-                {cs.items.map((it) => {
-                  const l1 = analytics.itemL1Map[it.id];
-                  const assignedId = (cs.awardedVendorMap && cs.awardedVendorMap[it.id]) || l1?.l1VendorId || cs.vendors[0]?.vendorId;
-                  const isL1 = l1 && l1.l1Rate > 0 && l1.l1VendorId === assignedId;
-
-                  return (
-                    <div key={`m-it-${it.id}`} className="p-2 flex items-center justify-between gap-2 text-xs bg-white hover:bg-slate-50">
-                      <div className="min-w-0 flex-1">
-                        <span className="font-bold text-slate-900 truncate block">{it.itemName}</span>
-                        <span className="text-[10px] text-slate-400 font-mono">Qty: {it.qty} {it.unit}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <select
-                          aria-label={`Award vendor for ${it.itemName}`}
-                          value={assignedId}
-                          onChange={(e) => handleAwardVendor(it.id, e.target.value)}
-                          className={`text-[11px] font-bold py-1 px-2 rounded border focus:outline-none cursor-pointer ${
-                            isL1 ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-black' : 'bg-indigo-50 border-indigo-200 text-indigo-950'
-                          }`}
-                        >
-                          {cs.vendors.map((v) => (
-                            <option key={`m-opt-${it.id}-${v.vendorId}`} value={v.vendorId}>
-                              {v.vendorName.slice(0, 15)} {l1?.l1VendorId === v.vendorId ? '★ [L-1]' : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Official Signatory Display (Strictly Pranjal Agrawal Only) */}
-            <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
-                  <span className="text-xs font-black text-emerald-950 uppercase tracking-wide">
-                    Exclusive Authorized Signatory
+            {/* Scrollable Body */}
+            <div className="p-6 overflow-y-auto space-y-4 min-h-0 flex-1">
+              {/* Requisition Context */}
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold block">Site</span>
+                  <span className="font-extrabold text-slate-900">{cs.site || 'BIJETALA'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold block">Indent No</span>
+                  <span className="font-extrabold text-slate-900 font-mono">{cs.indentNo || 'IND-466'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold block">Scope</span>
+                  <span className="font-extrabold text-slate-900">{cs.items.length} Items</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold block">Award Value</span>
+                  <span className="font-extrabold text-emerald-700 font-mono">
+                    ₹{awardedSummary.totalAwardedValue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-emerald-200 text-emerald-900 rounded">
-                  OFFICIAL DIRECTOR SEAL
-                </span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase block">Signatory Name</label>
-                  <div className="px-3 py-1.5 text-xs font-black text-slate-900 bg-white border border-emerald-300 rounded-lg flex items-center justify-between">
-                    <span>Pranjal Agrawal</span>
-                    <span className="text-[10px] font-mono font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded">USR-013</span>
+
+              {/* Split Awarded Summary */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-black uppercase text-slate-700 flex items-center justify-between">
+                  <span>Award Allocation Summary Across Vendors:</span>
+                  <span className="text-[11px] font-normal text-slate-500 font-sans lowercase">
+                    ({awardedSummary.vendorsWithAwards} suppliers allocated)
+                  </span>
+                </label>
+                <div className="max-h-36 overflow-y-auto divide-y divide-slate-100 rounded-xl border border-slate-200">
+                  {cs.vendors.map((v) => {
+                    const stats = awardedSummary.vendorStats[v.vendorId] || { itemCount: 0, totalAmount: 0, items: [] };
+                    if (stats.itemCount === 0) return null;
+
+                    return (
+                      <div key={`m-alloc-${v.vendorId}`} className="p-2.5 flex items-center justify-between text-xs bg-white">
+                        <div>
+                          <span className="font-extrabold text-slate-900">{v.vendorName}</span>
+                          <div className="text-[10px] text-slate-500 truncate max-w-sm">
+                            {stats.itemCount} Items: {stats.items.map((it) => it.itemName).join(', ')}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-mono font-black text-emerald-700">
+                            ₹{stats.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </div>
+                          <div className="text-[9px] text-slate-400 font-semibold">
+                            Delivery: OURS
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Item-Wise Director Selection Review */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-black uppercase text-slate-700 flex items-center justify-between">
+                  <span>Item-Wise Director Selection &amp; Award:</span>
+                  <span className="text-[11px] font-normal text-slate-500 lowercase">
+                    ({cs.items.length} items reviewed)
+                  </span>
+                </label>
+                <div className="max-h-40 overflow-y-auto divide-y divide-slate-100 rounded-xl border border-slate-200">
+                  {cs.items.map((it) => {
+                    const l1 = analytics.itemL1Map[it.id];
+                    const assignedId = (cs.awardedVendorMap && cs.awardedVendorMap[it.id]) || l1?.l1VendorId || cs.vendors[0]?.vendorId;
+                    const isL1 = l1 && l1.l1Rate > 0 && l1.l1VendorId === assignedId;
+
+                    return (
+                      <div key={`m-it-${it.id}`} className="p-2 flex items-center justify-between gap-2 text-xs bg-white hover:bg-slate-50">
+                        <div className="min-w-0 flex-1">
+                          <span className="font-bold text-slate-900 truncate block">{it.itemName}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">Qty: {it.qty} {it.unit}</span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap justify-end">
+                          {cs.vendors.map((v) => {
+                            const isChecked = assignedId === v.vendorId;
+                            const isVndL1 = l1?.l1VendorId === v.vendorId;
+                            return (
+                              <label
+                                key={`m-opt-${it.id}-${v.vendorId}`}
+                                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] font-bold cursor-pointer transition-colors ${
+                                  isChecked
+                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-black'
+                                    : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => handleAwardVendor(it.id, v.vendorId)}
+                                  className="w-3.5 h-3.5 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 accent-emerald-600 cursor-pointer"
+                                />
+                                <span>{v.vendorName.slice(0, 15)}</span>
+                                {isVndL1 && <span className="text-[9px] text-emerald-700 font-black">★ L1</span>}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Official Signatory Display (Strictly Pranjal Agrawal Only) */}
+              <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span className="text-xs font-black text-emerald-950 uppercase tracking-wide">
+                      Exclusive Authorized Signatory
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-emerald-200 text-emerald-900 rounded">
+                    OFFICIAL DIRECTOR SEAL
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block">Signatory Name</label>
+                    <div className="px-3 py-1.5 text-xs font-black text-slate-900 bg-white border border-emerald-300 rounded-lg flex items-center justify-between">
+                      <span>Pranjal Agrawal</span>
+                      <span className="text-[10px] font-mono font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded">USR-013</span>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block">Executive Designation</label>
+                    <div className="px-3 py-1.5 text-xs font-black text-slate-900 bg-white border border-emerald-300 rounded-lg">
+                      Finance Approver / Director
+                    </div>
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase block">Executive Designation</label>
-                  <div className="px-3 py-1.5 text-xs font-black text-slate-900 bg-white border border-emerald-300 rounded-lg">
-                    Finance Approver / Director
-                  </div>
+              </div>
+
+              {/* Remarks */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-600 uppercase">Approval Remarks / Commercial Note</label>
+                <textarea
+                  rows={2}
+                  value={approvalRemarks}
+                  onChange={(e) => setApprovalRemarks(e.target.value)}
+                  placeholder="e.g. Split PO approved to maintain vendor relationship and site machinery uptime. Freight OURS."
+                  className="w-full p-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              {/* Digital Stamp Disclaimer */}
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-950 flex items-start gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+                <div>
+                  <strong>Paperless Corporate Seal:</strong> Authorizing this CS sheet will permanently affix a digital signature stamp in the name of Director Pranjal Agrawal with timestamp and verification hash.
                 </div>
               </div>
             </div>
 
-            {/* Remarks */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-600 uppercase">Approval Remarks / Commercial Note</label>
-              <textarea
-                rows={2}
-                value={approvalRemarks}
-                onChange={(e) => setApprovalRemarks(e.target.value)}
-                placeholder="e.g. Split PO approved to maintain vendor relationship and site machinery uptime. Freight OURS."
-                className="w-full p-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-
-            {/* Digital Stamp Disclaimer */}
-            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-950 flex items-start gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-              <div>
-                <strong>Paperless Corporate Seal:</strong> Authorizing this CS sheet will permanently affix a digital signature stamp in the name of Director Pranjal Agrawal with timestamp and verification hash.
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            {/* Fixed Footer */}
+            <div className="flex items-center justify-end gap-2 px-6 py-3.5 border-t border-slate-100 shrink-0 bg-slate-50/50">
               <button
                 type="button"
                 onClick={() => setIsApproveModalOpen(false)}
@@ -2397,11 +3022,12 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
 
       {/* MODAL: GENERATED SPLIT PURCHASE ORDERS */}
       {isSplitPoModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in duration-200">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 my-0 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 animate-in fade-in duration-200 overflow-hidden my-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 shrink-0 bg-slate-50/50">
               <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black shadow-xs">
+                <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black shadow-xs shrink-0">
                   <Zap className="w-5 h-5 text-amber-300" />
                 </div>
                 <div>
@@ -2419,51 +3045,55 @@ export const ComparativeSheetView: React.FC<ComparativeSheetViewProps> = ({
               <button
                 type="button"
                 onClick={() => setIsSplitPoModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
                 aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs text-slate-600">
-              The comparative statement for <strong>Indent {cs.indentNo || '466'}</strong> has been split into{' '}
-              <strong>{createdSplitPos.length} vendor purchase orders</strong>. Each order has been pre-configured with
-              the approved item rates, site delivery, and <strong>Freight &amp; Delivery: OURS</strong>:
-            </p>
+            {/* Scrollable Body */}
+            <div className="p-6 overflow-y-auto space-y-4 min-h-0 flex-1">
+              <p className="text-xs text-slate-600">
+                The comparative statement for <strong>Indent {cs.indentNo || '466'}</strong> has been split into{' '}
+                <strong>{createdSplitPos.length} vendor purchase orders</strong>. Each order has been pre-configured with
+                the approved item rates, site delivery, and <strong>Freight &amp; Delivery: OURS</strong>:
+              </p>
 
-            <div className="space-y-3 max-h-64 overflow-y-auto">
-              {createdSplitPos.map((flow, idx) => (
-                <div
-                  key={flow.id}
-                  className="p-3.5 rounded-xl border border-indigo-200 bg-indigo-50/40 space-y-1.5"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-black font-mono px-2 py-0.5 bg-indigo-900 text-white rounded">
-                        {flow.poNumber}
+              <div className="space-y-3">
+                {createdSplitPos.map((flow) => (
+                  <div
+                    key={flow.id}
+                    className="p-3.5 rounded-xl border border-indigo-200 bg-indigo-50/40 space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black font-mono px-2 py-0.5 bg-indigo-900 text-white rounded">
+                          {flow.poNumber}
+                        </span>
+                        <span className="text-xs font-bold text-slate-900">{flow.vendorName}</span>
+                      </div>
+                      <span className="text-xs font-mono font-black text-emerald-800">
+                        ₹{flow.poAmount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </span>
-                      <span className="text-xs font-bold text-slate-900">{flow.vendorName}</span>
                     </div>
-                    <span className="text-xs font-mono font-black text-emerald-800">
-                      ₹{flow.poAmount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
 
-                  <p className="text-[11px] text-slate-600 leading-relaxed truncate">
-                    {flow.remarks}
-                  </p>
+                    <p className="text-[11px] text-slate-600 leading-relaxed truncate">
+                      {flow.remarks}
+                    </p>
 
-                  <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-indigo-100">
-                    <span>Site: <strong className="text-slate-700">{flow.siteName}</strong></span>
-                    <span>Stage: <strong className="text-indigo-700">PO Issued &bull; Awaiting Dispatch</strong></span>
-                    <span>Freight: <strong className="text-slate-800">OURS</strong></span>
+                    <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-indigo-100">
+                      <span>Site: <strong className="text-slate-700">{flow.siteName}</strong></span>
+                      <span>Stage: <strong className="text-indigo-700">PO Issued &bull; Awaiting Dispatch</strong></span>
+                      <span>Freight: <strong className="text-slate-800">OURS</strong></span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
 
-            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+            {/* Fixed Footer */}
+            <div className="flex items-center justify-between px-6 py-3.5 border-t border-slate-100 shrink-0 bg-slate-50/50">
               <span className="text-xs text-slate-500">
                 Authorized by <strong className="text-slate-800">{cs.approvalDetails?.approverName || 'Pranjal Agrawal'}</strong>
               </span>

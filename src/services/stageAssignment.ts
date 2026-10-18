@@ -433,14 +433,29 @@ export const isUserResponsibleForStage = (
     }
   }
 
+  // Direct assignee matching (takes highest precedence for explicit assignment)
+  const execAssignee = (stageExec?.assignee || '').toLowerCase();
+  if (execAssignee && (execAssignee.includes(userName) || userName.split(/\s+/).some(part => part.length >= 3 && execAssignee.includes(part)))) {
+    return true;
+  }
+
+  const defaultAssignee = (stageDef.whoDefaultAssignee || '').toLowerCase();
+  if (defaultAssignee && (defaultAssignee.includes(userName) || userName.split(/\s+/).some(part => part.length >= 3 && defaultAssignee.includes(part)))) {
+    return true;
+  }
+
   // Standard Indent to PO Purchase FMS Stages:
-  // 1. Stage 1: Store Manager (Amanat Bharadwaj)
+  // 1. Stage 1: Store Manager (Amanat Bharadwaj) or Purchase Manager / Asst. Manager Purchase & Store (Bramhanand Patel)
   if (stageDef.stageId === 'STG-01' || stageDef.stageNumber === 1) {
-    return userName.includes('amanat') || userRole === 'store manager' || userRole.includes('store');
+    return userName.includes('amanat') || 
+           userRole === 'store manager' || 
+           userRole.includes('store') ||
+           userName.includes('bramhanand') || 
+           userRole.includes('purchase & store');
   }
 
   // 2. Stages 2, 5, 6, 7, 8: Asst. Manager Purchase & Store (Bramhanand Patel)
-  if (['STG-02', 'STG-05', 'STG-06', 'STG-07', 'STG-08'].includes(stageDef.stageId)) {
+  if (['STG-02', 'STG-IND-02', 'STG-05', 'STG-IND-03', 'STG-06', 'STG-07', 'STG-08'].includes(stageDef.stageId)) {
     return userName.includes('bramhanand') || 
            (userRole.includes('asst') && userRole.includes('purchase')) ||
            userRole.includes('purchase & store');
@@ -455,24 +470,12 @@ export const isUserResponsibleForStage = (
   }
 
   // 4. Stages 3, 9, 10, 11, 12: Purchase Executive (Shyam Rao Sureshe / Rajnikant Behera)
-  if (['STG-03', 'STG-09', 'STG-10', 'STG-11', 'STG-12'].includes(stageDef.stageId)) {
+  if (['STG-03', 'STG-09', 'STG-10', 'STG-11', 'STG-IND-05', 'STG-12'].includes(stageDef.stageId)) {
     return userName.includes('shyam') || 
            userName.includes('rajnikant') || 
            userName.includes('rajendra') || 
            userRole.includes('purchase executive') || 
            userRole.includes('purchaser');
-  }
-
-  // Direct assignee matching
-  const defaultAssignee = (stageDef.whoDefaultAssignee || '').toLowerCase();
-  if (defaultAssignee && defaultAssignee.includes(userName)) {
-    return true;
-  }
-
-  // Fallback direct name match on execution override:
-  const execAssignee = (stageExec?.assignee || '').toLowerCase();
-  if (execAssignee && execAssignee.includes(userName)) {
-    return true;
   }
 
   return false;

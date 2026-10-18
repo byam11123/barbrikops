@@ -19,6 +19,7 @@ import {
   AppNotification,
   ComparativeStatement,
   CsItem,
+  CsVendorQuote,
   BankPaymentRecord,
   BeneficiaryRecord,
   InterbankTransferRecord,
@@ -97,6 +98,7 @@ import {
   INITIAL_COMPARATIVE_STATEMENTS,
   INITIAL_VENDOR_PROFILES,
   FMS_PURCHASE_TO_STORE_DISPATCH_STAGES,
+  FMS_STORE_TO_SITE_DISPATCH_STAGES,
   FMS_STANDARD_PURCHASE_STAGES
 } from '../data/initialData';
 
@@ -1123,7 +1125,7 @@ class StorageAdapter {
     lineItems: FmsLineItem[],
     triageNotes: string,
     currentUser?: UserProfile
-  ): { storeFlow: FmsInstance | null; purchaseFlow: FmsInstance | null } {
+  ): { storeFlow: FmsInstance | null; purchaseFlow: FmsInstance | null; updatedParent?: FmsInstance } {
     const existingFlows = this.getFmsFlows();
     const baseIndentNo = parentFlow.indentNo || parentFlow.requisitionNumber || `IND-${Date.now().toString().slice(-4)}`;
     
@@ -1148,16 +1150,16 @@ class StorageAdapter {
         flowId: dispFlowId,
         indentNo: dispIndentNo,
         requisitionNumber: dispIndentNo,
-        flowType: 'PURCHASE_TO_STORE_DISPATCH',
+        flowType: 'STORE_TO_SITE_DISPATCH',
         title: `[STORE DISPATCH TRACK] ${parentFlow.title || 'Store Stock Issue'}`,
         status: 'In Progress',
         isClosed: false,
         lineItems: storeItems,
         currentStageIndex: 0,
-        currentStageId: 'STG-PSD-01',
+        currentStageId: 'STG-SSD-01',
         createdAt: nowStr,
         updatedAt: nowStr,
-        stages: FMS_PURCHASE_TO_STORE_DISPATCH_STAGES.map((stg, idx) => ({
+        stages: FMS_STORE_TO_SITE_DISPATCH_STAGES.map((stg, idx) => ({
           stageId: stg.stageId,
           stageName: stg.name,
           assignee: stg.whoDefaultAssignee || stg.whoRole || 'Store Keeper',
@@ -1193,18 +1195,21 @@ class StorageAdapter {
         status: 'In Progress',
         isClosed: false,
         lineItems: purchaseItems,
-        currentStageIndex: 0,
-        currentStageId: 'STG-01',
+        poAssignTo: 'Bramhanand Patel',
+        currentStageIndex: 1,
+        currentStageId: 'STG-02',
         createdAt: nowStr,
         updatedAt: nowStr,
         stages: FMS_STANDARD_PURCHASE_STAGES.map((stg, idx) => ({
           stageId: stg.stageId,
           stageName: stg.name,
-          assignee: stg.whoDefaultAssignee || stg.whoRole || 'Purchase Officer',
+          assignee: idx === 1 ? 'Bramhanand Patel' : (stg.whoDefaultAssignee || stg.whoRole || 'Purchase Officer'),
           how: stg.howChannel || 'In-App Form',
-          status: idx === 0 ? ('In Progress' as const) : ('Pending' as const),
-          stageStartedAt: idx === 0 ? nowIso : undefined,
-          plannedTimestamp: idx === 0 ? new Date(Date.now() + (stg.slaHours || 24) * 3600 * 1000).toISOString() : undefined,
+          status: idx === 0 ? ('Done' as const) : idx === 1 ? ('In Progress' as const) : ('Pending' as const),
+          stageStartedAt: idx <= 1 ? nowIso : undefined,
+          actualTimestamp: idx === 0 ? nowIso : undefined,
+          notes: idx === 0 ? `Received & triaged at store from Indent #${baseIndentNo}; forwarded to Purchase Department` : undefined,
+          plannedTimestamp: idx === 1 ? new Date(Date.now() + (stg.slaHours || 24) * 3600 * 1000).toISOString() : undefined,
         })),
         instanceDataPool: {
           ...(parentFlow.instanceDataPool || {}),
@@ -1214,15 +1219,71 @@ class StorageAdapter {
           triagedBy: currentUser?.name || 'Store Keeper',
         },
       };
+
+      // Emit high-priority action notification to Bramhanand Patel
+      this.addNotification({
+        userId: 'USR-002', // Bramhanand Patel
+        title: `Action Required: Purchase Indent #${purchIndentNo}`,
+        message: `Material requisition triaged and forwarded from Central Store (${purchaseItems.length} items). Assigned for Degraded Material Check.`,
+        type: 'FMS_ACTION_REQUIRED',
+        linkTab: 'fms',
+        linkEntityId: purchId,
+        data: { flowId: purchFlowId, stageIndex: 1 }
+      });
     }
 
-    // 3. Mark original parent flow as CLOSED / SPLIT
+    // 3. Advance parent flow (e.g. CHECK_STOCK) to next stage for Store Manager without closing it
+    const nextStageIdx = parentFlow.currentStageIndex + 1;
+    const hasNextStage = nextStageIdx < parentFlow.stages.length;
+    const updatedStages = parentFlow.stages.map((stg, i) => {
+      if (i === parentFlow.currentStageIndex) {
+        return {
+          ...stg,
+          status: 'Done' as const,
+          actualTimestamp: nowIso,
+          notes: triageNotes || `Store stock check & triage completed (${storeItems.length} Store Dispatch, ${purchaseItems.length} Purchase Requisition).`,
+        };
+      }
+      if (i === nextStageIdx && hasNextStage) {
+        return {
+          ...stg,
+          status: 'In Progress' as const,
+          stageStartedAt: nowIso,
+          plannedTimestamp: new Date(Date.now() + (stg.targetDurationHours || stg.timeDelayHours || 12) * 3600 * 1000).toISOString(),
+        };
+      }
+      return stg;
+    });
+
     const updatedParent: FmsInstance = {
       ...parentFlow,
-      status: 'CLOSED',
-      isClosed: true,
-      closureRemark: `Triaged into independent sub-indents: ${storeFlow ? storeFlow.indentNo : ''} ${purchaseFlow ? purchaseFlow.indentNo : ''}`.trim(),
+      status: hasNextStage ? 'In Progress' : 'Completed',
+      isClosed: !hasNextStage,
+      currentStageIndex: hasNextStage ? nextStageIdx : parentFlow.currentStageIndex,
+      currentStageId: hasNextStage ? parentFlow.stages[nextStageIdx]?.stageId || parentFlow.currentStageId : parentFlow.currentStageId,
       lineItems: lineItems,
+      linkedSubFlows: [
+        ...(storeFlow ? [{
+          type: 'STORE_DISPATCH' as const,
+          id: storeFlow.id,
+          flowType: storeFlow.flowType,
+          name: `Store Material Dispatch (${storeItems.length} items)`,
+          indentNo: storeFlow.indentNo,
+          itemCount: storeItems.length,
+          status: storeFlow.status,
+          createdAt: nowStr,
+        }] : []),
+        ...(purchaseFlow ? [{
+          type: 'PURCHASE' as const,
+          id: purchaseFlow.id,
+          flowType: purchaseFlow.flowType,
+          name: `Purchase Indent to PO (${purchaseItems.length} items)`,
+          indentNo: purchaseFlow.indentNo,
+          itemCount: purchaseItems.length,
+          status: purchaseFlow.status,
+          createdAt: nowStr,
+        }] : [])
+      ],
       updatedAt: nowStr,
     };
 
@@ -1242,7 +1303,7 @@ class StorageAdapter {
       details: `Triaged Indent #${baseIndentNo} into 2 independent track indents (${storeItems.length} Store Dispatch items, ${purchaseItems.length} Market Purchase items).`,
     });
 
-    return { storeFlow, purchaseFlow };
+    return { storeFlow, purchaseFlow, updatedParent };
   }
 
   public deleteFmsFlow(flowIdOrId: string, currentUser?: UserProfile) {
@@ -2336,7 +2397,125 @@ class StorageAdapter {
     }
     this.syncToFirestore('comparativeStatements', updated, 'id');
     this.notifyListeners();
+
+    if (statement.status === 'Approved') {
+      this.logAudit({
+        userId: statement.approvalDetails?.approverName ? 'USR-013' : 'DIR',
+        userName: statement.approvalDetails?.approverName || 'Pranjal Agrawal',
+        module: 'COMPARATIVE_SHEET',
+        action: 'STAGE_ADVANCE',
+        entityId: statement.id,
+        details: `Director Pranjal Agrawal approved Comparative Statement #${statement.id} for Indent #${statement.indentNo} with item-wise split vendor allocation.`
+      });
+    }
+
     return statementWithMeta;
+  }
+
+  public createComparativeSheetFromFms(flow: FmsInstance, currentUser?: UserProfile): ComparativeStatement {
+    const timestamp = new Date().toLocaleString('en-GB');
+    const existingCsList = this.getComparativeStatements();
+    const existing = existingCsList.find((c) => (flow.indentNo && c.indentNo === flow.indentNo) || c.id === flow.comparativeSheetId);
+    if (existing) {
+      return existing;
+    }
+
+    const todayDate = new Date().toLocaleDateString('en-GB');
+    let csItems: CsItem[] = [];
+    if (flow.lineItems && flow.lineItems.length > 0) {
+      csItems = flow.lineItems.map((li, idx) => ({
+        id: `cs-it-${Date.now()}-${idx + 1}`,
+        sn: idx + 1,
+        itemName: li.itemDescription || `Requisition Item #${idx + 1}`,
+        brandMake: 'Reputed/OEM',
+        unit: li.unit || 'Nos',
+        qty: li.qty || 1,
+      }));
+    } else {
+      csItems = [
+        {
+          id: `cs-it-${Date.now()}-1`,
+          sn: 1,
+          itemName: flow.remarks ? flow.remarks.split(';')[0].slice(0, 50) : 'Plant Machinery Spares / Material',
+          brandMake: 'OEM Spec',
+          unit: 'Nos',
+          qty: 5,
+        },
+        {
+          id: `cs-it-${Date.now()}-2`,
+          sn: 2,
+          itemName: 'Hydraulic Seal & Filter Kit',
+          brandMake: 'Standard',
+          unit: 'Set',
+          qty: 2,
+        }
+      ];
+    }
+
+    const vendors: CsVendorQuote[] = [
+      {
+        vendorId: 'VND-001',
+        vendorName: 'M/S MAHAVIR TRADERS & SPARES',
+        rating: '4.8 / 5.0 (Top Rated Local Supplier)',
+        contactPersonMobile: 'Kanhaiya Lal | Mo: +91-9826101122',
+        storeOfficeAddress: 'Transport Nagar, Raipur (C.G.)',
+        paymentTerms: '30 Days Net from Delivery',
+        warrantyPeriod: '12 Months Standard Warranty',
+        gstTerms: '18% GST Applicable',
+        freightDeliveryTerms: 'OURS (Barbrik Transit Vehicle Pickup)',
+        quotationDateValidity: `${todayDate} | 15 Days Validity`,
+        primaryProductFocus: 'Heavy Equipment Spares & Consumables',
+        itemRates: {
+          [csItems[0].id]: { baseRate: 4200, gstPercent: 18, gstAmount: 756, landedRate: 4956, amount: 4956 * (csItems[0]?.qty || 1), isQuoted: true },
+          ...(csItems[1] ? { [csItems[1].id]: { baseRate: 3100, gstPercent: 18, gstAmount: 558, landedRate: 3658, amount: 3658 * (csItems[1]?.qty || 1), isQuoted: true } } : {})
+        }
+      },
+      {
+        vendorId: 'VND-002',
+        vendorName: 'M/S CHHATTISGARH INDUSTRIAL BEARINGS',
+        rating: '4.6 / 5.0 (OEM Certified Distributor)',
+        contactPersonMobile: 'Suresh Agrawal | Mo: +91-9425203344',
+        storeOfficeAddress: 'G.E. Road, Bhilai (C.G.)',
+        paymentTerms: '50% Advance via Bank, Balance on Delivery',
+        warrantyPeriod: '6 Months Replacement Warranty',
+        gstTerms: '18% GST Applicable',
+        freightDeliveryTerms: 'THEIRS (Door Delivery to Site)',
+        quotationDateValidity: `${todayDate} | 10 Days Validity`,
+        primaryProductFocus: 'Bearings, Seals & Hydraulics',
+        itemRates: {
+          [csItems[0].id]: { baseRate: 4500, gstPercent: 18, gstAmount: 810, landedRate: 5310, amount: 5310 * (csItems[0]?.qty || 1), isQuoted: true },
+          ...(csItems[1] ? { [csItems[1].id]: { baseRate: 2900, gstPercent: 18, gstAmount: 522, landedRate: 3422, amount: 3422 * (csItems[1]?.qty || 1), isQuoted: true } } : {})
+        }
+      }
+    ];
+
+    const newCs: ComparativeStatement = {
+      id: `cs-${Date.now()}`,
+      companyName: 'Barbrik Project Ltd.',
+      site: flow.siteName || 'BIJETALA',
+      indentNo: flow.indentNo || `IND-${Date.now().toString().slice(-4)}`,
+      indentDate: flow.indentDate || todayDate,
+      forPurpose: flow.remarks || `Material procurement for ${flow.siteName} site`,
+      statementDate: todayDate,
+      items: csItems,
+      vendors,
+      status: 'Draft',
+      notes: `Auto-generated from FMS Requisition #${flow.indentNo} for comparative rate analysis & director approval.`,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+
+    const saved = this.saveComparativeStatement(newCs);
+    this.logAudit({
+      userId: currentUser?.userId || 'PURCHASE',
+      userName: currentUser?.name || 'Purchase Dept',
+      module: 'COMPARATIVE_SHEET',
+      action: 'CREATE',
+      entityId: saved.id,
+      details: `Auto-generated Comparative Statement #${saved.id} with ${csItems.length} items from FMS Flow #${flow.flowId} (Indent #${flow.indentNo}).`
+    });
+
+    return saved;
   }
 
   public deleteComparativeStatement(id: string): void {
@@ -2592,6 +2771,15 @@ class StorageAdapter {
     return newRecord;
   }
 
+  public approveBankPayment(
+    idOrSheetNo: string,
+    approved: boolean,
+    currentUser: UserProfile,
+    rejectionReason?: string
+  ): BankPaymentRecord | null {
+    return this.approveBankPaymentRecord(idOrSheetNo, approved, currentUser, rejectionReason);
+  }
+
   public approveBankPaymentRecord(
     idOrSheetNo: string,
     approved: boolean,
@@ -2622,7 +2810,7 @@ class StorageAdapter {
       this.logAudit({
         userId: currentUser.userId,
         userName: currentUser.name,
-        module: 'FMS',
+        module: 'BANKING',
         action: 'STATUS_CHANGE',
         entityId: (updatedRecord as BankPaymentRecord).sheetNo,
         details: `${approved ? 'Approved' : 'Rejected'} Bank Payment Request #${(updatedRecord as BankPaymentRecord).sheetNo}. ${rejectionReason ? `Reason: ${rejectionReason}` : ''}`
@@ -2660,7 +2848,7 @@ class StorageAdapter {
       this.logAudit({
         userId: currentUser?.userId || 'ACCOUNTS',
         userName: currentUser?.name || 'Accounts Staff',
-        module: 'FMS',
+        module: 'BANKING',
         action: 'UPDATE',
         entityId: (updatedRecord as BankPaymentRecord).sheetNo,
         details: `Recorded Bank Portal Entry (${status}) for #${(updatedRecord as BankPaymentRecord).sheetNo}`
@@ -2700,7 +2888,7 @@ class StorageAdapter {
       this.logAudit({
         userId: currentUser?.userId || 'ACCOUNTS',
         userName: currentUser?.name || 'Accounts Staff',
-        module: 'FMS',
+        module: 'BANKING',
         action: 'STATUS_CHANGE',
         entityId: (updatedRecord as BankPaymentRecord).sheetNo,
         details: `Finalized Bank Settlement (${status}) for #${(updatedRecord as BankPaymentRecord).sheetNo}. UTR: ${utrRef || 'N/A'}`

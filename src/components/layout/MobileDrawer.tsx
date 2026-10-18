@@ -24,7 +24,8 @@ import {
   RefreshCw,
   ShieldCheck,
   FileSpreadsheet,
-  Scale
+  Scale,
+  Layers
 } from 'lucide-react';
 import { NavTab } from './Sidebar';
 import { UserProfile, FmsInstance, isUserSuperAdmin, isUserAdmin, isUserAdminOrSuperAdmin, hasModulePermission, ChecklistItem, DelegationTask } from '../../types';
@@ -295,6 +296,11 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
       id: 'fms-audit' as NavTab,
       label: 'FMS Records & Audit',
       icon: FileSpreadsheet,
+    },
+    {
+      id: 'template-studio' as NavTab,
+      label: 'FMS Template Studio',
+      icon: Layers,
     },
     {
       id: 'delegation' as NavTab,

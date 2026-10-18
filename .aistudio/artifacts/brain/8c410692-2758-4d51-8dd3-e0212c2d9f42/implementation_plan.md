@@ -1,131 +1,176 @@
-# Simplified Purchase FMS Workflow & Split Indent Architecture
+# Requisition Triage, Physical Stock Check & Stage-Wise Quantity Revision
 
-Streamline the Purchase FMS Tracker to make the entire financial and procurement workflow so clean and intuitive that a non-technical user (or Class 10 student) can understand and operate it effortlessly. Eliminate visual clutter, reduce option paralysis, split store dispatch vs. purchase items into distinct independent indents, and embed L1 comparative choices and bank payment workflows directly into FMS modals.
-
-## User Review & Critical Decisions
+Transform Stage 1 Material Requisition and Stage 2 Check Stock into an operational triage system tailored for construction sites: eliminating daily fluctuating rates from initial requisition, supporting hands-on physical store checks without pre-existing computer inventory, enabling stage-wise quantity adjustments with audit tracking, and automatically splitting line items into Store Dispatch and Purchase Indent sub-workflows.
 
 > [!IMPORTANT]
-> The design directly incorporates all confirmed user preferences to eliminate complexity and confusion for non-technical users.
-
-- **Confirmed Decision 1 (Simplified Non-Technical UX)**: Eliminate redundant buttons, confusing technical jargon, and scattered action controls. Present a clear linear 5-step progress indicator on every indent card with one primary action button per role.
-- **Confirmed Decision 2 (Independent Split Indents)**: When store triage splits a request (e.g., 2 items in store, 3 items missing), create **2 completely separate independent indents** in the pipeline (`IND-001-DISP` for Store Dispatch and `IND-001-PURCH` for Purchase Requisition) so store managers and purchasers work on clean, isolated task queues.
-- **Confirmed Decision 3 (Embedded FMS Approvals & Payments)**: Place Director L1 radio-button authorization, vendor bank beneficiary checks, and payment release forms directly inside embedded modals on the FMS / "My Work" screen—avoiding context switching across disparate tabs.
-
----
-
-## 1. Overview & Core Concept
-
-### What It Does
-1. **Simplified Role Dashboard**: Non-technical team members see only their relevant pending step with a big, friendly action button (e.g., "Pack 2 Store Items", "Submit 3 Market Quotes", "Authorize L1 Vendor", "Release Payment").
-2. **2-Way Independent Indent Split**: Triage automatically converts a partial stock hit into two separate indents:
-   - **Store Dispatch Indent**: Tracks picking from store, gate pass, and site delivery receipt.
-   - **Purchase Requisition Indent**: Tracks market quotation collection, L1 comparative approval, bank beneficiary validation, and payment release.
-3. **Embedded In-Place Execution**: All approvals (L1 comparative, beneficiary validation, payment release) happen directly inside overlay modals without leaving the active workflow page.
-
-### Target Audience & Persona
-- **Store Managers & Site Engineers**: Non-technical staff needing fast, error-free stock checks and receiving acknowledgments.
-- **Purchasers**: Field staff uploading vendor quotes and selecting payment modes (UPI / Bank Transfer).
-- **Director & Accountants**: Executive approvers making high-value financial choices with 1-click radio buttons and attached bills.
+> **Summary of User Requirements & Revisions in This Plan**:
+> 1. **No Estimated Rates in Stage 1**: Site engineers do not know current material prices because daily market rates fluctuate. Estimated Rate (₹) and Total Amount (₹) are completely removed from Stage 1 Requisition and template defaults. Pricing remains strictly downstream in Vendor Quotations and Comparative Statements (CS).
+> 2. **Physical Stock Check Without Computer Inventory**: Currently, there is no computer inventory database. During Stage 2 (`Check Stock`), the store in-charge conducts a physical inspection of bins/shelves, records the physically verified count (`Physical Stock Found`) and `Bin / Shelf Location`, which serves as the baseline for upcoming daily store audits.
+> 3. **Stage-Wise Quantity Revision**: The store in-charge can adjust the requested quantity based on the specific work/purpose (e.g., requested 10 bags, store approves 8 bags: 5 from physical store, 3 to purchase) with a required revision note. Downstream purchasers can also adjust quantity if MOQ or packaging requires it, while preserving original requested quantity for audit comparison.
+> 4. **Intelligent Indent Split & Auto-Spawning**: Once Stage 2 is submitted, items are split into:
+>    - **Store Dispatch**: Automatically spawns a linked `STORE_TO_SITE_DISPATCH` workflow for items available in the store.
+>    - **Purchase Indent**: Automatically spawns a linked `INDENT_PURCHASE` workflow for items requiring procurement.
+>    - **Hold / Archive**: Items deferred with reason preserved in the audit log.
 
 ---
 
-## 2. User Experience & Visual Design
+### 1. Overview & Core Concept
+
+- **What It Does**:
+  - **Stage 1 (Site Engineer / Requester)**: Simple, rate-free requisition slip capturing `Item Description`, `Requested Qty`, `Unit`, `Work / Purpose Details` (e.g., "Pier 4 foundation concreting"), and `Remarks`.
+  - **Stage 2 (Store In-Charge)**: Physical store check modal where the store manager records physical count found on the shelf, assesses the work necessity, revises/approves the total quantity, and allocates items into **Store Stock**, **Purchase Indent**, and **Hold/Archive**.
+  - **Automated Dispatch & Purchase Routing**: Submitting Stage 2 instantly creates linked child workflows: a Store Dispatch workflow for items in stock and a Purchase Indent workflow for items to buy.
+- **Target Audience**:
+  - **Site Engineers**: Quick requisition without needing financial rates or unit costs.
+  - **Store Keepers / Process Coordinators**: Physical store check, quantity validation, and clear dispatch/procurement routing.
+  - **Management / Auditors**: Full visibility into original vs. revised quantities and reason audit log.
+
+---
+
+### 2. User Experience & Visual Design
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                       MY WORK SUMMARY & ACTIONABLE FMS                      │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  IND-2026-001-DISP  [STORE DISPATCH]                      Step 2 of 3       │
-│  Site: Sector-4 School  ·  2 Items  ·  Status: Pack Goods                   │
-│  [ Primary Action: Confirm Pack & Dispatch ]                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  IND-2026-001-PURCH [PURCHASE REQUISITION]               Step 3 of 5       │
-│  Site: Sector-4 School  ·  3 Items  ·  Status: Director L1 Selection Needed │
-│  [ Primary Action: Open L1 Selection Modal ]                                │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│ STAGE 1: MATERIAL REQUISITION (Site Engineer)                                              │
+│ [ No Rate / No Total Amount — Simplified Field Capture ]                                   │
+│  Item Description           Requested Qty   Unit     Work / Purpose Details      Remarks    │
+│  ─────────────────────────  ─────────────   ──────   ─────────────────────────   ─────────  │
+│  OPC 53 Cement              10              Bags     Pier 4 Foundation Pour      Urgent     │
+│  20mm Aggregate             15              MT       Pier 4 Foundation Pour      -          │
+│  MS Binding Wire            2               Bundles  Pier 4 Reinforcement        Standard   │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+                                           │
+                                           ▼ Submit Requisition
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│ STAGE 2: PHYSICAL STORE CHECK & TRIAGE (Store In-Charge)                                    │
+│                                                                                             │
+│  Item: OPC 53 Cement (Requested: 10 Bags for "Pier 4 Foundation Pour")                      │
+│  ┌───────────────────────────┬───────────────────────────────────────────────────────────┐  │
+│  │ Physical Check in Store:  │ Approved Qty: 8 Bags (-2 reduced: "Site already has 2")   │  │
+│  │ Physical Found: 5 Bags    ├───────────────────────────────────────────────────────────┤  │
+│  │ Bin / Shelf: Rack A-04    │ Triage Allocation:                                        │  │
+│  │                           │ • From Store Stock:    5 Bags  ──► [To Store Dispatch]    │  │
+│  │                           │ • To Purchase Indent:  3 Bags  ──► [To Purchase Process]  │  │
+│  │                           │ • Hold / Deferred:     0 Bags                             │  │
+│  └───────────────────────────┴───────────────────────────────────────────────────────────┘  │
+│                                                                                             │
+│  [✓ Submit & Generate Dispatch + Purchase Indents]                                          │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+                                           │
+                      ┌────────────────────┴────────────────────┐
+                      ▼                                         ▼
+┌──────────────────────────────────────────┐  ┌──────────────────────────────────────────┐
+│ CHILD FLOW 1: STORE MATERIAL DISPATCH    │  │ CHILD FLOW 2: PURCHASE INDENT TO PO      │
+│ Ref: BPL/STK/001-DISP                    │  │ Ref: BPL/STK/001-PUR                     │
+│ Items:                                   │  │ Items:                                   │
+│ • OPC 53 Cement: 5 Bags (Bin Rack A-04)  │  │ • OPC 53 Cement: 3 Bags                  │
+│ • 20mm Aggregate: 10 MT (Yard Bay 2)     │  │ • 20mm Aggregate: 5 MT                   │
+│                                          │  │ (Vendor Quotation & Rate CS happen here) │
+└──────────────────────────────────────────┘  └──────────────────────────────────────────┘
 ```
 
-### Visual Identity & Theme
-- **Clean Utilitarian Style**: High readability, crisp typography, generous spacing, and anti-clutter discipline.
-- **Color Palette**:
-  - Store Dispatch Track: Calm Teal/Emerald (`emerald-600` / `teal-500`)
-  - Purchase Order Track: Professional Blue (`blue-600` / `indigo-500`)
-  - Urgent Director Action: Warm Amber/Coral (`amber-600` / `orange-500`)
-- **Linear Progress Stepper**: Replaces complex nested tables with a simple 5-step visual milestone bar:
-  `1. Stock Check` &rarr; `2. Market Quotes` &rarr; `3. L1 Choice` &rarr; `4. Payment` &rarr; `5. Site Received`
+#### Key Visual & UX Patterns
+1. **Zero Financial Fields in Requisition**:
+   - Requisition entry tables show only operational and purpose columns.
+   - Clean Indian metric units dropdown (`Bags`, `MT`, `Nos`, `Liters`, `Kgs`, `Bundles`, `Boxes`, `Feet`).
+2. **Physical Store Check Cards in Stage 2**:
+   - High-contrast inspection box with emerald badges for physical verification.
+   - Dual numeric inputs: `Physical Stock Found` and `Store Bin / Shelf Ref` (e.g., "Bin C-12", "Yard Bay 1").
+   - Revision difference pill: highlights when approved quantity deviates from requested quantity (e.g., `↓ 2 Reduced`, `↑ 5 Increased`).
+3. **Allocation Row Inputs**:
+   - Live validation: `Store Qty + Purchase Qty + Hold Qty === Approved Qty`.
+   - Real-time destination indicators: `Store Dispatch (Green)`, `Purchase Indent (Amber)`, `Hold (Slate)`.
 
 ---
 
-## 3. Technical Architecture & Data Strategy
+### 3. Key Product Decisions & Trade-Offs
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           STORE REQUISITION ENTRY                           │
-│                             (Indent: 5 Items)                               │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │
-                                       ▼
-                         ┌───────────────────────────┐
-                         │   STORE MANAGER TRIAGE    │
-                         └─────────────┬─────────────┘
-                                       │
-            ┌──────────────────────────┴──────────────────────────┐
-            ▼                                                     ▼
-┌───────────────────────────────┐                     ┌───────────────────────────────┐
-│ IND-2026-001-DISP             │                     │ IND-2026-001-PURCH            │
-│ (2 Items in Stock)            │                     │ (3 Missing Items to Buy)      │
-├───────────────────────────────┤                     ├───────────────────────────────┤
-│ 1. Pack Items                 │                     │ 1. Purchaser Collects Quotes  │
-│ 2. Issue Gate Pass            │                     │ 2. Embedded L1 Selection      │
-│ 3. Site Receive & Complete    │                     │ 3. Bank/UPI Payment Modal     │
-│                               │                     │ 4. Vendor Delivery & Complete │
-└───────────────────────────────┘                     └───────────────────────────────┘
-```
-
-### Key Modules & Refactoring Areas
-
-1. **Storage & Data Layer (`src/services/storageAdapter.ts` & `src/types/fms.ts`)**:
-   - Update `splitIndentForPurchaseAndStore` to create two fully independent FMS Indent objects (`IND-xxx-DISP` and `IND-xxx-PURCH`) with distinct IDs, tracking numbers, line items, and workflow stages.
-   - Maintain a bidirectional link (`parentIndentId`, `splitSiblingId`) so managers can view the relation if desired, while the pipeline renders them as clean standalone cards.
-
-2. **FMS Pipeline & Matrix UI (`src/components/fms/FmsPipeline.tsx` & `FmsIndividualView.tsx`)**:
-   - Simplify card displays by removing redundant technical pills and overcrowded buttons.
-   - Show 1 prominent action button corresponding to the current user's role and the active stage.
-   - Add clear visual tags: `STORE DISPATCH TRACK` vs `PURCHASE TRACK`.
-
-3. **Embedded Approvals & Payment Modals (`src/components/fms/EmbeddedL1ApprovalModal.tsx` & `StageActionModal.tsx`)**:
-   - **Embedded Director L1 Selection**: Show vendor prices side-by-side with clear radio buttons and total calculations.
-   - **Embedded Bank & UPI Payment Form**: In-place beneficiary verification (check if bank details exist; if missing, upload canceled cheque for accountant), payment mode selection (NEFT/RTGS/UPI), and compulsory bill attachment.
+- **Decision 1: Physical Stock Check without Prior Database Inventory**
+  - *Chosen Approach*: Provide dedicated `physicalStockFound` and `storeBinLocation` fields directly in the Stage 2 triage grid.
+  - *Why*: Construction projects often lack real-time digital inventory balances initially. Recording the physical shelf check on each requisition creates the initial data required to launch the daily store audit and automated stock ledger later without blocking current operations.
+- **Decision 2: Elimination of Rates & Total Amount from Requisitions**
+  - *Chosen Approach*: Completely remove `Estimated Rate (₹)` and `Total Amount (₹)` from Stage 1 forms and template default columns.
+  - *Why*: Site engineers do not know current market vendor prices because bulk material rates fluctuate daily. Including fake or guessed rates damages quotation accuracy. Pricing begins at Stage 4 (Quotation & Comparative Statement).
+- **Decision 3: Stage-Wise Quantity Revision with Audit Preserving Initial Request**
+  - *Chosen Approach*: Retain `requestedQty` immutable as submitted in Stage 1, while recording `storeVerifiedQty`, `qtyRevisionReason`, and `purchaserQty`.
+  - *Why*: Prevents disputes between site engineers, store keepers, and procurement coordinators. Audit trail clearly shows what site asked for, what store approved, and why.
+- **Decision 4: Multi-Route Workflow Auto-Spawning**
+  - *Chosen Approach*: Automatically instantiate `STORE_TO_SITE_DISPATCH` for store-fulfilled quantities and `INDENT_PURCHASE` for purchase quantities, embedding reciprocal reference links (`parentFlowId` and `linkedSubFlows`).
+  - *Why*: Replaces a cumbersome, single monolithic 18-stage workflow with two focused, parallel workflows that fit real-world team roles.
 
 ---
 
-## 4. Step-by-Step Implementation Plan
+### 4. Technical Architecture & Data Strategy
 
-### Task 1: Refactor Indent Split Logic into Two Independent Indents
-- Modify `storageAdapter.ts` so that triaging an indent splits items into two completely separate records with unique IDs (`IND-xxx-DISP` and `IND-xxx-PURCH`).
-- Assign independent stage lists: Store Dispatch track gets 3 steps; Purchase Order track gets 5 steps.
+```
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                                APPLICATION STATE                                 │
+│                                                                                  │
+│   src/types/index.ts                                                             │
+│   └── FmsLineItem                                                               │
+│       ├── id, itemDescription, unit, requestedQty                                │
+│       ├── workPurpose: string                                                    │
+│       ├── physicalStockFound?: number                                            │
+│       ├── storeBinLocation?: string                                              │
+│       ├── storeVerifiedQty?: number                                              │
+│       ├── qtyRevisionReason?: string                                             │
+│       ├── storeQty: number                                                       │
+│       ├── purchaseQty: number                                                    │
+│       ├── holdQty: number                                                        │
+│       └── triageAllocation: 'STORE' | 'PURCHASE' | 'SPLIT' | 'HOLD'              │
+└────────────────────────────────────────┬─────────────────────────────────────────┘
+                                         │
+                   ┌─────────────────────┴─────────────────────┐
+                   ▼                                           ▼
+┌──────────────────────────────────────┐    ┌──────────────────────────────────────┐
+│        STAGE 1 CREATION MODAL        │    │          STAGE ACTION MODAL          │
+│       src/components/fms/            │    │         src/components/fms/          │
+│       CreateFmsModal.tsx             │    │        StageActionModal.tsx          │
+│                                      │    │                                      │
+│ • Removes Rate & Total columns       │    │ • Stage 2 Physical Check Grid        │
+│ • Renders Item, Qty, Unit,           │    │ • Approved Qty & Revision Reason     │
+│   Work/Purpose, Remarks              │    │ • Store / Purchase / Hold Triage     │
+└──────────────────────────────────────┘    └──────────────────┬───────────────────┘
+                                                               │
+                                                               ▼ On Stage 2 Submit
+                                            ┌──────────────────────────────────────┐
+                                            │            App.tsx PIPELINE          │
+                                            │                                      │
+                                            │ • Spawns STORE_TO_SITE_DISPATCH      │
+│ • Spawns INDENT_PURCHASE             │
+│ • Cross-links IDs in both flows      │
+└──────────────────────────────────────┘
+```
 
-### Task 2: Simplify FMS Pipeline Cards & Work Summary UI
-- Clean up `FmsPipeline.tsx` and `MyWorkSummaryView.tsx` to eliminate redundant options, crowded action rows, and technical jargon.
-- Introduce a clear linear step indicator and a single primary call-to-action button per card.
-
-### Task 3: Enhance Embedded L1 Director Approval Modal
-- Refine `EmbeddedL1ApprovalModal.tsx` to display multi-vendor prices clearly with radio buttons for vendor authorization.
-- Ensure clicking "Authorize L1 Vendor" automatically moves the purchase track to the Bank Payment stage.
-
-### Task 4: Integrate Embedded Bank Payment & Beneficiary Flow
-- Update `StageActionModal.tsx` / `BankPaymentsSuiteView.tsx` to handle Bank vs UPI payment selection, bill attachment validation, and beneficiary account checks directly inside the FMS modal.
-- Route payment approval directly to the Director and Accountant in the embedded modal view.
-
-### Task 5: End-to-End Verification & User Testing
-- Verify full flow from site requisition &rarr; store 2-way split &rarr; separate indents &rarr; purchaser quotes &rarr; embedded L1 radio button approval &rarr; embedded bank payment &rarr; site receipt.
-- Run applet compilation and verify zero errors.
+#### Detailed File Impact & Changes
+1. `src/types/index.ts`:
+   - Update `FmsLineItem` to include `workPurpose`, `physicalStockFound`, `storeBinLocation`, `storeVerifiedQty`, `qtyRevisionReason`, `storeQty`, `purchaseQty`, `holdQty`, and `triageAllocation`.
+   - Update `FmsInstance` to include `linkedSubFlows` and `parentFlowId`.
+2. `src/components/fms/CreateFmsModal.tsx`:
+   - Remove `Estimated Rate (₹)` and `Total Amount (₹)` from default `MULTI_ITEM_TABLE` fallback and initial state.
+   - Include `Work / Purpose Details` as standard column.
+3. `src/components/fms/StageActionModal.tsx`:
+   - In Stage 2 (`Check Stock`), render the **Physical Stock Check & Triage Grid**:
+     - Physical count found input & bin location.
+     - Approved quantity input with revision indicator (+/- difference) and reason input.
+     - Split inputs for Store, Purchase, and Hold.
+4. `src/components/fms/FmsTemplateStudioModal.tsx` & `FmsTemplateStudioPage.tsx`:
+   - Update default columns placeholder for `MULTI_ITEM_TABLE` to:
+     `Item Description, Quantity, Unit, Work / Purpose Details, Remarks`.
+5. `src/App.tsx`:
+   - In `handleStageActionSubmit` / `handleStageAdvance`, detect completion of Stage 2 for `CHECK_STOCK` flow.
+   - Automatically create the linked child instances for Store Dispatch and Purchase Indent.
+   - Cross-link the references and provide direct navigation buttons.
 
 ---
 
-## Verification Checklist
-- [ ] Store triage splits a 5-item request into 2 completely separate indents in the pipeline.
-- [ ] Non-technical user interface shows clear step indicators and single primary action buttons.
-- [ ] Director completes L1 comparative selection with a radio button directly in an embedded modal.
-- [ ] Purchaser/Director executes bank payment & bill upload inside an embedded modal on the FMS screen.
-- [ ] All code compiles cleanly without errors.
+### 5. Ordered Implementation Tasks
+
+| Task ID | Component / File | Purpose | Test / Verification |
+|---|---|---|---|
+| **TASK-1** | `src/types/index.ts` | Extend `FmsLineItem` and `FmsInstance` with physical check and triage fields | TypeScript compile check |
+| **TASK-2** | `CreateFmsModal.tsx`, `FmsTemplateStudioModal.tsx`, `FmsTemplateStudioPage.tsx` | Remove `Estimated Rate` and `Total Amount` from Stage 1 requisition and template defaults | Open New FMS -> Multi-item table has no rate columns |
+| **TASK-3** | `StageActionModal.tsx` | Implement Stage 2 Physical Stock Check & Qty Revision triage grid | Open Stage 2 Check Stock -> Verify physical count, bin, approved qty, reason, and split inputs |
+| **TASK-4** | `App.tsx` | Handle Stage 2 completion: auto-spawn linked Store Dispatch & Purchase Indent flows | Complete Stage 2 with 5 Store / 3 Purchase -> Verify 2 child flows spawned with correct items |
+| **TASK-5** | `FmsPipeline.tsx` & `StageActionModal.tsx` | Render linked sub-flow cards and audit breakdown summary | Click on parent requisition -> See child flow cards with status and direct jump links |
+| **TASK-6** | Global Build & QA | Run `compile_applet` and `lint_applet` for full zero-error verification | 0 build/lint errors |

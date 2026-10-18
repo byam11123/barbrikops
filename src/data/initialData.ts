@@ -511,8 +511,35 @@ export const FMS_CHECK_STOCK_STAGES: FmsStageDefinition[] = [
     whoRole: 'REQUESTER / STORE MANAGER',
     whoDefaultAssignee: 'Amanat Bharadwaj',
     howChannel: 'IN-APP FORM / REQUISITION SLIP',
-    slaHours: 1,
-    hasYesNoDecision: false
+    slaHours: 0,
+    hasYesNoDecision: false,
+    fields: [
+      {
+        id: 'requisitionItems',
+        label: 'Material Requisition Items',
+        type: 'MULTI_ITEM_TABLE',
+        required: true,
+        columns: [
+          { key: 'item_description', label: 'Item Description', type: 'TEXT' },
+          { key: 'quantity', label: 'Quantity', type: 'NUMBER' },
+          { key: 'unit', label: 'Unit', type: 'TEXT' },
+          { key: 'work_purpose', label: 'Work / Purpose Details', type: 'TEXT' },
+          { key: 'remarks', label: 'Remarks', type: 'TEXT' }
+        ]
+      },
+      {
+        id: 'workPurpose',
+        label: 'Work / Activity Purpose Details',
+        type: 'TEXT',
+        placeholder: 'e.g. Pier 4 foundation pour, road sub-base, camp electrical repair'
+      },
+      {
+        id: 'remarks',
+        label: 'Requester Notes / Remarks',
+        type: 'TEXTAREA',
+        placeholder: 'Additional delivery urgency, site access note, or instructions...'
+      }
+    ]
   },
   {
     stageId: 'STG-STK-02',
@@ -523,7 +550,15 @@ export const FMS_CHECK_STOCK_STAGES: FmsStageDefinition[] = [
     whoDefaultAssignee: 'Amanat Bharadwaj',
     howChannel: 'WHATSAPP / EMAIL / PHYSICALLY',
     slaHours: 4,
-    hasYesNoDecision: false
+    hasYesNoDecision: false,
+    fields: [
+      {
+        id: 'storeKeeperRemarks',
+        label: 'Store Keeper Inspection & Handover Notes',
+        type: 'TEXTAREA',
+        placeholder: 'Enter physical inspection summary, bin status, or dispatch handover remarks...'
+      }
+    ]
   },
   {
     stageId: 'STG-STK-03',
@@ -591,11 +626,12 @@ export const FMS_STANDARD_PURCHASE_STAGES: FmsStageDefinition[] = [
     stageId: 'STG-02',
     stageNumber: 2,
     name: 'DEGRADED MATERIAL CHECK',
-    what: 'Is any parts/item details required to be filled in Return of Degraded Material sheet?',
-    whoRole: 'ASST. MANAGER PURCHASE & STORE',
+    what: 'Is there any degraded / damaged material to return? (Check point)',
+    whoRole: 'PURCHASE EXECUTIVE',
     whoDefaultAssignee: 'Bramhanand Patel',
     howChannel: 'WHATSAPP / CALL / PHYSICAL',
     slaHours: 1,
+    isCheckpoint: true,
     hasYesNoDecision: true
   },
   {
@@ -624,12 +660,12 @@ export const FMS_STANDARD_PURCHASE_STAGES: FmsStageDefinition[] = [
   {
     stageId: 'STG-05',
     stageNumber: 5,
-    name: 'GET QUOTATION',
-    what: 'Solicit preliminary vendor quotations',
+    name: 'SEND FOR QUOTATIONS',
+    what: 'Solicit preliminary vendor quotations and auto-create Comparative Statement (CS)',
     whoRole: 'ASST. MANAGER PURCHASE & STORE',
     whoDefaultAssignee: 'Bramhanand Patel',
-    howChannel: 'WHATSAPP / CALL / MANUAL SHEET',
-    slaHours: 25,
+    howChannel: 'IN-APP COMPARATIVE SHEET',
+    slaHours: 12,
     hasYesNoDecision: false
   },
   {
@@ -648,7 +684,7 @@ export const FMS_STANDARD_PURCHASE_STAGES: FmsStageDefinition[] = [
     stageId: 'STG-07',
     stageNumber: 7,
     name: 'GET OTHER QUOTATION',
-    what: 'Collect secondary / comparative vendor quotes',
+    what: 'Collect secondary / comparative vendor quotes into CS Sheet',
     whoRole: 'ASST. MANAGER PURCHASE & STORE',
     whoDefaultAssignee: 'Bramhanand Patel',
     howChannel: 'WHATSAPP / CALL / MANUAL SHEET',
@@ -658,11 +694,11 @@ export const FMS_STANDARD_PURCHASE_STAGES: FmsStageDefinition[] = [
   {
     stageId: 'STG-08',
     stageNumber: 8,
-    name: 'L1 APPROVAL',
-    what: 'L1 vendor selection & purchase authorization',
-    whoRole: 'ASST. MANAGER PURCHASE & STORE',
-    whoDefaultAssignee: 'Bramhanand Patel',
-    howChannel: 'WHATSAPP / CALL / MANUAL SHEET',
+    name: 'APPROVAL FROM DIRECTOR',
+    what: 'Director item-wise vendor selection & L1 purchase authorization',
+    whoRole: 'DIRECTOR / FINANCE HEAD',
+    whoDefaultAssignee: 'Pranjal Agrawal',
+    howChannel: 'IN-APP CS DIRECTOR APPROVAL',
     slaHours: 2,
     hasYesNoDecision: false
   },
@@ -694,9 +730,9 @@ export const FMS_STANDARD_PURCHASE_STAGES: FmsStageDefinition[] = [
     stageId: 'STG-11',
     stageNumber: 11,
     name: 'SEND FOR PAYMENT',
-    what: 'Submit approval dossier to accounts for disbursement',
-    whoRole: 'PURCHASE EXECUTIVE',
-    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    what: 'Submit approval dossier to accounts for disbursement (Account / UPI)',
+    whoRole: 'ACCOUNTS / FINANCE',
+    whoDefaultAssignee: 'Pranjal Agrawal / Accounts Team',
     howChannel: 'PAYMENT APPROVAL SHEET / ONLINE PAYMENT',
     slaHours: 1,
     hasYesNoDecision: false
@@ -724,7 +760,7 @@ export const FMS_PO_PAYMENT_STAGES: FmsStageDefinition[] = [
     whoRole: 'FINANCE / EA',
     whoDefaultAssignee: 'Pranjal Agrawal / Khushboo',
     howChannel: 'WHATSAPP / CALL / MANUAL',
-    slaHours: 1,
+    slaHours: 0,
     isCheckpoint: true,
     hasYesNoDecision: true
   },
@@ -903,7 +939,7 @@ export const FMS_BENEFICIARY_APPROVAL_STAGES: FmsStageDefinition[] = [
     whoRole: 'FINANCE APPROVER',
     whoDefaultAssignee: 'Pranjal Agrawal / Khushboo Sahu',
     howChannel: 'WHATSAPP / CALL / MANUAL',
-    slaHours: 1,
+    slaHours: 0,
     isCheckpoint: true,
     hasYesNoDecision: false
   },
@@ -1141,7 +1177,7 @@ export const FMS_SITE_RECEIVE_STAGES: FmsStageDefinition[] = [
     whoRole: 'STORE INCHARGE',
     whoDefaultAssignee: 'Site Store Incharge (Amanat / Siladehi Incharge)',
     howChannel: 'WHATSAPP/EMAIL',
-    slaHours: 12,
+    slaHours: 0,
     hasYesNoDecision: false
   },
   {
@@ -1364,7 +1400,7 @@ export const FMS_ACCOUNTS_INVOICE_COLLECTION_STAGES: FmsStageDefinition[] = [
     whoRole: 'ACCOUNT MANAGER',
     whoDefaultAssignee: 'Byamkesh Kaiwartya / Accounts',
     howChannel: 'WHATSAPP/EMAIL/PHYSICAL',
-    slaHours: 24,
+    slaHours: 0,
     hasYesNoDecision: false
   },
   {
@@ -1445,7 +1481,7 @@ export const FMS_HR_ATTENDANCE_PAYMENT_STAGES: FmsStageDefinition[] = [
     whoRole: 'SITE INCHARGE',
     whoDefaultAssignee: 'Site Incharge',
     howChannel: 'WHATSAPP/CALL',
-    slaHours: 4,
+    slaHours: 0,
     hasYesNoDecision: false
   },
   {
@@ -1570,7 +1606,7 @@ export const FMS_BREAKDOWN_REPORTING_STAGES: FmsStageDefinition[] = [
     whoRole: 'SITE MECHANIC',
     whoDefaultAssignee: 'Site Mechanic',
     howChannel: 'WHATSAPP/CALL',
-    slaHours: 1,
+    slaHours: 0,
     hasYesNoDecision: false
   },
   {
@@ -1729,7 +1765,7 @@ export const FMS_EQUIPMENT_PART_REPAIR_STAGES: FmsStageDefinition[] = [
     whoRole: 'PURCHASE MANAGER (BRAMHANAND PATEL)',
     whoDefaultAssignee: 'Bramhanand Patel',
     howChannel: 'IN-APP FORM',
-    slaHours: 3,
+    slaHours: 0,
     hasYesNoDecision: false
   },
   {
@@ -1933,7 +1969,7 @@ export const FMS_DPR_REPORTING_STAGES: FmsStageDefinition[] = [
     whoRole: 'PLANNING / DPR INCHARGE (KHILESH)',
     whoDefaultAssignee: 'Khilesh',
     howChannel: 'WHATSAPP/CALL',
-    slaHours: 3,
+    slaHours: 0,
     isCheckpoint: true,
     hasYesNoDecision: false
   },
@@ -4912,13 +4948,13 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     description: '12-stage requisition, RFQ quotation, approval & PO generation process.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
-    stages: FMS_STANDARD_PURCHASE_STAGES.map((s) => ({
+    stages: FMS_STANDARD_PURCHASE_STAGES.map((s, idx) => ({
       stageId: s.stageId,
       stageName: s.name,
       whoRole: s.whoRole,
       whoDefaultAssignee: s.whoDefaultAssignee,
       howChannel: s.howChannel,
-      slaHours: s.slaHours,
+      slaHours: idx === 0 ? 0 : s.slaHours,
     })),
   },
   {
@@ -4931,13 +4967,15 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     description: '6-stage site store inventory verification, stock availability check, and material requisition.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
-    stages: FMS_CHECK_STOCK_STAGES.map((s) => ({
+    stages: FMS_CHECK_STOCK_STAGES.map((s, idx) => ({
       stageId: s.stageId,
       stageName: s.name,
       whoRole: s.whoRole,
       whoDefaultAssignee: s.whoDefaultAssignee,
       howChannel: s.howChannel,
-      slaHours: s.slaHours,
+      slaHours: idx === 0 ? 0 : s.slaHours,
+      fields: s.fields,
+      hasYesNoDecision: s.hasYesNoDecision,
     })),
   },
   {
@@ -4950,13 +4988,13 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     description: '14-stage accounts voucher creation, multi-level verification, bank account/UPI payment route.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
-    stages: FMS_PO_PAYMENT_STAGES.map((s) => ({
+    stages: FMS_PO_PAYMENT_STAGES.map((s, idx) => ({
       stageId: s.stageId,
       stageName: s.name,
       whoRole: s.whoRole,
       whoDefaultAssignee: s.whoDefaultAssignee,
       howChannel: s.howChannel,
-      slaHours: s.slaHours,
+      slaHours: idx === 0 ? 0 : s.slaHours,
     })),
   },
   {
@@ -4969,13 +5007,13 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     description: '3-stage bank beneficiary registration, director signoff & net-banking activation verification.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
-    stages: FMS_BENEFICIARY_APPROVAL_STAGES.map((s) => ({
+    stages: FMS_BENEFICIARY_APPROVAL_STAGES.map((s, idx) => ({
       stageId: s.stageId,
       stageName: s.name,
       whoRole: s.whoRole,
       whoDefaultAssignee: s.whoDefaultAssignee,
       howChannel: s.howChannel,
-      slaHours: s.slaHours,
+      slaHours: idx === 0 ? 0 : s.slaHours,
     })),
   },
   {
@@ -4988,13 +5026,13 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     description: '10-stage vendor dispatch tracking, LR verification, gate entry & warehouse intake.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
-    stages: FMS_PURCHASE_TO_STORE_DISPATCH_STAGES.map((s) => ({
+    stages: FMS_PURCHASE_TO_STORE_DISPATCH_STAGES.map((s, idx) => ({
       stageId: s.stageId,
       stageName: s.name,
       whoRole: s.whoRole,
       whoDefaultAssignee: s.whoDefaultAssignee,
       howChannel: s.howChannel,
-      slaHours: s.slaHours,
+      slaHours: idx === 0 ? 0 : s.slaHours,
     })),
   },
   {
@@ -5007,13 +5045,13 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     description: '8-stage central warehouse issue voucher, loading, transit & site store gate receipt.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
-    stages: FMS_STORE_TO_SITE_DISPATCH_STAGES.map((s) => ({
+    stages: FMS_STORE_TO_SITE_DISPATCH_STAGES.map((s, idx) => ({
       stageId: s.stageId,
       stageName: s.name,
       whoRole: s.whoRole,
       whoDefaultAssignee: s.whoDefaultAssignee,
       howChannel: s.howChannel,
-      slaHours: s.slaHours,
+      slaHours: idx === 0 ? 0 : s.slaHours,
     })),
   },
   {
@@ -5026,13 +5064,13 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     description: '8-stage material receipt note (MRN), physical inspection, quality check & store register entry.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
-    stages: FMS_SITE_RECEIVE_STAGES.map((s) => ({
+    stages: FMS_SITE_RECEIVE_STAGES.map((s, idx) => ({
       stageId: s.stageId,
       stageName: s.name,
       whoRole: s.whoRole,
       whoDefaultAssignee: s.whoDefaultAssignee,
       howChannel: s.howChannel,
-      slaHours: s.slaHours,
+      slaHours: idx === 0 ? 0 : s.slaHours,
     })),
   },
   {
@@ -5045,13 +5083,13 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     description: '7-stage payment confirmation, vendor dispatch advice, lorry receipt collection & clearance.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
-    stages: FMS_PAYMENT_TO_DISPATCH_STAGES.map((s) => ({
+    stages: FMS_PAYMENT_TO_DISPATCH_STAGES.map((s, idx) => ({
       stageId: s.stageId,
       stageName: s.name,
       whoRole: s.whoRole,
       whoDefaultAssignee: s.whoDefaultAssignee,
       howChannel: s.howChannel,
-      slaHours: s.slaHours,
+      slaHours: idx === 0 ? 0 : s.slaHours,
     })),
   },
   {
@@ -5064,13 +5102,13 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     description: '6-stage tax invoice collection, GSTR 2B reconciliation, 3-way matching & accounts posting.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
-    stages: FMS_ACCOUNTS_INVOICE_COLLECTION_STAGES.map((s) => ({
+    stages: FMS_ACCOUNTS_INVOICE_COLLECTION_STAGES.map((s, idx) => ({
       stageId: s.stageId,
       stageName: s.name,
       whoRole: s.whoRole,
       whoDefaultAssignee: s.whoDefaultAssignee,
       howChannel: s.howChannel,
-      slaHours: s.slaHours,
+      slaHours: idx === 0 ? 0 : s.slaHours,
     })),
   },
   {
@@ -5083,13 +5121,13 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     description: '9-stage daily site labour muster roll, wage calculation, site engineer approval & payout.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
-    stages: FMS_HR_ATTENDANCE_PAYMENT_STAGES.map((s) => ({
+    stages: FMS_HR_ATTENDANCE_PAYMENT_STAGES.map((s, idx) => ({
       stageId: s.stageId,
       stageName: s.name,
       whoRole: s.whoRole,
       whoDefaultAssignee: s.whoDefaultAssignee,
       howChannel: s.howChannel,
-      slaHours: s.slaHours,
+      slaHours: idx === 0 ? 0 : s.slaHours,
     })),
   },
   {
@@ -5102,13 +5140,13 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     description: '13-stage plant machinery breakdown alert, mechanic assignment, spares indent, repair & job card.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
-    stages: FMS_BREAKDOWN_REPORTING_STAGES.map((s) => ({
+    stages: FMS_BREAKDOWN_REPORTING_STAGES.map((s, idx) => ({
       stageId: s.stageId,
       stageName: s.name,
       whoRole: s.whoRole,
       whoDefaultAssignee: s.whoDefaultAssignee,
       howChannel: s.howChannel,
-      slaHours: s.slaHours,
+      slaHours: idx === 0 ? 0 : s.slaHours,
     })),
   },
   {
@@ -5121,13 +5159,13 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     description: '18-stage heavy equipment component overhaul, workshop dispatch, quotation, repair & testing.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
-    stages: FMS_EQUIPMENT_PART_REPAIR_STAGES.map((s) => ({
+    stages: FMS_EQUIPMENT_PART_REPAIR_STAGES.map((s, idx) => ({
       stageId: s.stageId,
       stageName: s.name,
       whoRole: s.whoRole,
       whoDefaultAssignee: s.whoDefaultAssignee,
       howChannel: s.howChannel,
-      slaHours: s.slaHours,
+      slaHours: idx === 0 ? 0 : s.slaHours,
     })),
   },
   {
@@ -5140,13 +5178,13 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     description: '6-stage site engineer daily execution log, machinery hours, material usage & project manager sign-off.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
-    stages: FMS_DPR_REPORTING_STAGES.map((s) => ({
+    stages: FMS_DPR_REPORTING_STAGES.map((s, idx) => ({
       stageId: s.stageId,
       stageName: s.name,
       whoRole: s.whoRole,
       whoDefaultAssignee: s.whoDefaultAssignee,
       howChannel: s.howChannel,
-      slaHours: s.slaHours,
+      slaHours: idx === 0 ? 0 : s.slaHours,
     })),
   },
 ];

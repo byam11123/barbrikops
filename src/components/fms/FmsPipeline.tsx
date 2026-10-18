@@ -231,15 +231,12 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
     setConfirmDeleteRecordId(null);
   };
 
-  // Stage display filter: User should see only his stage by default!
-  const [stageFilterMode, setStageFilterMode] = useState<'MY_STAGES' | 'ALL_STAGES'>('MY_STAGES');
+  // Stage display filter: Default to showing all workflow stages for complete visibility
+  const [stageFilterMode, setStageFilterMode] = useState<'MY_STAGES' | 'ALL_STAGES'>('ALL_STAGES');
 
   useEffect(() => {
     if (!isAdminOrSuperAdmin) {
-      setStageFilterMode('MY_STAGES');
       setViewModeTab('RUNNING_PIPELINE');
-    } else {
-      setStageFilterMode(viewScope === 'USER_ONLY' ? 'MY_STAGES' : 'ALL_STAGES');
     }
   }, [viewScope, isAdminOrSuperAdmin]);
 
@@ -710,12 +707,35 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
       // Standard sequential progression for DPR (Stages 1 through 6)
       nextIndex = flow.currentStageIndex + 1;
     } else {
-      // INDENT_PURCHASE Rules:
-      if (currentStage.stageId === 'STG-02' && decision === 'No') {
+      // INDENT_PURCHASE Rules (Synced with App.handleAdvanceCurrentStage):
+      const isStoreAvailabilityStage = currentStage.stageId === 'STG-IND-02' || currentStage.stageName.toUpperCase().includes('AVAILABLE IN STORE');
+      const isDegradedMaterialCheck = currentStage.stageName.toUpperCase().includes('DEGRADED') || (currentStage.stageId === 'STG-02' && !isStoreAvailabilityStage);
+
+      // 1. Degraded Material Check (Stage 2 in standard purchase flows)
+      if (isDegradedMaterialCheck && decision === 'No') {
         if (updatedStages[2]) {
           updatedStages[2].status = 'Skipped';
-          updatedStages[2].notes = 'Skipped: No degraded materials returned';
-          nextIndex = 3;
+          updatedStages[2].notes = 'Skipped: No degraded material to return';
+        }
+        nextIndex = 3; // Skip Stage 3 (RETURN OF DEGRADED MATERIAL) and jump directly to Stage 4 (PURCHASE APPROVAL)
+      } else if (isStoreAvailabilityStage) {
+        // 2. Store Availability Check (Construction Operations Flow)
+        const availChoice = (decision || 'PARTIAL').toString().toUpperCase();
+        if (availChoice === 'ALL') {
+          // ALL items in store -> skip quotation & purchase stages (stages 2 through 10), jump directly to Store Dispatch
+          for (let sIdx = 2; sIdx < updatedStages.length - 1; sIdx++) {
+            if (updatedStages[sIdx]) {
+              updatedStages[sIdx].status = 'Skipped';
+              updatedStages[sIdx].notes = 'Skipped: All items available in store inventory, direct site dispatch issued';
+            }
+          }
+          nextIndex = updatedStages.length - 1; // Stage 12: MATERIAL COLLECTION / DISPATCH
+        } else if (availChoice === 'NONE') {
+          // NONE in store -> proceed sequentially to Purchase Approval & Vendor Quotations
+          nextIndex = flow.currentStageIndex + 1;
+        } else {
+          // PARTIAL: Store records available items, dispatches them, balance proceeds to Purchase
+          nextIndex = flow.currentStageIndex + 1;
         }
       }
 

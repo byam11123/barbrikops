@@ -267,7 +267,7 @@ export function getUserModulePermission(
   if (moduleId === 'registry' || moduleId === 'audit' || moduleId === 'super-admin') {
     return { visible: false, canEdit: false, canDelete: false };
   }
-  if (['fms', 'delegation', 'checklist', 'ims', 'fms-audit'].includes(moduleId)) {
+  if (['fms', 'delegation', 'checklist', 'ims', 'fms-audit', 'template-studio'].includes(moduleId)) {
     return { visible: true, canEdit: true, canDelete: false };
   }
   if (moduleId === 'vendor-directory') {
@@ -404,14 +404,24 @@ export interface FmsStageDefinition {
   fields?: FmsStageFieldConfig[];
 }
 
+export interface FmsStageFieldColumnConfig {
+  key: string;
+  label: string;
+  type?: 'TEXT' | 'NUMBER' | 'SELECT';
+  options?: string[];
+  placeholder?: string;
+  defaultValue?: string;
+}
+
 export interface FmsStageFieldConfig {
   id: string;
   label: string;
-  type: 'TEXT' | 'NUMBER' | 'SELECT' | 'APPROVAL' | 'STATUS_DONE' | 'URL' | 'TEXTAREA' | 'DATE' | 'FILE';
+  type: 'TEXT' | 'NUMBER' | 'SELECT' | 'APPROVAL' | 'STATUS_DONE' | 'URL' | 'TEXTAREA' | 'DATE' | 'FILE' | 'CHECKBOX' | 'MULTI_ITEM_TABLE';
   options?: string[];
   required?: boolean;
   defaultValue?: string;
   placeholder?: string;
+  columns?: FmsStageFieldColumnConfig[];
 }
 
 export interface FmsStageLogicConfig {
@@ -539,16 +549,31 @@ export interface FmsLineItem {
   id: string;
   itemDescription: string;
   qty: number;
+  requestedQty?: number;
   unit: string;
   urgency?: 'NORMAL' | 'URGENT' | 'HIGH';
   remark?: string;
-  triageAllocation?: 'STORE_DISPATCH' | 'PURCHASE_REQUISITION' | 'HELD_ARCHIVED';
+  remarks?: string;
+  workPurpose?: string; // Specific work/site task (e.g. "Pier 4 foundation pour")
+
+  // Stage 2 Store Physical Check & Revision
+  physicalStockFound?: number; // Physical count verified in store bin/shelf
+  storeBinLocation?: string; // Physical location/bin in store
+  storeVerifiedQty?: number; // Revised approved quantity after store assessment
+  qtyRevisionReason?: string; // Reason if quantity is reduced or increased
+
+  // Triage Allocations
+  storeQty?: number; // Fulfilled from physical store stock -> Routes to Store Dispatch
+  purchaseQty?: number; // Allocated to procurement -> Routes to Purchase Indent
+  holdQty?: number; // Put on hold / deferred
+  triageAllocation?: 'STORE' | 'PURCHASE' | 'SPLIT' | 'HOLD' | 'STORE_DISPATCH' | 'PURCHASE_REQUISITION' | 'HELD_ARCHIVED';
   storeStockQtyAvailable?: number;
   purchaseQtyRequired?: number;
   vendorQuotes?: FmsVendorQuote[];
   selectedL1Vendor?: string;
   selectedL1Amount?: number;
   status?: 'PENDING_TRIAGE' | 'IN_STORE_DISPATCH' | 'IN_PURCHASE_QUOTE' | 'L1_APPROVED' | 'PURCHASED' | 'DELIVERED_TO_SITE' | 'ARCHIVED';
+  purchaserQty?: number;
 }
 
 export interface FmsInstance {
@@ -579,6 +604,19 @@ export interface FmsInstance {
   // Universal Form Inheritance & Data Cascade Pool across stages:
   instanceDataPool?: Record<string, any>;
   lineItems?: FmsLineItem[];
+  linkedSubFlows?: {
+    type: 'STORE_DISPATCH' | 'PURCHASE' | 'HOLD';
+    id: string;
+    flowType: string;
+    name: string;
+    indentNo?: string;
+    itemCount: number;
+    status: string;
+    createdAt?: string;
+  }[];
+  parentFlowId?: string;
+  parentFlowType?: string;
+  parentFlowIndentNo?: string;
   subTracks?: {
     storeDispatchTrack?: FmsStageExecution[];
     purchaseTrack?: FmsStageExecution[];
@@ -618,6 +656,14 @@ export interface FmsInstance {
   beneficiaryBankName?: string;
   beneficiaryPurpose?: string;
   cancelledChequeUrl?: string;
+  // Module links:
+  comparativeSheetId?: string;
+  linkedModuleRecord?: {
+    moduleType: 'COMPARATIVE_SHEET' | 'BANK_PAYMENT' | 'PO' | 'DISPATCH' | string;
+    recordId: string;
+    recordNumber?: string;
+    metadata?: Record<string, any>;
+  };
 }
 
 // IMS (Inventory Management System)
@@ -718,7 +764,7 @@ export interface AuditLogEntry {
   timestamp: string;
   userId: string;
   userName: string;
-  module: 'FMS' | 'DELEGATION' | 'CHECKLIST' | 'IMS' | 'REGISTRY';
+  module: 'FMS' | 'DELEGATION' | 'CHECKLIST' | 'IMS' | 'REGISTRY' | 'COMPARATIVE_SHEET' | 'BANKING' | 'VENDOR';
   action: 'CREATE' | 'UPDATE' | 'DELETE' | 'STAGE_ADVANCE' | 'REVISE_DATE' | 'STATUS_CHANGE' | 'STOCK_MOVEMENT';
   entityId: string;
   details: string;

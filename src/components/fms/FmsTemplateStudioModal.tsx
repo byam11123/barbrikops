@@ -46,6 +46,7 @@ import {
 import { storageAdapter } from '../../services/storageAdapter';
 
 const SLA_PRESETS = [
+  { value: 0, label: 'Whenever Needed (No SLA Limit)' },
   { value: 1, label: '+1 Hour (Fast-Track / Bank approval)' },
   { value: 2, label: '+2 Hours' },
   { value: 3, label: '+3 Hours' },
@@ -61,7 +62,6 @@ const SLA_PRESETS = [
   { value: 72, label: '+72 Hours (3 Days)' },
   { value: 120, label: '+120 Hours (5 Days)' },
   { value: 168, label: '+168 Hours (7 Days / 1 Week)' },
-  { value: 0, label: 'Whenever Needed (No SLA Limit)' },
 ];
 
 interface WhenSlaSelectorProps {
@@ -207,7 +207,7 @@ export const getTargetStage1Info = (templateKey: string): TargetStage1Info => {
         stage1Name: 'Payment Request Initiation & Voucher Entry',
         whoRole: 'FINANCE / EA / PURCHASER',
         whoDefaultAssignee: 'Pranjal Agrawal / Khushboo',
-        slaHours: 1,
+        slaHours: 0,
         howChannel: 'ACCOUNTS PAYMENT SHEET / FORM',
         fields: [
           { id: 'sheetNo', label: 'Sheet / Voucher Ref No.', type: 'TEXT', required: true, defaultSourceField: 'poNumber' },
@@ -237,7 +237,7 @@ export const getTargetStage1Info = (templateKey: string): TargetStage1Info => {
         stage1Name: 'Indent Stock Check & Bin Count Verification',
         whoRole: 'STORE KEEPER',
         whoDefaultAssignee: 'Mahesh Verma',
-        slaHours: 1,
+        slaHours: 0,
         howChannel: 'STORE APP / GOOGLE FORM',
         fields: [
           { id: 'indentNo', label: 'Indent Requisition Number', type: 'TEXT', required: true, defaultSourceField: 'indentNo' },
@@ -261,7 +261,7 @@ export const getTargetStage1Info = (templateKey: string): TargetStage1Info => {
         stage1Name: 'Dispatch Order & Gate Pass Generation',
         whoRole: 'STORE KEEPER',
         whoDefaultAssignee: 'Mahesh Verma',
-        slaHours: 2,
+        slaHours: 0,
         howChannel: 'GATE PASS SYSTEM',
         fields: [
           { id: 'dispatchChallanNo', label: 'Dispatch / Gate Pass Number', type: 'TEXT', required: true, defaultSourceField: 'challanNo' },
@@ -286,7 +286,7 @@ export const getTargetStage1Info = (templateKey: string): TargetStage1Info => {
         stage1Name: 'Vendor Shipment Dispatch Tracking',
         whoRole: 'PURCHASE EXECUTIVE',
         whoDefaultAssignee: 'Shyam Rao Sureshe',
-        slaHours: 2,
+        slaHours: 0,
         howChannel: 'WHATSAPP / LOGISTICS FORM',
         fields: [
           { id: 'poNumber', label: 'Purchase Order Reference', type: 'TEXT', required: true, defaultSourceField: 'poNumber' },
@@ -310,7 +310,7 @@ export const getTargetStage1Info = (templateKey: string): TargetStage1Info => {
         stage1Name: 'Payment Confirmation & Vendor Dispatch Advice',
         whoRole: 'ACCOUNTS EXECUTIVE',
         whoDefaultAssignee: 'Pranjal Agrawal',
-        slaHours: 1,
+        slaHours: 0,
         howChannel: 'ACCOUNTS DASHBOARD',
         fields: [
           { id: 'poNumber', label: 'Purchase Order Reference', type: 'TEXT', required: true, defaultSourceField: 'poNumber' },
@@ -333,7 +333,7 @@ export const getTargetStage1Info = (templateKey: string): TargetStage1Info => {
         stage1Name: 'Material Receipt Note (MRN) & Unloading Inspection',
         whoRole: 'SITE STORE IN-CHARGE',
         whoDefaultAssignee: 'Suresh Kumar',
-        slaHours: 2,
+        slaHours: 0,
         howChannel: 'MRN MOBILE FORM',
         fields: [
           { id: 'mrnNumber', label: 'MRN Entry Number', type: 'TEXT', required: true, defaultSourceField: 'mrnNo' },
@@ -357,7 +357,7 @@ export const getTargetStage1Info = (templateKey: string): TargetStage1Info => {
         stage1Name: 'Tax Invoice Entry & GST Portal Verification',
         whoRole: 'ACCOUNTS CLERK',
         whoDefaultAssignee: 'Khushboo',
-        slaHours: 4,
+        slaHours: 0,
         howChannel: 'TAX INVOICE MODULE',
         fields: [
           { id: 'invoiceNumber', label: 'Tax Invoice Number', type: 'TEXT', required: true, defaultSourceField: 'invoiceNo' },
@@ -383,7 +383,7 @@ export const getTargetStage1Info = (templateKey: string): TargetStage1Info => {
         stage1Name: 'New Purchase Indent Requisition',
         whoRole: 'SITE ENGINEER',
         whoDefaultAssignee: 'Amit Sharma',
-        slaHours: 2,
+        slaHours: 0,
         howChannel: 'INDENT REQUISITION FORM',
         fields: [
           { id: 'indentNo', label: 'Indent Requisition Number', type: 'TEXT', required: true, defaultSourceField: 'indentNo' },
@@ -1199,7 +1199,7 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
         whoRole: def.whoRole || 'Operator',
         whoDefaultAssignee: def.whoDefaultAssignee || USERS[0].name,
         howChannel: def.formUrl || def.howChannel || 'IN-APP FORM',
-        slaHours: def.slaHours || 1,
+        slaHours: idx === 0 ? 0 : (def.slaHours ?? 1),
         fields: defaultFields,
         checkpoints: defaultCheckpoints,
         subWorkflowTrigger: defaultSubWorkflowTrigger,
@@ -2103,68 +2103,97 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
                                 }}
                                 className="text-xs bg-slate-50 border border-slate-300 rounded px-2 py-1 font-medium text-slate-800 cursor-pointer"
                               >
-                                <option value="TEXT">Short Text</option>
-                                <option value="NUMBER">Amount / Number (₹)</option>
-                                <option value="SELECT">Dropdown Selection</option>
-                                <option value="DATE">Date Picker</option>
-                                <option value="APPROVAL">Approval [APPROVED/REJECTED]</option>
-                                <option value="STATUS_DONE">Check [DONE]</option>
-                                <option value="FILE">Attachment (File Upload)</option>
-                                <option value="URL">Web Link / URL</option>
-                                <option value="TEXTAREA">Long Remarks</option>
-                              </select>
+                                 <option value="TEXT">Short Text</option>
+                                 <option value="NUMBER">Amount / Number (₹)</option>
+                                 <option value="SELECT">Dropdown Selection</option>
+                                 <option value="MULTI_ITEM_TABLE">Multi-Item Grid Table (Itemized Entries)</option>
+                                 <option value="DATE">Date Picker</option>
+                                 <option value="APPROVAL">Approval [APPROVED/REJECTED]</option>
+                                 <option value="STATUS_DONE">Check [DONE]</option>
+                                 <option value="FILE">Attachment (File Upload)</option>
+                                 <option value="URL">Web Link / URL</option>
+                                 <option value="TEXTAREA">Long Remarks</option>
+                               </select>
 
-                              <label className="flex items-center gap-1 text-[11px] text-slate-600 cursor-pointer shrink-0">
-                                <input
-                                  type="checkbox"
-                                  checked={!!fld.required}
-                                  onChange={(e) => handleUpdateField(sIdx, fIdx, { required: e.target.checked })}
-                                  className="rounded text-indigo-600 cursor-pointer"
-                                />
-                                <span>Required</span>
-                              </label>
+                               <label className="flex items-center gap-1 text-[11px] text-slate-600 cursor-pointer shrink-0">
+                                 <input
+                                   type="checkbox"
+                                   checked={!!fld.required}
+                                   onChange={(e) => handleUpdateField(sIdx, fIdx, { required: e.target.checked })}
+                                   className="rounded text-indigo-600 cursor-pointer"
+                                 />
+                                 <span>Required</span>
+                               </label>
 
-                              <div className="flex items-center gap-0.5 shrink-0 ml-auto">
-                                <button
-                                  type="button"
-                                  disabled={fIdx === 0}
-                                  onClick={() => handleMoveFieldUp(sIdx, fIdx)}
-                                  className={`p-1 rounded transition-colors ${fIdx === 0 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100 cursor-pointer'}`}
-                                  title={`Move field UP to serial #${fIdx}`}
-                                >
-                                  <ArrowUp className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={fIdx === (stg.fields?.length || 0) - 1}
-                                  onClick={() => handleMoveFieldDown(sIdx, fIdx)}
-                                  className={`p-1 rounded transition-colors ${fIdx === (stg.fields?.length || 0) - 1 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100 cursor-pointer'}`}
-                                  title={`Move field DOWN to serial #${fIdx + 2}`}
-                                >
-                                  <ArrowDown className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveFieldFromStage(sIdx, fIdx)}
-                                  className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 cursor-pointer shrink-0 transition-colors"
-                                  title="Delete field"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
+                               <div className="flex items-center gap-0.5 shrink-0 ml-auto">
+                                 <button
+                                   type="button"
+                                   disabled={fIdx === 0}
+                                   onClick={() => handleMoveFieldUp(sIdx, fIdx)}
+                                   className={`p-1 rounded transition-colors ${fIdx === 0 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100 cursor-pointer'}`}
+                                   title={`Move field UP to serial #${fIdx}`}
+                                 >
+                                   <ArrowUp className="w-3.5 h-3.5" />
+                                 </button>
+                                 <button
+                                   type="button"
+                                   disabled={fIdx === (stg.fields?.length || 0) - 1}
+                                   onClick={() => handleMoveFieldDown(sIdx, fIdx)}
+                                   className={`p-1 rounded transition-colors ${fIdx === (stg.fields?.length || 0) - 1 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100 cursor-pointer'}`}
+                                   title={`Move field DOWN to serial #${fIdx + 2}`}
+                                 >
+                                   <ArrowDown className="w-3.5 h-3.5" />
+                                 </button>
+                                 <button
+                                   type="button"
+                                   onClick={() => handleRemoveFieldFromStage(sIdx, fIdx)}
+                                   className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 cursor-pointer shrink-0 transition-colors"
+                                   title="Delete field"
+                                 >
+                                   <X className="w-3.5 h-3.5" />
+                                 </button>
+                               </div>
+                             </div>
 
-                            {/* Dropdown Options Customizer */}
-                            {fld.type === 'SELECT' && (
-                              <SelectOptionsEditor
-                                key={`${fld.id || fIdx}_${sIdx}`}
-                                options={fld.options}
-                                onChange={(opts) => handleUpdateField(sIdx, fIdx, { options: opts })}
-                              />
-                            )}
+                             {/* Dropdown Options Customizer */}
+                             {fld.type === 'SELECT' && (
+                               <SelectOptionsEditor
+                                 key={`${fld.id || fIdx}_${sIdx}`}
+                                 options={fld.options}
+                                 onChange={(opts) => handleUpdateField(sIdx, fIdx, { options: opts })}
+                               />
+                             )}
 
-                            {/* Placeholder hint for Text, Number, Textarea, URL */}
-                            {(fld.type === 'TEXT' || fld.type === 'NUMBER' || fld.type === 'TEXTAREA' || fld.type === 'URL') && (
+                             {/* Multi-Item Table Columns Customizer */}
+                             {fld.type === 'MULTI_ITEM_TABLE' && (
+                               <div className="space-y-1 pt-1">
+                                 <span className="text-[10px] text-slate-500 font-bold block">
+                                   Table Column Names (Comma Separated):
+                                 </span>
+                                 <input
+                                   type="text"
+                                   value={fld.defaultValue !== undefined ? fld.defaultValue : (fld.columns && fld.columns.length > 0 ? fld.columns.map(c => c.label).join(', ') : 'Item Description, Quantity, Unit, Work / Purpose Details, Remarks')}
+                                   onChange={(e) => {
+                                     const rawVal = e.target.value;
+                                     const colLabels = rawVal.split(',').map(s => s.trim()).filter(Boolean);
+                                     const cols = colLabels.map(label => ({
+                                       key: label.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+                                       label,
+                                       type: (label.toLowerCase().includes('rate') || label.toLowerCase().includes('qty') || label.toLowerCase().includes('quantity') || label.toLowerCase().includes('amount') || label.toLowerCase().includes('price') || label.toLowerCase().includes('nos')) ? ('NUMBER' as const) : ('TEXT' as const)
+                                     }));
+                                     handleUpdateField(sIdx, fIdx, {
+                                       defaultValue: rawVal,
+                                       columns: cols
+                                     });
+                                   }}
+                                   placeholder="e.g. Item Description, Quantity, Unit, Work / Purpose Details, Remarks"
+                                   className="w-full text-xs bg-slate-50 border border-slate-300 rounded px-2.5 py-1 text-slate-800 focus:bg-white focus:ring-1 focus:ring-indigo-500 font-medium"
+                                 />
+                               </div>
+                             )}
+
+                             {/* Placeholder hint for Text, Number, Textarea, URL */}
+                             {(fld.type === 'TEXT' || fld.type === 'NUMBER' || fld.type === 'TEXTAREA' || fld.type === 'URL') && (
                               <div className="flex items-center gap-2 pt-0.5">
                                 <span className="text-[10px] text-slate-500 font-medium shrink-0">Placeholder:</span>
                                 <input

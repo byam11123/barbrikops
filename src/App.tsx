@@ -17,6 +17,8 @@ import { CreateFmsModal } from './components/fms/CreateFmsModal';
 import { FmsDetailModal } from './components/fms/FmsDetailModal';
 import { StageActionModal } from './components/fms/StageActionModal';
 import { FmsTemplateStudioModal } from './components/fms/FmsTemplateStudioModal';
+import { FmsTemplateStudioPage } from './components/fms/FmsTemplateStudioPage';
+import { FmsIndividualView } from './components/fms/FmsIndividualView';
 import { ComparativeSheetView } from './components/comparative/ComparativeSheetView';
 import { BankPaymentsSuiteView } from './components/banking/BankPaymentsSuiteView';
 import { VendorDirectoryView } from './components/vendor/VendorDirectoryView';
@@ -41,6 +43,7 @@ import {
   ChecklistItem, 
   DelegationTask, 
   FmsInstance, 
+  FmsLineItem, 
   InventoryItem, 
   InventoryMovement, 
   UserProfile, 
@@ -259,7 +262,7 @@ export default function App() {
   };
 
   const handleAddProcessRemark = (
-    module: 'FMS' | 'CHECKLIST' | 'DELEGATION',
+    module: 'FMS' | 'CHECKLIST' | 'DELEGATION' | 'BANKING',
     targetId: string,
     category: ProcessRemark['category'],
     remarkText: string,
@@ -345,7 +348,7 @@ export default function App() {
   };
 
   const handleNudgeItem = (
-    module: 'FMS' | 'CHECKLIST' | 'DELEGATION',
+    module: 'FMS' | 'CHECKLIST' | 'DELEGATION' | 'BANKING',
     targetId: string,
     stageIndex?: number
   ) => {
@@ -483,85 +486,100 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Periodic SLA Breach Evaluator
+  // Periodic SLA Breach Evaluator (runs on interval to prevent infinite state re-render loops)
   useEffect(() => {
-    if (flows.length === 0) return;
-    if (registryConfig.notificationSettings && !registryConfig.notificationSettings.enableSlaBreachAlerts) return;
+    const checkSlaBreaches = () => {
+      const currentFlows = storageAdapter.getFmsFlows();
+      if (currentFlows.length === 0) return;
+      if (registryConfig.notificationSettings && !registryConfig.notificationSettings.enableSlaBreachAlerts) return;
 
-    const existingNotifs = storageAdapter.getNotifications();
-    const now = new Date().getTime();
+      const now = new Date().getTime();
+      let notifsAdded = false;
 
-    flows.forEach((flow) => {
-      if (flow.status !== 'In Progress') return;
-      const currentStage = flow.stages[flow.currentStageIndex];
-      if (!currentStage || !currentStage.plannedDateTime) return;
+      currentFlows.forEach((flow) => {
+        if (flow.status !== 'In Progress') return;
+        const currentStage = flow.stages[flow.currentStageIndex];
+        if (!currentStage || !currentStage.plannedDateTime) return;
 
-      // Parse plannedDateTime "DD/MM/YYYY, HH:MM:SS" or similar
-      const parts = currentStage.plannedDateTime.split(/[/, :]+/);
-      if (parts.length >= 3) {
-        const day = parseInt(parts[0], 10);
-        const month = parseInt(parts[1], 10) - 1;
-        const year = parseInt(parts[2], 10);
-        const hour = parts[3] ? parseInt(parts[3], 10) : 18;
-        const minute = parts[4] ? parseInt(parts[4], 10) : 0;
-        const plannedTime = new Date(year, month, day, hour, minute).getTime();
+        // Parse plannedDateTime "DD/MM/YYYY, HH:MM:SS" or similar
+        const parts = currentStage.plannedDateTime.split(/[/, :]+/);
+        if (parts.length >= 3) {
+          const day = parseInt(parts[0], 10);
+          const month = parseInt(parts[1], 10) - 1;
+          const year = parseInt(parts[2], 10);
+          const hour = parts[3] ? parseInt(parts[3], 10) : 18;
+          const minute = parts[4] ? parseInt(parts[4], 10) : 0;
+          const plannedTime = new Date(year, month, day, hour, minute).getTime();
 
-        // Check if overdue by more than 1 hour and not yet alerted in the last 24h
-        if (now > plannedTime) {
-          const notifKey = `sla-breach-${flow.flowId}-${currentStage.stageId}`;
-          const alreadyNotified = existingNotifs.some(
-            (n) => n.data?.slaKey === notifKey && n.timestamp.includes(new Date().toLocaleDateString('en-GB'))
-          );
+          if (now > plannedTime) {
+            const notifKey = `sla-breach-${flow.flowId}-${currentStage.stageId}`;
+            const freshNotifs = storageAdapter.getNotifications();
+            const todayStr = new Date().toLocaleDateString('en-GB');
+            const alreadyNotified = freshNotifs.some(
+              (n) => n.data?.slaKey === notifKey && n.timestamp.includes(todayStr)
+            );
 
-          if (!alreadyNotified) {
-            const matchedUser = resolveTargetUser(currentStage.assignee);
-            const targetUserId = matchedUser ? matchedUser.userId : 'ALL';
-            const notifTitle = `SLA Delay: ${flow.poNumber || flow.indentNo} (${currentStage.stageName})`;
-            const notifMessage = `Stage ${flow.currentStageIndex + 1} assigned to ${currentStage.assignee || 'Operations'} is running behind schedule.`;
+            if (!alreadyNotified) {
+              const matchedUser = resolveTargetUser(currentStage.assignee);
+              const targetUserId = matchedUser ? matchedUser.userId : 'ALL';
+              const notifTitle = `SLA Delay: ${flow.poNumber || flow.indentNo} (${currentStage.stageName})`;
+              const notifMessage = `Stage ${flow.currentStageIndex + 1} assigned to ${currentStage.assignee || 'Operations'} is running behind schedule.`;
 
-            storageAdapter.addNotification({
-              userId: targetUserId,
-              title: notifTitle,
-              message: notifMessage,
-              type: 'SLA_BREACH',
-              linkTab: 'fms',
-              linkEntityId: flow.id,
-              data: { slaKey: notifKey, flowId: flow.flowId, stageId: currentStage.stageId }
-            });
-            setNotifications(storageAdapter.getNotifications());
-
-            if (targetUserId === currentUser.userId || isSuperAdmin) {
-              sendBrowserDesktopNotification({
-                title: notifTitle,
-                body: notifMessage,
-                onClick: () => {
-                  handleTabChange('fms');
-                  setSelectedFmsDetail(flow);
-                }
-              });
-            }
-
-            if (registryConfig.notificationSettings?.webhookUrl && (registryConfig.notificationSettings.enableSlaBreachAlerts ?? true)) {
-              dispatchWebhookNotification(registryConfig.notificationSettings.webhookUrl, {
-                event: 'FMS_SLA_BREACH',
+              storageAdapter.addNotification({
+                userId: targetUserId,
                 title: notifTitle,
                 message: notifMessage,
-                timestamp: new Date().toISOString(),
-                entityId: flow.flowId,
-                data: {
-                  flowId: flow.flowId,
-                  indentNo: flow.indentNo,
-                  stageName: currentStage.stageName,
-                  assignee: currentStage.assignee,
-                  plannedDateTime: currentStage.plannedDateTime,
-                }
+                type: 'SLA_BREACH',
+                linkTab: 'fms',
+                linkEntityId: flow.id,
+                data: { slaKey: notifKey, flowId: flow.flowId, stageId: currentStage.stageId }
               });
+              notifsAdded = true;
+
+              if (targetUserId === currentUser.userId || isSuperAdmin) {
+                sendBrowserDesktopNotification({
+                  title: notifTitle,
+                  body: notifMessage,
+                  onClick: () => {
+                    handleTabChange('fms');
+                    setSelectedFmsDetail(flow);
+                  }
+                });
+              }
+
+              if (registryConfig.notificationSettings?.webhookUrl && (registryConfig.notificationSettings.enableSlaBreachAlerts ?? true)) {
+                dispatchWebhookNotification(registryConfig.notificationSettings.webhookUrl, {
+                  event: 'FMS_SLA_BREACH',
+                  title: notifTitle,
+                  message: notifMessage,
+                  timestamp: new Date().toISOString(),
+                  entityId: flow.flowId,
+                  data: {
+                    flowId: flow.flowId,
+                    indentNo: flow.indentNo,
+                    stageName: currentStage.stageName,
+                    assignee: currentStage.assignee,
+                    plannedDateTime: currentStage.plannedDateTime,
+                  }
+                });
+              }
             }
           }
         }
+      });
+
+      if (notifsAdded) {
+        setNotifications(storageAdapter.getNotifications());
       }
-    });
-  }, [flows, registryConfig.notificationSettings]);
+    };
+
+    // Run check once on mount / settings change
+    checkSlaBreaches();
+
+    // Check periodically every 60 seconds
+    const interval = setInterval(checkSlaBreaches, 60000);
+    return () => clearInterval(interval);
+  }, [registryConfig.notificationSettings?.enableSlaBreachAlerts]);
 
   const handleToggleScope = (newScope: ViewScope) => {
     if (!isSuperAdmin) {
@@ -676,6 +694,16 @@ export default function App() {
     showToast(`Indent #${newFlow.indentNo} successfully registered in 12-stage FMS pipeline!`);
   };
 
+  const handleUpdateFlow = (updatedFlow: FmsInstance) => {
+    const stored = storageAdapter.getFmsFlows();
+    const exists = stored.some((f) => f.id === updatedFlow.id || f.flowId === updatedFlow.flowId);
+    const updated = exists
+      ? stored.map((f) => (f.id === updatedFlow.id || f.flowId === updatedFlow.flowId ? updatedFlow : f))
+      : [updatedFlow, ...stored];
+    setFlows(updated);
+    storageAdapter.saveFmsFlows(updated);
+  };
+
   const handleAdvanceCurrentStage = (
     flow: FmsInstance, 
     decision?: 'Yes' | 'No',
@@ -746,20 +774,21 @@ export default function App() {
         nextIndex = target;
       }
     } else if (flow.flowType === 'CHECK_STOCK') {
-      // 1. Stage 2: IS MATERIAL PURCHASE REQUIRED?
-      if (currentStage.stageId === 'STG-STK-02') {
-        if (decision === 'No') {
-          // Stock available in store! Skip Stage 3 & Stage 4
+      // 1. Stage 2: CHECK STOCK & INDENT TRIAGE
+      if (currentStage.stageId === 'STG-STK-02' || currentIndex === 1) {
+        const purchaseCount = submittedData?.purchaseItemsCount !== undefined ? submittedData.purchaseItemsCount : (decision === 'Yes' ? 1 : 0);
+        if (purchaseCount === 0) {
+          // All items fulfilled from physical store! Skip Stage 3 and Stage 4
           if (updatedStages[2]) {
             updatedStages[2].status = 'Skipped';
-            updatedStages[2].notes = 'Skipped: Stock available in store, no purchase needed';
+            updatedStages[2].notes = 'Skipped: All items available in store, direct Store Dispatch issued';
           }
           if (updatedStages[3]) {
             updatedStages[3].status = 'Skipped';
-            updatedStages[3].notes = 'Skipped: Stock available in store, no purchase needed';
+            updatedStages[3].notes = 'Skipped: All items available in store, no purchase indent needed';
           }
           nextIndex = 4; // Jump directly to Stage 5: DISPATCH MATERIAL AVAILABLE
-        } else if (decision === 'Yes') {
+        } else {
           nextIndex = 2; // Proceed to Stage 3: SEND INDENT FOR MATERIAL TO BE PURCHASED
         }
       }
@@ -872,11 +901,42 @@ export default function App() {
       }
     } else {
       // INDENT_PURCHASE Rules:
-      if (currentStage.stageId === 'STG-02' && decision === 'No') {
+      const isStoreAvailabilityStage = currentStage.stageId === 'STG-IND-02' || currentStage.stageName.toUpperCase().includes('AVAILABLE IN STORE');
+      const isDegradedMaterialCheck = currentStage.stageName.toUpperCase().includes('DEGRADED') || (currentStage.stageId === 'STG-02' && !isStoreAvailabilityStage);
+
+      // 1. Degraded Material Check (Stage 2 in standard purchase flows)
+      if (isDegradedMaterialCheck && decision === 'No') {
         if (updatedStages[2]) {
           updatedStages[2].status = 'Skipped';
-          updatedStages[2].notes = 'Skipped: No degraded materials returned';
-          nextIndex = 3;
+          updatedStages[2].notes = 'Skipped: No degraded material to return';
+        }
+        nextIndex = 3; // Skip Stage 3 (RETURN OF DEGRADED MATERIAL) and jump directly to Stage 4 (PURCHASE APPROVAL)
+      } else if (isStoreAvailabilityStage) {
+        // 2. Store Availability Check (Construction Operations Flow)
+        const availChoice = (submittedData?.availabilityDecision || decision || 'PARTIAL').toString().toUpperCase();
+        if (availChoice === 'ALL') {
+          // ALL items in store -> skip quotation & purchase stages (stages 2 through 10), jump directly to Store Dispatch
+          for (let sIdx = 2; sIdx < updatedStages.length - 1; sIdx++) {
+            if (updatedStages[sIdx]) {
+              updatedStages[sIdx].status = 'Skipped';
+              updatedStages[sIdx].notes = 'Skipped: All items available in store inventory, direct site dispatch issued';
+            }
+          }
+          nextIndex = updatedStages.length - 1; // Stage 12: MATERIAL COLLECTION / DISPATCH
+          updatedDataPool.storeAvailability = 'ALL';
+          updatedDataPool.availableQty = submittedData?.availableQty || 'All items available';
+        } else if (availChoice === 'NONE') {
+          // NONE in store -> proceed sequentially to Purchase Approval & Vendor Quotations
+          nextIndex = currentIndex + 1;
+          updatedDataPool.storeAvailability = 'NONE';
+          updatedDataPool.purchaseQty = submittedData?.purchaseQty || 'All items require procurement';
+        } else {
+          // PARTIAL: Store records available items (e.g. 5 of 10), dispatches them, balance proceeds to Purchase
+          nextIndex = currentIndex + 1;
+          updatedDataPool.storeAvailability = 'PARTIAL';
+          updatedDataPool.availableQty = submittedData?.availableQty || '5 items in store (Dispatched to Site)';
+          updatedDataPool.purchaseQty = submittedData?.purchaseQty || '5 items sent to Purchase for Quotations';
+          updatedDataPool.partialDispatchStatus = 'DISPATCHED_TO_SITE';
         }
       }
 
@@ -911,7 +971,7 @@ export default function App() {
     if (!isComplete && updatedStages[nextIndex]) {
       updatedStages[nextIndex].status = 'In Progress';
       const def = stageDefs.find((s) => s.stageId === updatedStages[nextIndex].stageId);
-      const sla = def?.slaHours || 1;
+      const sla = def?.slaHours !== undefined ? def.slaHours : 0;
       const workShiftConfig = storageAdapter.getRegistryConfig().workShiftConfig || DEFAULT_WORK_SHIFT_CONFIG;
       const targetDate = addWorkingSlaHours(now, sla, workShiftConfig);
       updatedStages[nextIndex].plannedDateTime = formatToStandardDateTime(targetDate);
@@ -929,6 +989,8 @@ export default function App() {
       ...(submittedData?.amountToBePaid ? { poAmount: parseFloat(submittedData.amountToBePaid) || flow.poAmount } : {}),
       ...(submittedData?.modeOfPayment ? { paymentMode: submittedData.modeOfPayment } : {}),
       ...(submittedData?.billNoOrPo ? { poNumber: String(submittedData.billNoOrPo) } : {}),
+      ...(submittedData?.triageLineItems && Array.isArray(submittedData.triageLineItems) ? { lineItems: submittedData.triageLineItems } : {}),
+      ...(submittedData?.purchaserLineItems && Array.isArray(submittedData.purchaserLineItems) ? { lineItems: submittedData.purchaserLineItems } : {}),
     };
 
     let updatedFlowsList = flows.map((f) => (f.id === updatedFlow.id ? updatedFlow : f));
@@ -1024,52 +1086,244 @@ export default function App() {
       }
     }
 
-    // 1. When Check Stock Stage 3 completes (indent submitted to Purchase Dept):
-    // Automatically spawn / ensure Indent to PO Flow exists in Purchase Department!
-    if (flow.flowType === 'CHECK_STOCK' && currentStage.stageId === 'STG-STK-03') {
-      const existingIndentFlow = flows.find(
-        (f) => f.linkedFlowId === flow.flowId || (f.indentNo === flow.indentNo && f.flowType === 'INDENT_PURCHASE')
-      );
-      if (!existingIndentFlow) {
-        const newIndentFlow: FmsInstance = {
-          id: `fms-inst-ind-${flow.indentNo}`,
-          flowId: `FLOW-IND-${flow.indentNo}`,
-          flowType: 'INDENT_PURCHASE',
-          linkedFlowId: flow.flowId,
-          requisitionNumber: flow.requisitionNumber || `Indent #${flow.indentNo}`,
-          indentNo: flow.indentNo,
-          indentDate: flow.indentDate || formattedNow,
-          siteName: flow.siteName,
-          priority: flow.priority,
-          currentStageId: 'STG-01',
-          currentStageIndex: 0,
-          totalStages: 12,
-          status: 'In Progress',
-          createdAt: formattedNow,
-          updatedAt: formattedNow,
-          totalDelayHours: 0,
-          remarks: `Material indent forwarded from Store Stock Check #${flow.indentNo}`,
-          stages: FMS_STANDARD_PURCHASE_STAGES.map((s, sIdx) => ({
-            stageId: s.stageId,
-            stageName: s.name,
-            assignee: s.whoDefaultAssignee,
-            how: s.howChannel,
-            status: sIdx === 0 ? 'In Progress' : 'Pending',
-            plannedDateTime: sIdx === 0 ? formattedNow : undefined,
-            formResponseRef: s.formUrl,
-          })),
-        };
-        updatedFlowsList = [newIndentFlow, ...updatedFlowsList];
-        showToast(`Stock Check requisition sent! Purchase Dept Indent-to-PO Flow created for Indent #${flow.indentNo}.`);
+    // When Check Stock Stage 2 completes:
+    // Split line items and auto-spawn linked Store Dispatch and/or Purchase Indent workflows!
+    if (flow.flowType === 'CHECK_STOCK' && (currentStage.stageId === 'STG-STK-02' || currentIndex === 1)) {
+      const submittedItems: FmsLineItem[] = Array.isArray(submittedData?.triageLineItems) 
+        ? submittedData.triageLineItems 
+        : (flow.lineItems || []);
+      
+      const storeItems = submittedItems.filter((i) => (i.storeQty || 0) > 0);
+      const purchaseItems = submittedItems.filter((i) => (i.purchaseQty || 0) > 0);
+      const holdItems = submittedItems.filter((i) => (i.holdQty || 0) > 0);
+
+      const generatedSubFlows: NonNullable<FmsInstance['linkedSubFlows']> = [];
+
+      // 1. Spawn Store Material Dispatch if storeQty > 0
+      if (storeItems.length > 0) {
+        const storeDispatchIndentNo = `${flow.indentNo}-DISP`;
+        const existingStoreFlow = updatedFlowsList.find(
+          (f) => f.flowType === 'STORE_TO_SITE_DISPATCH' && (f.parentFlowId === flow.id || f.indentNo === storeDispatchIndentNo)
+        );
+
+        const storeLineItems: FmsLineItem[] = storeItems.map((item) => ({
+          ...item,
+          qty: item.storeQty || item.qty,
+          requestedQty: item.requestedQty || item.qty,
+        }));
+
+        if (existingStoreFlow) {
+          const updatedStoreFlow: FmsInstance = {
+            ...existingStoreFlow,
+            lineItems: storeLineItems,
+            updatedAt: formattedNow,
+          };
+          updatedFlowsList = updatedFlowsList.map((f) => (f.id === existingStoreFlow.id ? updatedStoreFlow : f));
+          generatedSubFlows.push({
+            type: 'STORE_DISPATCH',
+            id: existingStoreFlow.id,
+            flowType: 'STORE_TO_SITE_DISPATCH',
+            name: `Store Material Dispatch (${storeItems.length} items)`,
+            indentNo: existingStoreFlow.indentNo,
+            itemCount: storeItems.length,
+            status: existingStoreFlow.status,
+            createdAt: existingStoreFlow.createdAt,
+          });
+        } else {
+          const newStoreFlow: FmsInstance = {
+            id: `fms-inst-disp-${flow.indentNo}-${Date.now().toString().slice(-4)}`,
+            flowId: `FLOW-DISP-${flow.indentNo}`,
+            flowType: 'STORE_TO_SITE_DISPATCH',
+            parentFlowId: flow.id,
+            parentFlowType: flow.flowType,
+            parentFlowIndentNo: flow.indentNo,
+            indentNo: storeDispatchIndentNo,
+            requisitionNumber: flow.requisitionNumber || flow.indentNo,
+            indentDate: flow.indentDate || formattedNow,
+            siteName: flow.siteName,
+            priority: flow.priority,
+            currentStageId: FMS_STORE_TO_SITE_DISPATCH_STAGES[0]?.stageId || 'STG-SSD-01',
+            currentStageIndex: 0,
+            totalStages: FMS_STORE_TO_SITE_DISPATCH_STAGES.length,
+            status: 'In Progress',
+            createdAt: formattedNow,
+            updatedAt: formattedNow,
+            totalDelayHours: 0,
+            remarks: `Store Dispatch allocated from Stock Check #${flow.indentNo}. ${storeItems.length} items ready for immediate site dispatch.`,
+            lineItems: storeLineItems,
+            stages: FMS_STORE_TO_SITE_DISPATCH_STAGES.map((s, sIdx) => ({
+              stageId: s.stageId,
+              stageName: s.name,
+              assignee: s.whoDefaultAssignee,
+              how: s.howChannel,
+              status: sIdx === 0 ? 'In Progress' : 'Pending',
+              plannedDateTime: sIdx === 0 ? formattedNow : undefined,
+            })),
+          };
+          updatedFlowsList = [newStoreFlow, ...updatedFlowsList];
+          generatedSubFlows.push({
+            type: 'STORE_DISPATCH',
+            id: newStoreFlow.id,
+            flowType: 'STORE_TO_SITE_DISPATCH',
+            name: `Store Material Dispatch (${storeItems.length} items)`,
+            indentNo: newStoreFlow.indentNo,
+            itemCount: storeItems.length,
+            status: 'In Progress',
+            createdAt: formattedNow,
+          });
+        }
+      }
+
+      // 2. Spawn Purchase Indent if purchaseQty > 0
+      if (purchaseItems.length > 0) {
+        const purchaseIndentNo = `${flow.indentNo}-PUR`;
+        const existingPurchaseFlow = updatedFlowsList.find(
+          (f) => f.flowType === 'INDENT_PURCHASE' && (f.parentFlowId === flow.id || f.indentNo === purchaseIndentNo || f.indentNo === flow.indentNo)
+        );
+
+        const purchaseLineItems: FmsLineItem[] = purchaseItems.map((item) => ({
+          ...item,
+          qty: item.purchaseQty || item.qty,
+          requestedQty: item.requestedQty || item.qty,
+        }));
+
+        if (existingPurchaseFlow) {
+          const updatedPurchaseFlow: FmsInstance = {
+            ...existingPurchaseFlow,
+            lineItems: purchaseLineItems,
+            updatedAt: formattedNow,
+          };
+          updatedFlowsList = updatedFlowsList.map((f) => (f.id === existingPurchaseFlow.id ? updatedPurchaseFlow : f));
+          generatedSubFlows.push({
+            type: 'PURCHASE',
+            id: existingPurchaseFlow.id,
+            flowType: 'INDENT_PURCHASE',
+            name: `Purchase Indent to PO (${purchaseItems.length} items)`,
+            indentNo: existingPurchaseFlow.indentNo,
+            itemCount: purchaseItems.length,
+            status: existingPurchaseFlow.status,
+            createdAt: existingPurchaseFlow.createdAt,
+          });
+        } else {
+          const newPurchaseFlow: FmsInstance = {
+            id: `fms-inst-ind-${flow.indentNo}-${Date.now().toString().slice(-4)}`,
+            flowId: `FLOW-IND-${flow.indentNo}`,
+            flowType: 'INDENT_PURCHASE',
+            parentFlowId: flow.id,
+            parentFlowType: flow.flowType,
+            parentFlowIndentNo: flow.indentNo,
+            indentNo: purchaseIndentNo,
+            requisitionNumber: flow.requisitionNumber || flow.indentNo,
+            indentDate: flow.indentDate || formattedNow,
+            siteName: flow.siteName,
+            priority: flow.priority,
+            poAssignTo: 'Bramhanand Patel',
+            currentStageId: 'STG-02',
+            currentStageIndex: 1,
+            totalStages: FMS_STANDARD_PURCHASE_STAGES.length,
+            status: 'In Progress',
+            createdAt: formattedNow,
+            updatedAt: formattedNow,
+            totalDelayHours: 0,
+            remarks: `Purchase procurement requisition allocated from Stock Check #${flow.indentNo}. ${purchaseItems.length} items requiring market RFQ and quotes.`,
+            lineItems: purchaseLineItems,
+            stages: FMS_STANDARD_PURCHASE_STAGES.map((s, sIdx) => ({
+              stageId: s.stageId,
+              stageName: s.name,
+              assignee: sIdx === 1 ? 'Bramhanand Patel' : s.whoDefaultAssignee,
+              how: s.howChannel,
+              status: sIdx === 0 ? 'Done' : sIdx === 1 ? 'In Progress' : 'Pending',
+              plannedDateTime: sIdx <= 1 ? formattedNow : undefined,
+              actualDateTime: sIdx === 0 ? formattedNow : undefined,
+              notes: sIdx === 0 ? `Material requisition triaged at store and forwarded to Purchase from Stock Check #${flow.indentNo}` : undefined,
+            })),
+          };
+          updatedFlowsList = [newPurchaseFlow, ...updatedFlowsList];
+
+          // Emit high-priority notification to Bramhanand Patel
+          storageAdapter.addNotification({
+            userId: 'USR-002', // Bramhanand Patel
+            title: `Action Required: Purchase Indent #${purchaseIndentNo}`,
+            message: `Purchase requisition triaged from Stock Check #${flow.indentNo} (${purchaseItems.length} items). Stage 2: DEGRADED MATERIAL CHECK.`,
+            type: 'FMS_ACTION_REQUIRED',
+            linkTab: 'fms',
+            linkEntityId: newPurchaseFlow.id,
+            data: { flowId: newPurchaseFlow.flowId, stageIndex: 1 }
+          });
+
+          generatedSubFlows.push({
+            type: 'PURCHASE',
+            id: newPurchaseFlow.id,
+            flowType: 'INDENT_PURCHASE',
+            name: `Purchase Indent to PO (${purchaseItems.length} items)`,
+            indentNo: newPurchaseFlow.indentNo,
+            itemCount: purchaseItems.length,
+            status: 'In Progress',
+            createdAt: formattedNow,
+          });
+        }
+      }
+
+      if (generatedSubFlows.length > 0) {
+        updatedFlow.linkedSubFlows = generatedSubFlows;
+        updatedFlowsList = updatedFlowsList.map((f) => (f.id === updatedFlow.id ? { ...f, linkedSubFlows: generatedSubFlows, lineItems: submittedItems } : f));
+      }
+
+      const toastParts = [];
+      if (storeItems.length > 0) toastParts.push(`Store Dispatch (${storeItems.length} items)`);
+      if (purchaseItems.length > 0) toastParts.push(`Purchase Indent (${purchaseItems.length} items)`);
+      if (holdItems.length > 0) toastParts.push(`${holdItems.length} on Hold`);
+      showToast(`Stock Check triage complete: ${toastParts.join(' • ')}`);
+    }
+
+    // 2. When Indent Purchase reaches "SEND FOR VENDOR QUOTATIONS" (STG-IND-03 / STG-05):
+    // Automatically generate and link Comparative Statement (CS) Sheet pre-populated with requisition items!
+    if (
+      flow.flowType === 'INDENT_PURCHASE' &&
+      (currentStage.stageId === 'STG-IND-03' || currentStage.stageId === 'STG-05' || currentStage.stageName.includes('VENDOR QUOTATIONS'))
+    ) {
+      const createdCs = storageAdapter.createComparativeSheetFromFms(flow, currentUser);
+      updatedFlow.comparativeSheetId = createdCs.id;
+      updatedFlow.linkedModuleRecord = {
+        moduleType: 'COMPARATIVE_SHEET',
+        recordId: createdCs.id,
+        recordNumber: createdCs.indentNo,
+        metadata: { site: createdCs.site, itemsCount: createdCs.items.length }
+      };
+      updatedFlowsList = updatedFlowsList.map((f) => (f.id === updatedFlow.id ? updatedFlow : f));
+      showToast(`Comparative Statement #${createdCs.id} auto-created with ${createdCs.items.length} items for Indent #${flow.indentNo}!`);
+    }
+
+    // 3. When Director CS & L1 Approval completes (STG-08):
+    // Ensure awarded vendors generate split POs and reflect in parent flow data pool
+    if (
+      flow.flowType === 'INDENT_PURCHASE' &&
+      (currentStage.stageId === 'STG-08' || currentStage.stageName.includes('DIRECTOR CS & L1') || currentStage.stageName.includes('L1 APPROVAL'))
+    ) {
+      const csId = flow.comparativeSheetId || flow.linkedModuleRecord?.recordId;
+      if (csId) {
+        const cs = storageAdapter.getComparativeStatements().find((c) => c.id === csId);
+        if (cs && cs.status === 'Approved') {
+          if (!cs.generatedPoIds || cs.generatedPoIds.length === 0) {
+            const splitRes = storageAdapter.createSplitPurchaseOrdersFromCs(cs, currentUser);
+            updatedFlow.instanceDataPool = {
+              ...(updatedFlow.instanceDataPool || {}),
+              generatedPoIds: splitRes.createdFlows.map((f) => f.poNumber),
+              awardedVendorMap: cs.awardedVendorMap,
+            };
+            updatedFlowsList = updatedFlowsList.map((f) => (f.id === updatedFlow.id ? updatedFlow : f));
+            showToast(`Split POs generated from Director-approved CS #${cs.id}!`);
+          }
+        }
       }
     }
 
-    // 2. When Indent Purchase Stage 10 approves advance payment (decision = 'Yes')
-    // OR Stage 11 completes "SEND FOR PAYMENT":
-    // Automatically link / ensure Accounts PO-to-Payment FMS exists and is updated!
+    // 4. When Indent Purchase Stage 10 approves advance payment (decision = 'Yes')
+    // OR Stage 11 / STG-IND-05 completes "PO GENERATION & BANK PAYMENT":
+    // Automatically link / ensure Accounts PO-to-Payment FMS exists AND create Bank Payment Record!
     if (
       flow.flowType === 'INDENT_PURCHASE' &&
-      ((currentStage.stageId === 'STG-10' && decision === 'Yes') || currentStage.stageId === 'STG-11')
+      (currentStage.stageId === 'STG-IND-05' || currentStage.stageId === 'STG-11' || (currentStage.stageId === 'STG-10' && decision === 'Yes'))
     ) {
       const existingPayFlowIndex = updatedFlowsList.findIndex(
         (f) => f.linkedFlowId === flow.flowId || (f.indentNo === flow.indentNo && f.flowType === 'PO_TO_PAYMENT')
@@ -1078,25 +1332,61 @@ export default function App() {
       const resolvedPoNumber = submittedData?.poNumber ? String(submittedData.poNumber) : (flow.poNumber || `RAO/PO/${flow.indentNo}-001`);
       const resolvedVendor = submittedData?.vendorName ? String(submittedData.vendorName) : (flow.vendorName || 'M/S AUTHORIZED OEM VENDOR');
       const resolvedAmount = submittedData?.amountToBePaid ? (parseFloat(submittedData.amountToBePaid) || 50000) : (flow.poAmount || 50000);
-      const resolvedMode = submittedData?.modeOfPayment || flow.paymentMode || 'ACCOUNT';
+      const rawMode = (submittedData?.modeOfPayment || flow.paymentMode || 'ACCOUNT').toString().toUpperCase();
+      const resolvedMode = rawMode === 'UPI' ? 'UPI' : 'ACCOUNT';
       const resolvedRemarks = submittedData?.paymentRemarks || submittedData?.remarks || `Payment dossier transferred from Indent #${flow.indentNo} for Accounts disbursement`;
+      const resolvedBill = submittedData?.billNoOrPo || submittedData?.poUploadLink || flow.poNumber;
+
+      // Auto-create Bank Payment Record for Director Approval and Accounts Queue:
+      try {
+        const vendorProfiles = storageAdapter.getVendorProfiles();
+        const matchedVendor = vendorProfiles.find(v => v.tradeName.toLowerCase() === resolvedVendor.toLowerCase());
+        const hasVerifiedBank = Boolean(matchedVendor && matchedVendor.bankAccounts && matchedVendor.bankAccounts.some(b => b.verificationStatus === 'VERIFIED'));
+
+        const newBankPayment = storageAdapter.addBankPaymentRecord({
+          vendorName: resolvedVendor,
+          beneficiaryName: matchedVendor?.bankAccounts?.[0]?.beneficiaryName || resolvedVendor,
+          isNameMismatch: false,
+          purposeOfPayment: `Advance / PO payment for Indent #${flow.indentNo} (${flow.siteName})`,
+          requestedBy: currentUser.name,
+          requestedByUserId: currentUser.userId,
+          site: flow.siteName,
+          modeOfPayment: resolvedMode,
+          amountToBePaid: resolvedAmount,
+          plannedDate: new Date().toLocaleDateString('en-GB'),
+          billNoPo: String(resolvedBill || resolvedPoNumber),
+          poUpload: submittedData?.poUploadLink || '',
+          beneficiaryMasterStatus: resolvedMode === 'UPI' ? 'NOT_APPLICABLE_UPI' : (hasVerifiedBank ? 'VERIFIED' : 'NEEDS_ADDITION'),
+          remark: resolvedMode === 'UPI'
+            ? `UPI payment voucher with mandatory bill ref #${resolvedBill || resolvedPoNumber}`
+            : `Account disbursement voucher linked to Indent #${flow.indentNo}`,
+          accountNoMasked: matchedVendor?.bankAccounts?.[0]?.accountNoMasked || (matchedVendor?.bankAccounts?.[0]?.accountNo ? `••••${matchedVendor.bankAccounts[0].accountNo.slice(-4)}` : undefined),
+          bankName: matchedVendor?.bankAccounts?.[0]?.bankName,
+          ifscCode: matchedVendor?.bankAccounts?.[0]?.ifscCode,
+        }, currentUser);
+
+        updatedFlow.linkedModuleRecord = {
+          moduleType: 'BANK_PAYMENT',
+          recordId: newBankPayment.id,
+          recordNumber: newBankPayment.sheetNo,
+        };
+        showToast(`Bank Payment Request #${newBankPayment.sheetNo} (${resolvedMode}) created for Director & Accounts queue!`);
+      } catch (err) {
+        console.warn('Bank payment record auto-queue skipped or error:', err);
+      }
 
       if (existingPayFlowIndex >= 0) {
-        // Update existing Accounts flow with any refined PO/Vendor/Amount details submitted in Stage 11
         const existing = updatedFlowsList[existingPayFlowIndex];
         const updatedPayFlow: FmsInstance = {
           ...existing,
           poNumber: resolvedPoNumber,
           vendorName: resolvedVendor,
           poAmount: resolvedAmount,
-          paymentMode: resolvedMode,
+          paymentMode: resolvedMode === 'UPI' ? 'UPI' : 'BANK_ACCOUNT',
           remarks: resolvedRemarks,
           updatedAt: formattedNow,
         };
         updatedFlowsList = updatedFlowsList.map((f, idx) => (idx === existingPayFlowIndex ? updatedPayFlow : f));
-        if (currentStage.stageId === 'STG-11') {
-          showToast(`Payment details synced to Accounts PO-to-Payment FMS for Indent #${flow.indentNo}.`);
-        }
       } else {
         const newPayFlow: FmsInstance = {
           id: `fms-inst-pay-${flow.indentNo}`,
@@ -1120,7 +1410,7 @@ export default function App() {
           updatedAt: formattedNow,
           totalDelayHours: 0,
           remarks: resolvedRemarks,
-          paymentMode: resolvedMode,
+          paymentMode: resolvedMode === 'UPI' ? 'UPI' : 'BANK_ACCOUNT',
           stages: FMS_PO_PAYMENT_STAGES.map((s, sIdx) => ({
             stageId: s.stageId,
             stageName: s.name,
@@ -1132,11 +1422,6 @@ export default function App() {
           }))
         };
         updatedFlowsList = [newPayFlow, ...updatedFlowsList];
-        showToast(
-          currentStage.stageId === 'STG-11'
-            ? `Dossier submitted! Accounts PO-to-Payment flow initialized for Indent #${flow.indentNo}.`
-            : `Advance payment approved! Accounts PO-to-Payment flow initialized for Indent #${flow.indentNo}.`
-        );
       }
     }
 
@@ -1182,6 +1467,9 @@ export default function App() {
 
     setFlows(updatedFlowsList);
     storageAdapter.saveFmsFlows(updatedFlowsList);
+    if (selectedFmsDetail && (selectedFmsDetail.id === updatedFlow.id || selectedFmsDetail.flowId === updatedFlow.flowId)) {
+      setSelectedFmsDetail(updatedFlow);
+    }
     storageAdapter.logAudit({
       userId: currentUser.userId,
       userName: currentUser.name,
@@ -1809,28 +2097,41 @@ export default function App() {
 
         {/* Main Content Area */}
         <main className="flex-1 overflow-y-auto min-h-0 p-3 sm:p-5 pb-28 md:pb-6 bg-white">
-          <div className={activeTab === 'summary' ? "w-full" : "max-w-7xl mx-auto w-full"}>
-            {activeTab === 'summary' && (isSuperAdmin || hasModulePermission(currentUser, 'summary', 'view')) && (
-              <UnifiedWorkSummary
+          <div className={selectedFmsDetail || activeTab === 'summary' ? "w-full" : "max-w-7xl mx-auto w-full"}>
+            {selectedFmsDetail ? (
+              <FmsDetailModal
+                flow={selectedFmsDetail}
                 currentUser={currentUser}
-                checklistItems={checklistItems}
-                delegationTasks={delegationTasks}
-                flows={flows}
-                onCompleteChecklist={handleUpdateChecklistItem}
-                onCompleteDelegation={handleUpdateDelegationTask}
-                onAdvanceFmsStage={handleAdvanceCurrentStage}
-                onCompleteFmsStage={handleCompleteFmsStage}
-                onReviseDelegation={(task) => setSelectedTaskForRevision(task)}
-                onSelectFmsDetail={(flow) => setSelectedFmsDetail(flow)}
-                onNavigateTab={(tab) => handleTabChange(tab)}
-                onAddProcessRemark={handleAddProcessRemark}
-                onNudgeItem={handleNudgeItem}
-                pcDeskActive={isAdminOrSuperAdmin ? pcDeskActive : false}
-                onTogglePcDesk={isAdminOrSuperAdmin ? (active) => setPcDeskActive(active) : undefined}
-                onCreateFmsFlow={(isSuperAdmin || hasModulePermission(currentUser, 'summary', 'edit')) ? () => setIsCreateFmsOpen(true) : undefined}
-                onOpenStageAction={(flow, stageIndex) => setStageActionTarget({ flow, stageIndex })}
+                onClose={() => setSelectedFmsDetail(null)}
+                onUpdateFlow={handleUpdateFlow}
+                onDeleteFlow={handleDeleteFlow}
+                allFlows={flows}
+                onSelectFlow={(f) => setSelectedFmsDetail(f)}
+                onOpenStageAction={(f, sIdx) => setStageActionTarget({ flow: f, stageIndex: sIdx })}
               />
-            )}
+            ) : (
+              <>
+                {activeTab === 'summary' && (isSuperAdmin || hasModulePermission(currentUser, 'summary', 'view')) && (
+                  <UnifiedWorkSummary
+                    currentUser={currentUser}
+                    checklistItems={checklistItems}
+                    delegationTasks={delegationTasks}
+                    flows={flows}
+                    onCompleteChecklist={handleUpdateChecklistItem}
+                    onCompleteDelegation={handleUpdateDelegationTask}
+                    onAdvanceFmsStage={handleAdvanceCurrentStage}
+                    onCompleteFmsStage={handleCompleteFmsStage}
+                    onReviseDelegation={(task) => setSelectedTaskForRevision(task)}
+                    onSelectFmsDetail={(flow) => setSelectedFmsDetail(flow)}
+                    onNavigateTab={(tab) => handleTabChange(tab)}
+                    onAddProcessRemark={handleAddProcessRemark}
+                    onNudgeItem={handleNudgeItem}
+                    pcDeskActive={isAdminOrSuperAdmin ? pcDeskActive : false}
+                    onTogglePcDesk={isAdminOrSuperAdmin ? (active) => setPcDeskActive(active) : undefined}
+                    onOpenStageAction={(flow, stageIndex) => setStageActionTarget({ flow, stageIndex })}
+                    onCreateFmsFlow={(isSuperAdmin || hasModulePermission(currentUser, 'summary', 'edit')) ? () => setIsCreateFmsOpen(true) : undefined}
+                  />
+                )}
 
             {activeTab === 'mis' && (isSuperAdmin || hasModulePermission(currentUser, 'mis', 'view')) && (
               <MisDashboard
@@ -1891,6 +2192,19 @@ export default function App() {
                 currentUser={currentUser}
                 onSelectFlow={(f) => setSelectedFmsDetail(f)}
                 onDeleteFlow={handleDeleteFlow}
+              />
+            )}
+
+            {activeTab === 'template-studio' && (isSuperAdmin || hasModulePermission(currentUser, 'template-studio', 'view')) && (
+              <FmsTemplateStudioPage
+                currentUser={currentUser}
+                initialTemplateKey={templateStudioKey}
+                onClearInitialKey={() => setTemplateStudioKey(null)}
+                onNavigateTab={(tab) => handleTabChange(tab as any)}
+                onCreateFlowFromTemplate={(templateKey) => {
+                  setSelectedFmsWorkflowKey(templateKey);
+                  setIsCreateFmsOpen(true);
+                }}
               />
             )}
 
@@ -2005,6 +2319,8 @@ export default function App() {
                 auditLogs={auditLogs}
               />
             )}
+              </>
+            )}
           </div>
         </main>
       </div>
@@ -2044,15 +2360,6 @@ export default function App() {
           storageAdapter.saveFmsTemplate(template);
           showToast(`FMS Template "${template.name}" with ${template.stages.length} custom stage forms saved!`);
         }}
-      />
-
-      <FmsDetailModal
-        flow={selectedFmsDetail}
-        currentUser={currentUser}
-        onClose={() => setSelectedFmsDetail(null)}
-        onDeleteFlow={handleDeleteFlow}
-        allFlows={flows}
-        onSelectFlow={(f) => setSelectedFmsDetail(f)}
       />
 
       <NewTaskModal

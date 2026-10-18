@@ -19,14 +19,15 @@ import {
   ShieldCheck,
   User,
   Scale,
-  Users
+  Users,
+  Layers
 } from 'lucide-react';
 import { FmsInstance, UserProfile, isUserSuperAdmin, isUserAdmin, isUserAdminOrSuperAdmin, hasModulePermission, ChecklistItem, DelegationTask } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { getFlowDepartmentKey, getDepartmentBranchLabel, matchItemDepartment, matchTaskDepartment, getDepartmentForWorkflow } from '../../services/stageAssignment';
 import { UserAvatar } from '../common/UserAvatar';
 
-export type NavTab = 'summary' | 'mis' | 'fms' | 'fms-audit' | 'cs-sheet' | 'bank-payments' | 'vendor-directory' | 'delegation' | 'checklist' | 'ims' | 'registry' | 'audit' | 'super-admin' | 'profile';
+export type NavTab = 'summary' | 'mis' | 'fms' | 'fms-audit' | 'template-studio' | 'cs-sheet' | 'bank-payments' | 'vendor-directory' | 'delegation' | 'checklist' | 'ims' | 'registry' | 'audit' | 'super-admin' | 'profile';
 
 interface SidebarProps {
   activeTab: NavTab;
@@ -264,6 +265,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'fms-audit' as NavTab,
       label: 'FMS Records & Audit',
       icon: FileSpreadsheet,
+    },
+    {
+      id: 'template-studio' as NavTab,
+      label: 'FMS Template Studio',
+      icon: Layers,
     },
     {
       id: 'delegation' as NavTab,

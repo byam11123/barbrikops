@@ -261,7 +261,7 @@ export const FmsAuditLedgerView: React.FC<FmsAuditLedgerViewProps> = ({
       const rows = flatStageRecords.map(({ flow, stage, stageIndex }) => {
         const submittedEntries = Object.entries(stage.submittedData || {})
           .filter(([k]) => !k.startsWith('_'))
-          .map(([k, v]) => `${resolveFieldLabel(k, stage, flow)}: ${String(v)}`)
+          .map(([k, v]) => `${resolveFieldLabel(k, stage, flow)}: ${Array.isArray(v) ? `${v.length} item(s)` : String(v)}`)
           .join(' | ');
 
         const checklistCount = stage.checkpoints
@@ -750,7 +750,30 @@ export const FmsAuditLedgerView: React.FC<FmsAuditLedgerViewProps> = ({
                                             {label}
                                           </div>
                                           <div className="text-xs font-semibold text-slate-800 break-words">
-                                            {isDataFile || isRefFile ? (
+                                            {Array.isArray(val) ? (
+                                              <div className="space-y-1">
+                                                <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 inline-block">
+                                                  {val.length} Itemized Row{val.length === 1 ? '' : 's'}
+                                                </span>
+                                                <div className="text-[11px] text-slate-700 max-h-28 overflow-y-auto space-y-1 font-mono bg-white p-2 rounded border border-slate-200 shadow-2xs">
+                                                  {val.length === 0 ? (
+                                                    <span className="text-slate-400 italic">No rows recorded</span>
+                                                  ) : (
+                                                    val.map((itemRow: any, rIdx: number) => {
+                                                      const rowVals = Object.entries(itemRow)
+                                                        .filter(([rk]) => rk !== 'id')
+                                                        .map(([_, rv]) => String(rv ?? ''))
+                                                        .filter(Boolean);
+                                                      return (
+                                                        <div key={rIdx} className="truncate border-b border-slate-100 last:border-b-0 pb-0.5">
+                                                          <span className="font-bold text-indigo-900">#{rIdx + 1}:</span> {rowVals.join(' | ')}
+                                                        </div>
+                                                      );
+                                                    })
+                                                  )}
+                                                </div>
+                                              </div>
+                                            ) : isDataFile || isRefFile ? (
                                               <button
                                                 type="button"
                                                 onClick={() =>

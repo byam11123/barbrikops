@@ -454,7 +454,7 @@ export async function parseFmsExcelFile(file: File): Promise<FmsImportResult> {
 
       // Ensure stage exists in map
       if (!stagesMap.has(currentStageNum)) {
-        const slaParsed = rawSlaHours !== undefined && !isNaN(parseInt(rawSlaHours, 10)) ? parseInt(rawSlaHours, 10) : 1;
+        const slaParsed = currentStageNum === 1 ? 0 : (rawSlaHours !== undefined && !isNaN(parseInt(rawSlaHours, 10)) ? parseInt(rawSlaHours, 10) : 1);
         const cpList = rawCheckpoints
           ? rawCheckpoints.toString().split(';').map((s: string) => s.trim()).filter((s: string) => s.length > 0)
           : [];
@@ -466,7 +466,7 @@ export async function parseFmsExcelFile(file: File): Promise<FmsImportResult> {
           whoRole: rawWhoRole ? rawWhoRole.toString().trim() : 'Operations Staff',
           whoAssignee: rawWhoAssignee ? rawWhoAssignee.toString().trim() : 'Ashis Pathnayak',
           howChannel: rawHowChannel ? rawHowChannel.toString().trim() : 'SYSTEM APP',
-          slaHours: Math.max(0, slaParsed),
+          slaHours: currentStageNum === 1 ? 0 : Math.max(0, slaParsed),
           gatewayType: rawGateway ? rawGateway.toString().trim() : 'STANDARD_ADVANCE',
           yesConditionLabel: rawYesLabel ? rawYesLabel.toString().trim() : 'Approve / Advance',
           noConditionLabel: rawNoLabel ? rawNoLabel.toString().trim() : 'Reject / Return',
@@ -497,14 +497,27 @@ export async function parseFmsExcelFile(file: File): Promise<FmsImportResult> {
         const stg = stagesMap.get(currentStageNum)!;
         const fieldCount = stg.fields.length + 1;
         const cleanType = (rawFieldType.toString().trim().toUpperCase()) as any;
-        const validTypes = ['TEXT', 'NUMBER', 'SELECT', 'APPROVAL', 'STATUS_DONE', 'URL', 'TEXTAREA', 'DATE', 'FILE'];
-        const finalType = validTypes.includes(cleanType) ? cleanType : 'TEXT';
+        const validTypes = ['TEXT', 'NUMBER', 'SELECT', 'APPROVAL', 'STATUS_DONE', 'URL', 'TEXTAREA', 'DATE', 'FILE', 'MULTI_ITEM_TABLE', 'CHECKBOX'];
+        let finalType = 'TEXT';
+        if (['MULTI_ITEM_TABLE', 'MULTI_ITEM', 'GRID_TABLE', 'TABLE', 'ITEMS'].includes(cleanType)) {
+          finalType = 'MULTI_ITEM_TABLE';
+        } else if (validTypes.includes(cleanType)) {
+          finalType = cleanType;
+        }
 
         let opts: string[] | undefined = undefined;
+        let cols: any[] | undefined = undefined;
         if (['SELECT', 'APPROVAL'].includes(finalType) && rawFieldOptions) {
           opts = rawFieldOptions.toString().split(',').map((o: string) => o.trim()).filter((o: string) => o.length > 0);
         } else if (finalType === 'APPROVAL') {
           opts = ['APPROVED', 'REJECTED'];
+        } else if (finalType === 'MULTI_ITEM_TABLE' && rawFieldOptions) {
+          const colLabels = rawFieldOptions.toString().split(',').map((o: string) => o.trim()).filter((o: string) => o.length > 0);
+          cols = colLabels.map((label: string) => ({
+            key: label.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+            label,
+            type: (label.toLowerCase().includes('rate') || label.toLowerCase().includes('qty') || label.toLowerCase().includes('amount') || label.toLowerCase().includes('price') || label.toLowerCase().includes('nos')) ? ('NUMBER' as const) : ('TEXT' as const)
+          }));
         }
 
         const isReq = ['YES', 'TRUE', '1', 'Y'].includes(rawFieldReq.toString().trim().toUpperCase());
@@ -512,8 +525,10 @@ export async function parseFmsExcelFile(file: File): Promise<FmsImportResult> {
         stg.fields.push({
           id: `field_${currentStageNum}_${fieldCount}`,
           label: rawFieldLabel.toString().trim(),
-          type: finalType,
+          type: finalType as any,
           options: opts,
+          columns: cols,
+          defaultValue: finalType === 'MULTI_ITEM_TABLE' && rawFieldOptions ? rawFieldOptions.toString().trim() : undefined,
           required: isReq,
           placeholder: rawFieldPlaceholder ? rawFieldPlaceholder.toString().trim() : undefined,
         });
@@ -615,7 +630,7 @@ export function generateFmsHorizontalMatrixWorkbook(
   } else {
     // Default fallback to 12 stages of Indent to PO from user's sheet
     stagesHeader = [
-      { name: '1. INDENT RECIEVE', assignee: 'Amanat Bharadwaj (Store Manager)', how: 'WHATSAPP / CALL / PHYSICAL', slaHours: 1 },
+      { name: '1. INDENT RECIEVE', assignee: 'Amanat Bharadwaj (Store Manager)', how: 'WHATSAPP / CALL / PHYSICAL', slaHours: 0 },
       { name: '2. DEGRADED MATERIAL CHECK', assignee: 'Bramhanand Patel (Asst. Mgr Purchase)', how: 'PHYSICAL CHECK', slaHours: 1 },
       { name: '3. RETURN OF DEGRADED MATERIAL FORM', assignee: 'Shyam Rao Sureshe (Purchase Exec)', how: 'IN-APP FORM', slaHours: 1 },
       { name: '4. PURCHASE APPROVAL', assignee: 'Pranay Ghosh (Project Manager)', how: 'MANUAL SHEET / IN-APP', slaHours: 3 },

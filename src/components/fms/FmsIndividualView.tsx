@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   Calendar,
@@ -52,6 +52,11 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
   const [isStoreTriageOpen, setIsStoreTriageOpen] = useState(false);
   const [isL1ModalOpen, setIsL1ModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'STAGE_TABLE' | 'LINE_ITEMS' | 'UNIVERSAL_DATA'>('STAGE_TABLE');
+
+  // Keep activeFlow synced whenever the parent flow prop updates after stage submission
+  useEffect(() => {
+    setActiveFlow(flow);
+  }, [flow]);
 
   const isSuperAdmin = isUserSuperAdmin(currentUser);
   const isAdmin = isUserAdminOrSuperAdmin(currentUser);
@@ -193,34 +198,34 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
   const purchaseItems = activeFlow.lineItems?.filter(i => i.triageAllocation === 'PURCHASE_REQUISITION').length || 0;
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white p-4 md:p-6 space-y-6">
+    <div className="w-full bg-white text-slate-900 space-y-6 pb-6">
       {/* Top Header & Breadcrumbs */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 md:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 md:p-5 rounded-2xl border border-slate-200 shadow-xs">
         <div className="space-y-1.5">
-          <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
+          <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
             <button
               onClick={onBack}
-              className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+              className="inline-flex items-center gap-1 text-slate-600 hover:text-indigo-600 transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back to FMS Table</span>
             </button>
             <ChevronRight className="w-3 h-3 text-slate-400" />
-            <span className="font-semibold text-slate-800 dark:text-slate-200">Individual Workflow Page</span>
+            <span className="font-semibold text-slate-800">Individual Workflow Page</span>
             <ChevronRight className="w-3 h-3 text-slate-400" />
-            <span className="font-mono text-indigo-600 dark:text-indigo-400 font-bold">
+            <span className="font-mono text-indigo-600 font-bold">
               Indent #{activeFlow.indentNo || activeFlow.requisitionNumber}
             </span>
           </div>
 
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
+            <h1 className="text-xl font-bold tracking-tight text-slate-900">
               {activeFlow.title || `Requisition & Procurement Workflow #${activeFlow.indentNo}`}
             </h1>
             <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${
               activeFlow.status === 'Completed'
-                ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-300'
-                : 'bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/80 dark:text-indigo-300'
+                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                : 'bg-indigo-100 text-indigo-800 border-indigo-300'
             }`}>
               {activeFlow.status}
             </span>
@@ -231,7 +236,7 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={handleExportCsv}
-            className="px-3.5 py-2 text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-colors flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
+            className="px-3.5 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors flex items-center gap-1.5 border border-slate-200"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Export CSV</span>
@@ -262,99 +267,99 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
       {/* Summary Kpi Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {/* Card 1: Requisition Overview */}
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
+        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Site &amp; Requisition</span>
+            <span className="text-xs font-semibold text-slate-500">Site &amp; Requisition</span>
             <MapPin className="w-4 h-4 text-indigo-500" />
           </div>
           <div>
-            <p className="text-base font-bold text-slate-900 dark:text-white">{activeFlow.siteName || 'RAIPUR CENTRAL'}</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-base font-bold text-slate-900">{activeFlow.siteName || 'RAIPUR CENTRAL'}</p>
+            <p className="text-xs text-slate-500 mt-0.5">
               Indent Date: {activeFlow.indentDate || activeFlow.createdAt.slice(0, 10)}
             </p>
           </div>
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
             <span className="text-slate-500">Priority:</span>
-            <span className="font-bold text-rose-600 dark:text-rose-400">{activeFlow.priority}</span>
+            <span className="font-bold text-rose-600">{activeFlow.priority}</span>
           </div>
         </div>
 
         {/* Card 2: Line Item Triage Split */}
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
+        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Material Line Triage</span>
+            <span className="text-xs font-semibold text-slate-500">Material Line Triage</span>
             <Layers className="w-4 h-4 text-amber-500" />
           </div>
           <div>
-            <p className="text-base font-bold text-slate-900 dark:text-white">{lineItemsCount} Line Items</p>
+            <p className="text-base font-bold text-slate-900">{lineItemsCount} Line Items</p>
             <div className="flex items-center gap-2 mt-1 text-xs">
-              <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 font-medium">
+              <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-medium">
                 {storeDispatchItems} Store Stock
               </span>
-              <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 font-medium">
+              <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">
                 {purchaseItems} Purchase
               </span>
             </div>
           </div>
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
             <span className="text-slate-500">Pipeline Mode:</span>
-            <span className="font-semibold text-indigo-600 dark:text-indigo-400">Parallel Triage</span>
+            <span className="font-semibold text-indigo-600">Parallel Triage</span>
           </div>
         </div>
 
         {/* Card 3: SLA Progress & Timestamps */}
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
+        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Stage Progress</span>
+            <span className="text-xs font-semibold text-slate-500">Stage Progress</span>
             <Clock className="w-4 h-4 text-emerald-500" />
           </div>
           <div>
-            <p className="text-base font-bold text-slate-900 dark:text-white">
+            <p className="text-base font-bold text-slate-900">
               Stage {activeFlow.currentStageIndex + 1} of {activeFlow.totalStages}
             </p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-500 mt-0.5">
               Active: {activeFlow.stages[activeFlow.currentStageIndex]?.stageName || 'Completed'}
             </p>
           </div>
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
             <span className="text-slate-500">Doer/Assignee:</span>
-            <span className="font-semibold text-slate-900 dark:text-white">
+            <span className="font-semibold text-slate-900">
               {activeFlow.stages[activeFlow.currentStageIndex]?.assignee || 'Store/Purchase'}
             </span>
           </div>
         </div>
 
         {/* Card 4: Total Lead Time Delay */}
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
+        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Lead Time Variance</span>
+            <span className="text-xs font-semibold text-slate-500">Lead Time Variance</span>
             <AlertTriangle className="w-4 h-4 text-rose-500" />
           </div>
           <div>
             <p className={`text-base font-black ${
-              activeFlow.totalDelayHours > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
+              activeFlow.totalDelayHours > 0 ? 'text-rose-600' : 'text-emerald-600'
             }`}>
               {activeFlow.totalDelayHours > 0 ? `+${activeFlow.totalDelayHours.toFixed(1)} Hours Delay` : '0.0h On Time'}
             </p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-500 mt-0.5">
               Calculated against stage target SLA offsets
             </p>
           </div>
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
             <span className="text-slate-500">SLA Standard:</span>
-            <span className="font-semibold text-slate-700 dark:text-slate-300">Target Time</span>
+            <span className="font-semibold text-slate-700">Target Time</span>
           </div>
         </div>
       </div>
 
       {/* Navigation View Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800">
+      <div className="flex items-center gap-2 border-b border-slate-200">
         <button
           onClick={() => setActiveTab('STAGE_TABLE')}
           className={`px-4 py-2.5 text-xs font-bold transition-all border-b-2 flex items-center gap-2 ${
             activeTab === 'STAGE_TABLE'
-              ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
           <Layers className="w-4 h-4" />
@@ -365,8 +370,8 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
           onClick={() => setActiveTab('LINE_ITEMS')}
           className={`px-4 py-2.5 text-xs font-bold transition-all border-b-2 flex items-center gap-2 ${
             activeTab === 'LINE_ITEMS'
-              ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
           <Boxes className="w-4 h-4" />
@@ -377,8 +382,8 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
           onClick={() => setActiveTab('UNIVERSAL_DATA')}
           className={`px-4 py-2.5 text-xs font-bold transition-all border-b-2 flex items-center gap-2 ${
             activeTab === 'UNIVERSAL_DATA'
-              ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
           <Zap className="w-4 h-4" />
@@ -388,22 +393,22 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
 
       {/* Tab 1: Detailed Connected Stage Breakdown Table */}
       {activeTab === 'STAGE_TABLE' && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-          <div className="p-4 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <span>FMS Stage Execution Matrix</span>
               <span className="text-xs font-normal text-slate-500">
                 (Every stage records actual timestamps upon doer execution and inherits universal form data)
               </span>
             </h3>
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            <span className="text-xs font-medium text-slate-500">
               Total Stages: {activeFlow.totalStages}
             </span>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left">
-              <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-800">
+              <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                 <tr>
                   <th className="py-3 px-3 w-10 text-center">#</th>
                   <th className="py-3 px-3 min-w-[160px]">WHAT (Stage Name)</th>
@@ -416,7 +421,7 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                   <th className="py-3 px-3 text-center">ACTION</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+              <tbody className="divide-y divide-slate-200">
                 {activeFlow.stages.map((stage, idx) => {
                   const isActive = idx === activeFlow.currentStageIndex;
 
@@ -425,17 +430,17 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                       key={stage.stageId || idx}
                       className={`transition-colors ${
                         isActive
-                          ? 'bg-indigo-50/70 dark:bg-indigo-950/40 font-medium'
+                          ? 'bg-indigo-50/70 font-medium'
                           : stage.status === 'Done' || stage.status === 'Completed'
-                          ? 'bg-white dark:bg-slate-900'
-                          : 'bg-slate-50/40 dark:bg-slate-900/40 opacity-80'
+                          ? 'bg-white'
+                          : 'bg-slate-50/40 opacity-80'
                       }`}
                     >
                       <td className="py-3.5 px-3 text-center font-mono font-bold text-slate-500">
                         {idx + 1}
                       </td>
                       <td className="py-3.5 px-3">
-                        <p className="font-bold text-slate-900 dark:text-white">{stage.stageName}</p>
+                        <p className="font-bold text-slate-900">{stage.stageName}</p>
                         {isActive && (
                           <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 bg-indigo-600 text-white rounded">
                             CURRENT ACTIVE STAGE
@@ -443,29 +448,29 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                         )}
                       </td>
                       <td className="py-3.5 px-3">
-                        <div className="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-200">
+                        <div className="flex items-center gap-1.5 font-semibold text-slate-800">
                           <User className="w-3.5 h-3.5 text-slate-400" />
                           <span>{stage.doerName || stage.assignee}</span>
                         </div>
                       </td>
                       <td className="py-3.5 px-3">
-                        <p className="text-slate-600 dark:text-slate-300 leading-relaxed">{stage.how}</p>
+                        <p className="text-slate-600 leading-relaxed">{stage.how}</p>
                         {stage.evidenceDocumentUrl && (
                           <a
                             href={stage.evidenceDocumentUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold mt-1 hover:underline"
+                            className="inline-flex items-center gap-1 text-[11px] text-indigo-600 font-semibold mt-1 hover:underline"
                           >
                             <FileText className="w-3 h-3" />
                             <span>View Proof/Evidence Document</span>
                           </a>
                         )}
                       </td>
-                      <td className="py-3.5 px-3 font-mono text-slate-700 dark:text-slate-300">
+                      <td className="py-3.5 px-3 font-mono text-slate-700">
                         {formatDateTime(stage.plannedTimestamp)}
                       </td>
-                      <td className="py-3.5 px-3 font-mono text-slate-900 dark:text-white font-semibold">
+                      <td className="py-3.5 px-3 font-mono text-slate-900 font-semibold">
                         {formatDateTime(stage.actualTimestamp)}
                       </td>
                       <td className="py-3.5 px-3">
@@ -477,7 +482,7 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                             {Object.entries(stage.submittedData).slice(0, 2).map(([k, v]) => (
                               <div key={k} className="text-[11px]">
                                 <span className="text-slate-400 font-medium">{k}: </span>
-                                <span className="font-semibold text-slate-800 dark:text-slate-200">{String(v)}</span>
+                                <span className="font-semibold text-slate-800">{String(v)}</span>
                               </div>
                             ))}
                           </div>
@@ -490,7 +495,7 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                           <button
                             type="button"
                             onClick={() => onOpenStageAction(activeFlow, idx)}
-                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-[11px] shadow-sm transition-all flex items-center gap-1 mx-auto"
+                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-[11px] shadow-xs transition-all flex items-center gap-1 mx-auto"
                           >
                             <span>Execute Stage</span>
                           </button>
@@ -507,13 +512,13 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
 
       {/* Tab 2: Line Items Breakdown & Triage Status */}
       {activeTab === 'LINE_ITEMS' && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 space-y-4">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+              <h3 className="text-sm font-bold text-slate-900">
                 Requisition Material Breakdown
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-slate-500">
                 Individual items listed on physical indent slip with triage allocation
               </p>
             </div>
@@ -527,9 +532,9 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
             )}
           </div>
 
-          <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+          <div className="border border-slate-200 rounded-xl overflow-hidden">
             <table className="w-full text-xs text-left">
-              <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-800">
+              <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
                 <tr>
                   <th className="py-2.5 px-3">#</th>
                   <th className="py-2.5 px-3">Item Description</th>
@@ -540,11 +545,11 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                   <th className="py-2.5 px-3">Awarded Vendor / L1 Rate</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+              <tbody className="divide-y divide-slate-200">
                 {(activeFlow.lineItems || []).map((item, idx) => (
-                  <tr key={item.id || idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <tr key={item.id || idx} className="hover:bg-slate-50">
                     <td className="py-3 px-3 font-mono text-slate-500">{idx + 1}</td>
-                    <td className="py-3 px-3 font-semibold text-slate-900 dark:text-white">
+                    <td className="py-3 px-3 font-semibold text-slate-900">
                       {item.itemDescription}
                     </td>
                     <td className="py-3 px-3 text-center font-bold">
@@ -553,10 +558,10 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                     <td className="py-3 px-3 text-center">
                       <span className={`px-2 py-0.5 rounded font-bold text-[11px] ${
                         item.triageAllocation === 'STORE_DISPATCH'
-                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300'
+                          ? 'bg-emerald-100 text-emerald-800'
                           : item.triageAllocation === 'PURCHASE_REQUISITION'
-                          ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300'
-                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-slate-100 text-slate-600'
                       }`}>
                         {item.triageAllocation || 'PURCHASE_REQUISITION'}
                       </span>
@@ -567,7 +572,7 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                     <td className="py-3 px-3 text-center font-medium text-amber-600">
                       {item.purchaseQtyRequired ?? item.qty} {item.unit}
                     </td>
-                    <td className="py-3 px-3 font-semibold text-slate-800 dark:text-slate-200">
+                    <td className="py-3 px-3 font-semibold text-slate-800">
                       {item.selectedL1Vendor ? `${item.selectedL1Vendor} (₹${item.selectedL1Amount || '0'})` : 'Quotation Pending'}
                     </td>
                   </tr>
@@ -580,43 +585,43 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
 
       {/* Tab 3: Universal Form Data Inheritance Pool */}
       {activeTab === 'UNIVERSAL_DATA' && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 space-y-4">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Zap className="w-4 h-4 text-amber-500" />
                 <span>Instance Data Cascade / Shared Data Pool</span>
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-slate-500">
                 Form values entered in earlier stages become universally accessible to all downstream forms automatically.
               </p>
             </div>
-            <span className="text-xs font-mono px-2.5 py-1 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 rounded-lg border border-amber-200 dark:border-amber-800">
+            <span className="text-xs font-mono px-2.5 py-1 bg-amber-50 text-amber-700 rounded-lg border border-amber-200">
               Universal Shared State Active
             </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
               <span className="font-bold text-slate-500 uppercase tracking-wider text-[10px]">Indent Details</span>
-              <p className="font-semibold text-slate-900 dark:text-white">Indent No: #{activeFlow.indentNo}</p>
-              <p className="text-slate-600 dark:text-slate-300">Site: {activeFlow.siteName}</p>
-              <p className="text-slate-600 dark:text-slate-300">Priority: {activeFlow.priority}</p>
+              <p className="font-semibold text-slate-900">Indent No: #{activeFlow.indentNo}</p>
+              <p className="text-slate-600">Site: {activeFlow.siteName}</p>
+              <p className="text-slate-600">Priority: {activeFlow.priority}</p>
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
               <span className="font-bold text-slate-500 uppercase tracking-wider text-[10px]">Triage Results</span>
-              <p className="font-semibold text-slate-900 dark:text-white">Store Dispatch Items: {storeDispatchItems}</p>
-              <p className="text-slate-600 dark:text-slate-300">Purchase Items: {purchaseItems}</p>
-              <p className="text-slate-600 dark:text-slate-300">Total Line Items: {lineItemsCount}</p>
+              <p className="font-semibold text-slate-900">Store Dispatch Items: {storeDispatchItems}</p>
+              <p className="text-slate-600">Purchase Items: {purchaseItems}</p>
+              <p className="text-slate-600">Total Line Items: {lineItemsCount}</p>
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
               <span className="font-bold text-slate-500 uppercase tracking-wider text-[10px]">L1 &amp; Banking Details</span>
-              <p className="font-semibold text-slate-900 dark:text-white">
+              <p className="font-semibold text-slate-900">
                 Selected Vendor: {activeFlow.instanceDataPool?.selectedL1Vendor || activeFlow.vendorName || 'Not Assigned Yet'}
               </p>
-              <p className="text-slate-600 dark:text-slate-300">
+              <p className="text-slate-600">
                 Payment Mode: {activeFlow.paymentMode || 'BANK_TRANSFER'}
               </p>
             </div>

@@ -23,14 +23,12 @@ export const FmsDetailModal: React.FC<FmsDetailModalProps> = ({
   if (!flow) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs overflow-y-auto">
-      <FmsIndividualView
-        flow={flow}
-        currentUser={currentUser}
-        onBack={onClose}
-        onUpdateFlow={onUpdateFlow}
-        onOpenStageAction={onOpenStageAction}
-      />
-    </div>
+    <FmsIndividualView
+      flow={flow}
+      currentUser={currentUser}
+      onBack={onClose}
+      onUpdateFlow={onUpdateFlow}
+      onOpenStageAction={onOpenStageAction}
+    />
   );
 };
