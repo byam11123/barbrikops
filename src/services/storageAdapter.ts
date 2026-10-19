@@ -1967,7 +1967,10 @@ class StorageAdapter {
 
       const customOverride = custom.find(
         (c) =>
-          (c.templateKey && c.templateKey === sys.templateKey) ||
+          (c.templateKey && (
+            c.templateKey === sys.templateKey ||
+            (sys.templateKey === 'CHECK_STOCK' && (c.templateKey === 'STORE_CHECK_STOCK' || c.id === 'tpl_store_check_stock' || c.name.toLowerCase().includes('store check stock')))
+          )) ||
           c.id === sys.id ||
           c.id === `builtin_${sys.templateKey}`
       );
@@ -2836,7 +2839,8 @@ class StorageAdapter {
           paymentEntry: status,
           paymentEntryTimestamp: new Date().toLocaleString('en-GB'),
           paymentEntryProof: proofUrl || p.paymentEntryProof,
-          paymentEntryBy: currentUser?.name || 'Accounts Staff'
+          paymentEntryBy: currentUser?.name || 'Accounts Staff',
+          ...(status === 'CANCELLED' ? { paymentStatus: 'CANCELLED' as const } : {})
         };
         return updatedRecord;
       }
@@ -2892,6 +2896,65 @@ class StorageAdapter {
         action: 'STATUS_CHANGE',
         entityId: (updatedRecord as BankPaymentRecord).sheetNo,
         details: `Finalized Bank Settlement (${status}) for #${(updatedRecord as BankPaymentRecord).sheetNo}. UTR: ${utrRef || 'N/A'}`
+      });
+    }
+
+    return updatedRecord;
+  }
+
+  public updateBankPaymentStatus(
+    idOrSheetNo: string,
+    field: 'approvalStatus' | 'paymentEntry' | 'paymentStatus',
+    value: string,
+    currentUser?: UserProfile
+  ): BankPaymentRecord | null {
+    const list = this.getBankPayments();
+    let updatedRecord: BankPaymentRecord | null = null;
+
+    const updated = list.map(p => {
+      if (p.id === idOrSheetNo || p.sheetNo === idOrSheetNo) {
+        let newApproval = p.approvalStatus;
+        let newEntry = p.paymentEntry;
+        let newStatus = p.paymentStatus;
+
+        if (field === 'approvalStatus') {
+          newApproval = value as any;
+          if (value === 'REJECTED') {
+            newEntry = 'CANCELLED';
+            newStatus = 'CANCELLED';
+          }
+        } else if (field === 'paymentEntry') {
+          newEntry = value as any;
+          if (value === 'CANCELLED') {
+            newStatus = 'CANCELLED';
+          }
+        } else if (field === 'paymentStatus') {
+          newStatus = value as any;
+        }
+
+        updatedRecord = {
+          ...p,
+          approvalStatus: newApproval,
+          paymentEntry: newEntry,
+          paymentStatus: newStatus,
+          ...(field === 'approvalStatus' && value === 'APPROVED' ? { approvedBy: currentUser?.name, approvalTimestamp: new Date().toLocaleString('en-GB') } : {}),
+          ...(field === 'paymentEntry' ? { paymentEntryBy: currentUser?.name, paymentEntryTimestamp: new Date().toLocaleString('en-GB') } : {}),
+          ...(field === 'paymentStatus' ? { paymentDoneBy: currentUser?.name, paymentDoneTimestamp: new Date().toLocaleString('en-GB') } : {}),
+        };
+        return updatedRecord;
+      }
+      return p;
+    });
+
+    if (updatedRecord) {
+      this.saveBankPayments(updated);
+      this.logAudit({
+        userId: currentUser?.userId || 'SYSTEM',
+        userName: currentUser?.name || 'User',
+        module: 'BANKING',
+        action: 'STATUS_CHANGE',
+        entityId: (updatedRecord as BankPaymentRecord).sheetNo,
+        details: `Updated ${field} to ${value} for Bank Payment #${(updatedRecord as BankPaymentRecord).sheetNo}`
       });
     }
 
@@ -3042,6 +3105,109 @@ class StorageAdapter {
     return updatedRecord;
   }
 
+  public updateBeneficiaryRecordStatus(
+    idOrSheetNo: string,
+    field: 'approvalStatus' | 'beneficiaryEntry' | 'additionStatus',
+    value: string,
+    currentUser?: UserProfile
+  ): BeneficiaryRecord | null {
+    const list = this.getBeneficiaryRecords();
+    let updatedRecord: BeneficiaryRecord | null = null;
+
+    const updated = list.map(b => {
+      if (b.id === idOrSheetNo || b.sheetNo === idOrSheetNo) {
+        updatedRecord = {
+          ...b,
+          [field]: value
+        };
+        if (field === 'approvalStatus') {
+          updatedRecord.approvalTimestamp = new Date().toLocaleString('en-GB');
+          if (currentUser) updatedRecord.approvedBy = currentUser.name;
+          if (value === 'REJECTED') {
+            updatedRecord.beneficiaryEntry = 'CANCELLED';
+            updatedRecord.additionStatus = 'CANCELLED';
+          }
+        } else if (field === 'beneficiaryEntry') {
+          updatedRecord.beneficiaryEntryTimestamp = new Date().toLocaleString('en-GB');
+          if (value === 'CANCELLED') {
+            updatedRecord.additionStatus = 'CANCELLED';
+          }
+        } else if (field === 'additionStatus') {
+          updatedRecord.additionTimestamp = new Date().toLocaleString('en-GB');
+        }
+        return updatedRecord;
+      }
+      return b;
+    });
+
+    if (updatedRecord) {
+      this.saveBeneficiaryRecords(updated);
+      this.logAudit({
+        userId: currentUser?.userId || 'USER',
+        userName: currentUser?.name || 'User',
+        module: 'REGISTRY',
+        action: 'STATUS_CHANGE',
+        entityId: (updatedRecord as BeneficiaryRecord).sheetNo,
+        details: `Updated ${field} to ${value} for Beneficiary #${(updatedRecord as BeneficiaryRecord).sheetNo}`
+      });
+    }
+    return updatedRecord;
+  }
+
+  public updateBeneficiaryRecordDetails(
+    idOrSheetNo: string,
+    updates: Partial<BeneficiaryRecord>,
+    currentUser?: UserProfile
+  ): BeneficiaryRecord | null {
+    const list = this.getBeneficiaryRecords();
+    let updatedRecord: BeneficiaryRecord | null = null;
+
+    const updated = list.map(b => {
+      if (b.id === idOrSheetNo || b.sheetNo === idOrSheetNo) {
+        updatedRecord = {
+          ...b,
+          ...updates
+        };
+        return updatedRecord;
+      }
+      return b;
+    });
+
+    if (updatedRecord) {
+      this.saveBeneficiaryRecords(updated);
+      this.logAudit({
+        userId: currentUser?.userId || 'USER',
+        userName: currentUser?.name || 'User',
+        module: 'REGISTRY',
+        action: 'UPDATE',
+        entityId: (updatedRecord as BeneficiaryRecord).sheetNo,
+        details: `Updated details for Beneficiary #${(updatedRecord as BeneficiaryRecord).sheetNo}`
+      });
+    }
+    return updatedRecord;
+  }
+
+  public deleteBeneficiaryRecord(idOrSheetNo: string, currentUser?: UserProfile): boolean {
+    const list = this.getBeneficiaryRecords();
+    const target = list.find(b => b.id === idOrSheetNo || b.sheetNo === idOrSheetNo);
+    if (!target) return false;
+
+    const filtered = list.filter(b => b.id !== target.id && b.sheetNo !== target.sheetNo);
+    this.saveBeneficiaryRecords(filtered);
+
+    this.logAudit({
+      userId: currentUser?.userId || 'USER',
+      userName: currentUser?.name || 'User',
+      module: 'REGISTRY',
+      action: 'DELETE',
+      entityId: target.sheetNo,
+      details: `Deleted Beneficiary record #${target.sheetNo} (${target.beneficiaryName})`
+    });
+
+    return true;
+  }
+
+
   // 3. Interbank Transfer (IBT) CRUD
   public getIbtRecords(): InterbankTransferRecord[] {
     if (typeof window === 'undefined') return INITIAL_IBT_RECORDS;
@@ -3180,6 +3346,65 @@ class StorageAdapter {
     if (updatedRecord) {
       this.saveIbtRecords(updated);
     }
+    return updatedRecord;
+  }
+
+  public updateIbtRecordStatus(
+    idOrSheetNo: string,
+    field: 'approvalStatus' | 'bankEntry' | 'paymentStatus',
+    value: string,
+    currentUser?: UserProfile
+  ): InterbankTransferRecord | null {
+    const list = this.getIbtRecords();
+    let updatedRecord: InterbankTransferRecord | null = null;
+
+    const updated = list.map(i => {
+      if (i.id === idOrSheetNo || i.sheetNo === idOrSheetNo) {
+        let newApproval = i.approvalStatus;
+        let newEntry = i.bankEntry || 'PENDING';
+        let newPayment = i.paymentStatus;
+
+        if (field === 'approvalStatus') {
+          newApproval = value as any;
+          if (value === 'REJECTED') {
+            newEntry = 'CANCELLED';
+            newPayment = 'CANCELLED';
+          }
+        } else if (field === 'bankEntry') {
+          newEntry = value as any;
+          if (value === 'CANCELLED') {
+            newPayment = 'CANCELLED';
+          }
+        } else if (field === 'paymentStatus') {
+          newPayment = value as any;
+        }
+
+        updatedRecord = {
+          ...i,
+          approvalStatus: newApproval,
+          bankEntry: newEntry,
+          paymentStatus: newPayment,
+          ...(field === 'approvalStatus' && value === 'APPROVED' ? { approvedBy: currentUser?.name, approvalTimestamp: new Date().toLocaleString('en-GB') } : {}),
+          ...(field === 'bankEntry' ? { bankEntryTimestamp: new Date().toLocaleString('en-GB') } : {}),
+          ...(field === 'paymentStatus' ? { paymentDoneTimestamp: new Date().toLocaleString('en-GB') } : {}),
+        };
+        return updatedRecord;
+      }
+      return i;
+    });
+
+    if (updatedRecord) {
+      this.saveIbtRecords(updated);
+      this.logAudit({
+        userId: currentUser?.userId || 'USER',
+        userName: currentUser?.name || 'User',
+        module: 'BANKING',
+        action: 'STATUS_CHANGE',
+        entityId: (updatedRecord as InterbankTransferRecord).sheetNo,
+        details: `Updated ${field} to ${value} for IBT #${(updatedRecord as InterbankTransferRecord).sheetNo}`
+      });
+    }
+
     return updatedRecord;
   }
 

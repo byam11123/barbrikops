@@ -610,6 +610,163 @@ export const FMS_CHECK_STOCK_STAGES: FmsStageDefinition[] = [
   }
 ];
 
+export const FMS_SITE_TO_SITE_MATERIALS_STAGES: FmsStageDefinition[] = [
+  {
+    stageId: 'STG-SSM-01',
+    stageNumber: 1,
+    name: 'RECEIVE MATERIAL REQUISITION',
+    what: 'Receive material requisition details from site with indent parameters and multi-item request grid',
+    whoRole: 'REQUESTER / STORE MANAGER',
+    whoDefaultAssignee: 'Amanat Bharadwaj',
+    howChannel: 'IN-APP FORM',
+    slaHours: 0,
+    hasYesNoDecision: false,
+    fields: [
+      {
+        id: 'indentNo',
+        label: 'Indent No.',
+        type: 'TEXT',
+        required: true,
+        placeholder: 'e.g. IND-2026-001'
+      },
+      {
+        id: 'indentDate',
+        label: 'Indent Date',
+        type: 'DATE',
+        required: true
+      },
+      {
+        id: 'site',
+        label: 'Site',
+        type: 'SELECT',
+        options: ['Siladehi Site', 'Bijetala Site', 'Raipur Office', 'Central Store'],
+        required: true
+      },
+      {
+        id: 'priority',
+        label: 'Priority',
+        type: 'SELECT',
+        options: ['Normal', 'Urgent', 'Very Urgent'],
+        required: true
+      },
+      {
+        id: 'uploadIndent',
+        label: 'Upload Indent',
+        type: 'FILE'
+      },
+      {
+        id: 'requisitionItems',
+        label: 'Multi-Item Requisition Grid',
+        type: 'MULTI_ITEM_TABLE',
+        required: true,
+        columns: [
+          { key: 'row_num', label: '#', type: 'TEXT' },
+          { key: 'item_description', label: 'Item Description', type: 'TEXT' },
+          { key: 'qty', label: 'Qty', type: 'NUMBER' },
+          { key: 'unit', label: 'Unit', type: 'SELECT', options: ['Bags', 'MT', 'Kg', 'Nos', 'Pcs', 'Ltrs', 'Meters', 'Boxes', 'Pairs', 'Sets', 'Trip'] },
+          { key: 'requested_by', label: 'Requested By', type: 'TEXT' },
+          { key: 'remark', label: 'Remark', type: 'TEXT' }
+        ]
+      }
+    ]
+  },
+  {
+    stageId: 'STG-SSM-02',
+    stageNumber: 2,
+    name: 'CHECK STOCK',
+    what: 'Verify physical stock at site store and central warehouse against requisition',
+    whoRole: 'STORE MANAGER',
+    whoDefaultAssignee: 'Amanat Bharadwaj',
+    howChannel: 'IN-APP FORM',
+    slaHours: 4,
+    hasYesNoDecision: false,
+    fields: [
+      {
+        id: 'storeKeeperRemarks',
+        label: 'Store Keeper Inspection & Stock Verification Notes',
+        type: 'TEXTAREA',
+        placeholder: 'Enter physical stock verification summary...'
+      }
+    ]
+  },
+  {
+    stageId: 'STG-SSM-03',
+    stageNumber: 3,
+    name: 'IS MATERIAL PURCHASE REQUIRED?',
+    what: 'Determine if material purchase is required for shortage items',
+    whoRole: 'STORE MANAGER',
+    whoDefaultAssignee: 'Amanat Bharadwaj',
+    howChannel: 'WHATSAPP / EMAIL / PHYSICALLY',
+    slaHours: 4,
+    isCheckpoint: true,
+    hasYesNoDecision: true,
+    fields: [
+      {
+        id: 'purchaseRequiredToggle',
+        label: 'Is Material Purchase Required?',
+        type: 'SELECT',
+        options: ['Yes', 'No'],
+        required: true
+      },
+      {
+        id: 'communicationChannel',
+        label: 'Communication Mode',
+        type: 'SELECT',
+        options: ['WhatsApp', 'Email', 'Physically / In-Person']
+      },
+      {
+        id: 'decisionNotes',
+        label: 'Decision Notes',
+        type: 'TEXTAREA'
+      }
+    ]
+  },
+  {
+    stageId: 'STG-SSM-04',
+    stageNumber: 4,
+    name: 'PURCHASE REQUISITION & QUOTATION COMPARATIVE',
+    what: 'Central Purchase Department procurement, vendor quotes and comparative statement',
+    whoRole: 'PURCHASE MANAGER',
+    whoDefaultAssignee: 'Bramhanand Patel',
+    howChannel: 'COMPARATIVE STATEMENT / PO FORM',
+    slaHours: 24,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-SSM-05',
+    stageNumber: 5,
+    name: 'ACCOUNT VOUCHER & PAYMENT APPROVAL',
+    what: 'Accounts verification, advance/credit voucher authorization and payment approval',
+    whoRole: 'FINANCE / ACCOUNTS HEAD',
+    whoDefaultAssignee: 'Pranjal Agrawal',
+    howChannel: 'ACCOUNTS VOUCHER / BANK PAYMENT',
+    slaHours: 12,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-SSM-06',
+    stageNumber: 6,
+    name: 'STORE MATERIAL RECEIPT & MRN',
+    what: 'Material arrival at store, physical quality verification, MRN entry and stock inward',
+    whoRole: 'STORE MANAGER',
+    whoDefaultAssignee: 'Amanat Bharadwaj',
+    howChannel: 'MRN ENTRY / IMS UPDATE',
+    slaHours: 8,
+    hasYesNoDecision: false
+  },
+  {
+    stageId: 'STG-SSM-07',
+    stageNumber: 7,
+    name: 'SITE DISPATCH & ACKNOWLEDGEMENT',
+    what: 'Final dispatch to requesting site location and site engineer sign-off',
+    whoRole: 'SITE ENGINEER / STORE MANAGER',
+    whoDefaultAssignee: 'Amanat Bharadwaj',
+    howChannel: 'SITE ISSUE NOTE / SIGN-OFF',
+    slaHours: 4,
+    hasYesNoDecision: false
+  }
+];
+
 export const FMS_STANDARD_PURCHASE_STAGES: FmsStageDefinition[] = [
   {
     stageId: 'STG-01',
@@ -4939,6 +5096,28 @@ export const DEFAULT_REGISTRY_CONFIG: CentralRegistryConfig = {
 
 export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
   {
+    id: 'tpl_site_to_site_materials',
+    templateKey: 'SITE_TO_SITE_MATERIALS',
+    name: 'Site to Site Complete Materials FMS',
+    departmentHub: 'PURCHASE',
+    referenceLabel: 'BPL/SSPASS/2026/',
+    defaultPriority: 'Normal',
+    description: '7-stage site to site complete material requisition, store stock check, purchase, accounts, receipt & dispatch workflow.',
+    createdAt: '18/10/2026',
+    updatedAt: '18/10/2026',
+    stages: FMS_SITE_TO_SITE_MATERIALS_STAGES.map((s, idx) => ({
+      stageId: s.stageId,
+      stageName: s.name,
+      whoRole: s.whoRole,
+      whoDefaultAssignee: s.whoDefaultAssignee,
+      howChannel: s.howChannel,
+      slaHours: idx === 0 ? 0 : s.slaHours,
+      fields: s.fields,
+      hasYesNoDecision: s.hasYesNoDecision,
+      isCheckpoint: s.isCheckpoint,
+    })),
+  },
+  {
     id: 'tpl_indent_purchase',
     templateKey: 'INDENT_PURCHASE',
     name: 'Indent to Purchase Order Workflow',
@@ -4960,7 +5139,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
   {
     id: 'tpl_check_stock',
     templateKey: 'CHECK_STOCK',
-    name: 'Stock Check & Requisition Workflow',
+    name: 'Store Check Stock & Requisition Workflow',
     departmentHub: 'STORE',
     referenceLabel: 'BPL/STK/',
     defaultPriority: 'Normal',

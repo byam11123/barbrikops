@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Landmark, Check, AlertTriangle, ShieldCheck, FileText, ArrowRight, ExternalLink, Clock, Copy, Upload } from 'lucide-react';
+import { X, Landmark, Check, AlertTriangle, ShieldCheck, FileText, Clock, Upload } from 'lucide-react';
 import { BankPaymentRecord, UserProfile, isUserDirector } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { AttachmentPreviewModal } from './AttachmentPreviewModal';
@@ -10,6 +10,42 @@ interface PaymentDetailDrawerProps {
   onClose: () => void;
   currentUser: UserProfile;
   onUpdate: () => void;
+}
+
+function parseDateString(str?: string): Date | null {
+  if (!str) return null;
+  try {
+    const cleaned = str.replace(',', '').trim();
+    const parts = cleaned.split(' ');
+    if (parts.length >= 2) {
+      const dateParts = parts[0].split('/');
+      const timeParts = parts[1].split(':');
+      if (dateParts.length === 3 && timeParts.length >= 2) {
+        const day = parseInt(dateParts[0], 10);
+        const month = parseInt(dateParts[1], 10) - 1;
+        const year = parseInt(dateParts[2], 10);
+        const hours = parseInt(timeParts[0], 10);
+        const minutes = parseInt(timeParts[1], 10);
+        const seconds = timeParts[2] ? parseInt(timeParts[2], 10) : 0;
+        const d = new Date(year, month, day, hours, minutes, seconds);
+        if (!isNaN(d.getTime())) return d;
+      }
+    }
+    const fallback = new Date(str);
+    return isNaN(fallback.getTime()) ? null : fallback;
+  } catch {
+    return null;
+  }
+}
+
+function formatDateDisplay(d: Date | null): string {
+  if (!d) return '—';
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function addHours(d: Date, hours: number): Date {
+  return new Date(d.getTime() + hours * 60 * 60 * 1000);
 }
 
 export const PaymentDetailDrawer: React.FC<PaymentDetailDrawerProps> = ({
@@ -84,6 +120,32 @@ export const PaymentDetailDrawer: React.FC<PaymentDetailDrawerProps> = ({
     setTimeout(() => setMessage(null), 3000);
   };
 
+  // SLA Timestamps Calculation
+  const intakeDate = parseDateString(payment.timestamp);
+  
+  // Stage 1: Intake (Triggered when anyone fills the payment request form)
+  const stage1Actual = payment.timestamp;
+  const stage1User = payment.requestedBy;
+
+  // Stage 2: Approval (SLA = 1 Hr from Stage 1 Intake)
+  const stage2PlannedDate = intakeDate ? addHours(intakeDate, 1) : null;
+  const stage2Planned = formatDateDisplay(stage2PlannedDate);
+  const stage2ActualDate = parseDateString(payment.approvalTimestamp);
+  const stage2Actual = payment.approvalTimestamp ? `${payment.approvalTimestamp} by ${payment.approvedBy || 'Director'}` : '—';
+
+  // Stage 3: Bank Entry (SLA = 1 Hr from Stage 2)
+  const stage3BaseDate = stage2ActualDate || stage2PlannedDate;
+  const stage3PlannedDate = stage3BaseDate ? addHours(stage3BaseDate, 1) : null;
+  const stage3Planned = formatDateDisplay(stage3PlannedDate);
+  const stage3ActualDate = parseDateString(payment.paymentEntryTimestamp);
+  const stage3Actual = payment.paymentEntryTimestamp ? `${payment.paymentEntryTimestamp} by ${payment.paymentEntryBy || 'Accounts'}` : '—';
+
+  // Stage 4: Settlement (SLA = 1 Hr from Stage 3)
+  const stage4BaseDate = stage3ActualDate || stage3PlannedDate;
+  const stage4PlannedDate = stage4BaseDate ? addHours(stage4BaseDate, 1) : null;
+  const stage4Planned = formatDateDisplay(stage4PlannedDate);
+  const stage4Actual = payment.paymentDoneTimestamp ? `${payment.paymentDoneTimestamp} (UTR: ${payment.remarks || 'N/A'})` : '—';
+
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/50 backdrop-blur-xs flex justify-end">
       <div className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200">
@@ -104,67 +166,13 @@ export const PaymentDetailDrawer: React.FC<PaymentDetailDrawerProps> = ({
         </div>
 
         {/* Drawer Content */}
-        <div className="p-6 space-y-6 overflow-y-auto flex-1 text-xs">
+        <div className="p-6 space-y-5 overflow-y-auto flex-1 text-xs">
           {message && (
             <div className="p-3.5 bg-emerald-50 border border-emerald-300 text-emerald-900 font-bold rounded-xl flex items-center gap-2">
               <Check className="w-4 h-4 text-emerald-600" />
               <span>{message}</span>
             </div>
           )}
-
-          {/* 4-Step Visual FMS Progress Stepper */}
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-              4-Step FMS Lifecycle Status
-            </span>
-            <div className="grid grid-cols-4 gap-2 text-center text-[10px] font-bold">
-              {/* Step 1: Intake */}
-              <div className="p-2 bg-emerald-100 text-emerald-900 rounded-xl border border-emerald-200 space-y-1">
-                <span className="block font-black text-emerald-700">1. Intake</span>
-                <span className="block text-[9px] text-emerald-800">Submitted</span>
-              </div>
-
-              {/* Step 2: Approval */}
-              <div className={`p-2 rounded-xl border space-y-1 ${
-                payment.approvalStatus === 'APPROVED'
-                  ? 'bg-emerald-100 text-emerald-900 border-emerald-200'
-                  : payment.approvalStatus === 'REJECTED'
-                  ? 'bg-rose-100 text-rose-900 border-rose-200'
-                  : 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
-              }`}>
-                <span className="block font-black">2. Approval</span>
-                <span className="block text-[9px]">{payment.approvalStatus}</span>
-              </div>
-
-              {/* Step 3: Portal Entry */}
-              <div className={`p-2 rounded-xl border space-y-1 ${
-                payment.paymentEntry === 'DONE'
-                  ? 'bg-emerald-100 text-emerald-900 border-emerald-200'
-                  : payment.paymentEntry === 'CANCELLED'
-                  ? 'bg-slate-100 text-slate-400 border-slate-200'
-                  : payment.approvalStatus === 'APPROVED'
-                  ? 'bg-indigo-100 text-indigo-900 border-indigo-200 animate-pulse'
-                  : 'bg-slate-100 text-slate-500 border-slate-200'
-              }`}>
-                <span className="block font-black">3. Bank Entry</span>
-                <span className="block text-[9px]">{payment.paymentEntry}</span>
-              </div>
-
-              {/* Step 4: Settlement */}
-              <div className={`p-2 rounded-xl border space-y-1 ${
-                payment.paymentStatus === 'DONE'
-                  ? 'bg-emerald-100 text-emerald-900 border-emerald-200'
-                  : payment.paymentStatus === 'CANCELLED'
-                  ? 'bg-slate-100 text-slate-400 border-slate-200'
-                  : payment.paymentEntry === 'DONE'
-                  ? 'bg-indigo-100 text-indigo-900 border-indigo-200 animate-pulse'
-                  : 'bg-slate-100 text-slate-500 border-slate-200'
-              }`}>
-                <span className="block font-black">4. Settlement</span>
-                <span className="block text-[9px]">{payment.paymentStatus}</span>
-              </div>
-            </div>
-          </div>
 
           {/* Trade Name vs Legal Beneficiary Mismatch Warning */}
           {payment.isNameMismatch && (
@@ -188,11 +196,11 @@ export const PaymentDetailDrawer: React.FC<PaymentDetailDrawerProps> = ({
             </h4>
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div>
-                <span className="text-slate-500 block text-[11px]">Trade Vendor Name</span>
+                <span className="text-slate-500 block text-[11px]">Vendor Name</span>
                 <span className="font-bold text-slate-900">{payment.vendorName}</span>
               </div>
               <div>
-                <span className="text-slate-500 block text-[11px]">Legal Beneficiary Name</span>
+                <span className="text-slate-500 block text-[11px]">Name of Beneficiary</span>
                 <span className="font-bold text-slate-900">{payment.beneficiaryName}</span>
               </div>
               <div>
@@ -204,15 +212,15 @@ export const PaymentDetailDrawer: React.FC<PaymentDetailDrawerProps> = ({
                 <span className="font-bold text-slate-900">{payment.modeOfPayment}</span>
               </div>
               <div>
-                <span className="text-slate-500 block text-[11px]">Project Site</span>
+                <span className="text-slate-500 block text-[11px]">Site</span>
                 <span className="font-semibold text-slate-800">{payment.site}</span>
               </div>
               <div>
-                <span className="text-slate-500 block text-[11px]">Required Date</span>
+                <span className="text-slate-500 block text-[11px]">Planned Date</span>
                 <span className="font-semibold text-slate-800">{payment.plannedDate}</span>
               </div>
               <div className="col-span-2">
-                <span className="text-slate-500 block text-[11px]">Purpose / Particulars</span>
+                <span className="text-slate-500 block text-[11px]">Purpose</span>
                 <span className="font-medium text-slate-800">{payment.purposeOfPayment}</span>
               </div>
               {payment.modeOfPayment === 'ACCOUNT' && (
@@ -223,7 +231,9 @@ export const PaymentDetailDrawer: React.FC<PaymentDetailDrawerProps> = ({
                   </div>
                   <div>
                     <span className="text-slate-500 block text-[11px]">Account Number & IFSC</span>
-                    <span className="font-mono font-bold text-slate-900">{payment.accountNoMasked || '••••••••3352'} ({payment.ifscCode || 'SBIN0001292'})</span>
+                    <span className="font-mono font-bold text-slate-900">
+                      {payment.accountNo || (payment.accountNoMasked ? payment.accountNoMasked.replace(/•/g, '3') : '381928371923')} ({payment.ifscCode || 'SBIN0001292'})
+                    </span>
                   </div>
                 </>
               )}
@@ -402,34 +412,92 @@ export const PaymentDetailDrawer: React.FC<PaymentDetailDrawerProps> = ({
             </form>
           )}
 
-          {/* Audit Timestamp History */}
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2 text-[11px]">
-            <span className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">
-              Audit Execution Logs
-            </span>
-            <div className="space-y-1 text-slate-600">
-              <div className="flex justify-between">
-                <span>Requested:</span>
-                <span className="font-semibold text-slate-800">{payment.timestamp} by {payment.requestedBy}</span>
+          {/* Unified 4-Step FMS Lifecycle & SLA Audit Log (POSITIONED AT BOTTOM) */}
+          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                <span>4-Step FMS Lifecycle & SLA Execution Audit Log</span>
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full border border-indigo-200">
+                1 Hr SLA / Stage (Starts Stage 2)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* Stage 1: Intake */}
+              <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1.5 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 text-[11px]">1. Intake</span>
+                  <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded-full">
+                    Submitted
+                  </span>
+                </div>
+                <div className="space-y-0.5 text-[10px] text-slate-600">
+                  <div><span className="text-slate-400">Actual:</span> <span className="font-semibold text-slate-800">{stage1Actual}</span></div>
+                  <div><span className="text-slate-400">By:</span> <span className="font-medium text-slate-700">{stage1User}</span></div>
+                </div>
               </div>
-              {payment.approvalTimestamp && (
-                <div className="flex justify-between">
-                  <span>Sanctioned:</span>
-                  <span className="font-semibold text-slate-800">{payment.approvalTimestamp} by {payment.approvedBy}</span>
+
+              {/* Stage 2: Approval */}
+              <div className={`p-3 rounded-xl border space-y-1.5 shadow-2xs ${
+                payment.approvalStatus === 'APPROVED' ? 'bg-white border-emerald-300' :
+                payment.approvalStatus === 'REJECTED' ? 'bg-rose-50/50 border-rose-200' : 'bg-amber-50/50 border-amber-300'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 text-[11px]">2. Approval</span>
+                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                    payment.approvalStatus === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' :
+                    payment.approvalStatus === 'REJECTED' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    {payment.approvalStatus}
+                  </span>
                 </div>
-              )}
-              {payment.paymentEntryTimestamp && (
-                <div className="flex justify-between">
-                  <span>Portal Entry:</span>
-                  <span className="font-semibold text-slate-800">{payment.paymentEntryTimestamp} by {payment.paymentEntryBy}</span>
+                <div className="space-y-0.5 text-[10px] text-slate-600">
+                  <div><span className="text-slate-400">Planned SLA:</span> <span className="font-semibold text-slate-800">{stage2Planned}</span></div>
+                  <div><span className="text-slate-400">Actual:</span> <span className="font-semibold text-slate-800">{stage2Actual}</span></div>
                 </div>
-              )}
-              {payment.paymentDoneTimestamp && (
-                <div className="flex justify-between">
-                  <span>Final Debit UTR:</span>
-                  <span className="font-semibold text-slate-800">{payment.paymentDoneTimestamp} (UTR: {payment.remarks || 'N/A'})</span>
+              </div>
+
+              {/* Stage 3: Bank Entry */}
+              <div className={`p-3 rounded-xl border space-y-1.5 shadow-2xs ${
+                payment.paymentEntry === 'DONE' ? 'bg-white border-emerald-300' :
+                payment.paymentEntry === 'CANCELLED' ? 'bg-slate-100 border-slate-200' : 'bg-amber-50/50 border-amber-300'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 text-[11px]">3. Bank Entry</span>
+                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                    payment.paymentEntry === 'DONE' ? 'bg-emerald-100 text-emerald-800' :
+                    payment.paymentEntry === 'CANCELLED' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    {payment.paymentEntry}
+                  </span>
                 </div>
-              )}
+                <div className="space-y-0.5 text-[10px] text-slate-600">
+                  <div><span className="text-slate-400">Planned SLA:</span> <span className="font-semibold text-slate-800">{stage3Planned}</span></div>
+                  <div><span className="text-slate-400">Actual:</span> <span className="font-semibold text-slate-800">{stage3Actual}</span></div>
+                </div>
+              </div>
+
+              {/* Stage 4: Settlement */}
+              <div className={`p-3 rounded-xl border space-y-1.5 shadow-2xs ${
+                payment.paymentStatus === 'DONE' ? 'bg-white border-emerald-300' :
+                payment.paymentStatus === 'CANCELLED' ? 'bg-slate-100 border-slate-200' : 'bg-amber-50/50 border-amber-300'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 text-[11px]">4. Settlement</span>
+                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                    payment.paymentStatus === 'DONE' ? 'bg-emerald-100 text-emerald-800' :
+                    payment.paymentStatus === 'CANCELLED' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    {payment.paymentStatus}
+                  </span>
+                </div>
+                <div className="space-y-0.5 text-[10px] text-slate-600">
+                  <div><span className="text-slate-400">Planned SLA:</span> <span className="font-semibold text-slate-800">{stage4Planned}</span></div>
+                  <div><span className="text-slate-400">Actual:</span> <span className="font-semibold text-slate-800">{stage4Actual}</span></div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

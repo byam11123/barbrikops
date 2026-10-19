@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Building2, Check, AlertTriangle } from 'lucide-react';
 import { BeneficiaryRecord, UserProfile } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
+import { FileUploadField } from '../common/FileUploadField';
 
 interface NewBeneficiaryModalProps {
   isOpen: boolean;
@@ -48,7 +49,7 @@ export const NewBeneficiaryModal: React.FC<NewBeneficiaryModalProps> = ({
     }
 
     if (!cancelledChequeUrl.trim()) {
-      setError('Cancelled Cheque or Bank Passbook Proof URL is required for registration');
+      setError('Cancelled Cheque or Bank Passbook Proof upload is required for registration');
       return;
     }
 
@@ -98,7 +99,7 @@ export const NewBeneficiaryModal: React.FC<NewBeneficiaryModalProps> = ({
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
-              Legal Bank Account Holder Title <span className="text-rose-500">*</span>
+              Name of Beneficiary <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
@@ -112,7 +113,7 @@ export const NewBeneficiaryModal: React.FC<NewBeneficiaryModalProps> = ({
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
-              Commercial Trade Vendor Name
+              Vendor name
             </label>
             <input
               type="text"
@@ -126,7 +127,7 @@ export const NewBeneficiaryModal: React.FC<NewBeneficiaryModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Bank Account Number <span className="text-rose-500">*</span>
+                Account number <span className="text-rose-500">*</span>
               </label>
               <input
                 type="text"
@@ -140,7 +141,7 @@ export const NewBeneficiaryModal: React.FC<NewBeneficiaryModalProps> = ({
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Bank IFSC Code <span className="text-rose-500">*</span>
+                IFSC code <span className="text-rose-500">*</span>
               </label>
               <input
                 type="text"
@@ -168,11 +169,11 @@ export const NewBeneficiaryModal: React.FC<NewBeneficiaryModalProps> = ({
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
-              Vendor Goods / Service Category
+              Purpose
             </label>
             <input
               type="text"
-              placeholder="e.g. Earthmoving Heavy Spares, Cement Supplier, Electricals"
+              placeholder="e.g. FOR LPG GAS, Earthmoving Heavy Spares, Cement Supplier"
               value={purpose}
               onChange={(e) => setPurpose(e.target.value)}
               className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -181,21 +182,19 @@ export const NewBeneficiaryModal: React.FC<NewBeneficiaryModalProps> = ({
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
-              Cancelled Cheque / Passbook Image URL <span className="text-rose-500">*</span>
+              Cancelled Cheque / Passbook Proof <span className="text-rose-500">*</span>
             </label>
-            <input
-              type="text"
-              required
-              placeholder="https://..."
+            <FileUploadField
+              id="cancelled-cheque-passbook-upload"
               value={cancelledChequeUrl}
-              onChange={(e) => setCancelledChequeUrl(e.target.value)}
-              className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              onChange={(val) => setCancelledChequeUrl(val)}
+              placeholder="Select or upload Cancelled Cheque / Passbook document..."
             />
           </div>
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
-              Notes / Remark
+              Remark
             </label>
             <input
               type="text"

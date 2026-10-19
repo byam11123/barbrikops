@@ -316,8 +316,7 @@ export const VendorProfileDrawer: React.FC<VendorProfileDrawerProps> = ({
               ) : (
                 <div className="space-y-3">
                   {activeVendor.bankAccounts.map((acc, idx) => {
-                    const isRevealed = Boolean(revealedAccounts[acc.id]);
-                    const displayAccountNo = isRevealed ? acc.accountNo : acc.accountNoMasked;
+                    const displayAccountNo = acc.accountNo || acc.accountNoMasked;
                     const hasCheque = Boolean(acc.cancelledChequeUrl);
 
                     return (
@@ -362,13 +361,6 @@ export const VendorProfileDrawer: React.FC<VendorProfileDrawerProps> = ({
                               <div>
                                 <span className="text-slate-500 font-sans text-[11px] font-semibold mr-1">A/C:</span>
                                 <span className="font-bold text-slate-900">{displayAccountNo}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => toggleRevealAccount(acc.id)}
-                                  className="ml-1.5 text-indigo-600 hover:text-indigo-800 text-[10px] font-sans font-bold cursor-pointer"
-                                >
-                                  {isRevealed ? 'Hide' : 'Reveal'}
-                                </button>
                               </div>
 
                               <div>

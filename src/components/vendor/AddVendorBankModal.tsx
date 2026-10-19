@@ -83,7 +83,7 @@ export const AddVendorBankModal: React.FC<AddVendorBankModalProps> = ({
           tradeVendorName: vendor.tradeName,
           bankName: bankName.trim(),
           accountNo: accountNo.trim(),
-          accountNoMasked: `••••••••${accountNo.trim().slice(-4)}`,
+          accountNoMasked: accountNo.trim(),
           ifscCode: cleanIfsc,
           accountType,
           isPrimary,

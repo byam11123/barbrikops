@@ -167,7 +167,13 @@ export const FmsTemplateStudioPage: React.FC<FmsTemplateStudioPageProps> = ({
   // Load a template into the individual page workspace
   const handleOpenIndividualTemplate = (targetKeyOrId: string) => {
     const all = storageAdapter.getAllMasterTemplates();
-    const found = all.find((t) => t.id === targetKeyOrId || t.templateKey === targetKeyOrId);
+    const normalizedTarget = (targetKeyOrId === 'STORE_CHECK_STOCK' || targetKeyOrId === 'tpl_store_check_stock') ? 'CHECK_STOCK' : targetKeyOrId;
+    const found = all.find((t) => 
+      t.id === targetKeyOrId || 
+      t.templateKey === targetKeyOrId ||
+      t.id === normalizedTarget ||
+      t.templateKey === normalizedTarget
+    );
 
     if (found) {
       setEditingTemplateId(found.id);
@@ -190,9 +196,12 @@ export const FmsTemplateStudioPage: React.FC<FmsTemplateStudioPageProps> = ({
     let ref = 'Reference Code';
     let baseStages: any[] = [];
 
-    switch (targetKeyOrId) {
+    switch (normalizedTarget) {
       case 'CHECK_STOCK':
-        name = 'Store Inventory Stock Check';
+      case 'STORE_CHECK_STOCK':
+      case 'tpl_check_stock':
+      case 'tpl_store_check_stock':
+        name = 'Store Check Stock & Requisition Workflow';
         hub = 'SITE_LOGISTICS';
         ref = 'Requisition / Indent Ref';
         baseStages = FMS_CHECK_STOCK_STAGES;

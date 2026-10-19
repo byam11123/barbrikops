@@ -886,6 +886,7 @@ export interface BankPaymentRecord {
   // Beneficiary Master Link
   beneficiaryMasterStatus: 'VERIFIED' | 'NEEDS_ADDITION' | 'NOT_APPLICABLE_UPI';
   bankName?: string;
+  accountNo?: string;
   accountNoMasked?: string;
   ifscCode?: string;
   cancelledChequeUrl?: string;

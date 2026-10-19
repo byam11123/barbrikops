@@ -737,6 +737,8 @@ export const isFlowMatchingWorkflow = (
     INDENT_PURCHASE: 'tpl_indent_purchase',
     tpl_check_stock: 'CHECK_STOCK',
     CHECK_STOCK: 'tpl_check_stock',
+    STORE_CHECK_STOCK: 'CHECK_STOCK',
+    tpl_store_check_stock: 'CHECK_STOCK',
     tpl_po_to_payment: 'PO_TO_PAYMENT',
     PO_TO_PAYMENT: 'tpl_po_to_payment',
     tpl_beneficiary_approval: 'BENEFICIARY_APPROVAL',

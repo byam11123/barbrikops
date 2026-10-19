@@ -153,7 +153,7 @@ export const NewIbtModal: React.FC<NewIbtModalProps> = ({
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
-              Treasury Purpose / Justification <span className="text-rose-500">*</span>
+              Purpose <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
@@ -167,7 +167,7 @@ export const NewIbtModal: React.FC<NewIbtModalProps> = ({
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
-              Operational Remark
+              Remark
             </label>
             <input
               type="text"

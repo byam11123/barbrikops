@@ -1,14 +1,50 @@
 import React, { useState } from 'react';
 import { 
-  ArrowRightLeft, Plus, Search, Filter, ShieldCheck, CheckCircle2, Clock, 
-  FileText, Download, Check, ExternalLink, Building2, Landmark
+  ArrowRightLeft, Plus, Search, CheckCircle2, Clock, 
+  FileText, Download, Check, X, XCircle, Eye, Landmark
 } from 'lucide-react';
-import { InterbankTransferRecord, UserProfile, isUserDirector } from '../../types';
+import { InterbankTransferRecord, UserProfile } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { NewIbtModal } from './NewIbtModal';
 import { AttachmentPreviewModal } from './AttachmentPreviewModal';
 import { ColumnCustomizerPopover, ColumnOption } from './ColumnCustomizerPopover';
 import { downloadCsv } from './exportCsvHelper';
+
+function parseDateString(str?: string): Date | null {
+  if (!str) return null;
+  try {
+    const cleaned = str.replace(',', '').trim();
+    const parts = cleaned.split(' ');
+    if (parts.length >= 2) {
+      const dateParts = parts[0].split('/');
+      const timeParts = parts[1].split(':');
+      if (dateParts.length === 3 && timeParts.length >= 2) {
+        const day = parseInt(dateParts[0], 10);
+        const month = parseInt(dateParts[1], 10) - 1;
+        const year = parseInt(dateParts[2], 10);
+        const hours = parseInt(timeParts[0], 10);
+        const minutes = parseInt(timeParts[1], 10);
+        const seconds = timeParts[2] ? parseInt(timeParts[2], 10) : 0;
+        const d = new Date(year, month, day, hours, minutes, seconds);
+        if (!isNaN(d.getTime())) return d;
+      }
+    }
+    const fallback = new Date(str);
+    return isNaN(fallback.getTime()) ? null : fallback;
+  } catch {
+    return null;
+  }
+}
+
+function formatDateDisplay(d: Date | null): string {
+  if (!d) return '—';
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function addHours(d: Date, hours: number): Date {
+  return new Date(d.getTime() + hours * 60 * 60 * 1000);
+}
 
 interface InterbankTransferViewProps {
   currentUser: UserProfile;
@@ -22,10 +58,11 @@ const IBT_COLUMNS: ColumnOption[] = [
   { id: 'transferFrom', label: 'Source Bank (From)', defaultVisible: true },
   { id: 'transferTo', label: 'Destination Bank (To)', defaultVisible: true },
   { id: 'amount', label: 'Amount (₹)', defaultVisible: true },
-  { id: 'purpose', label: 'Purpose / Remarks', defaultVisible: true },
-  { id: 'approvalStatus', label: 'Approval Status', defaultVisible: true },
-  { id: 'paymentStatus', label: 'Settlement & UTR', defaultVisible: true },
+  { id: 'purpose', label: 'Purpose', defaultVisible: true },
   { id: 'proof', label: 'Debit Advice Proof', defaultVisible: true },
+  { id: 'approvalStatus', label: 'Approval Status', defaultVisible: true },
+  { id: 'bankEntry', label: 'Bank Entry Status', defaultVisible: true },
+  { id: 'paymentStatus', label: 'Payment Status', defaultVisible: true },
   { id: 'actions', label: 'Actions', defaultVisible: true },
 ];
 
@@ -40,19 +77,7 @@ export const InterbankTransferView: React.FC<InterbankTransferViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'SETTLED'>('ALL');
   const [localSearch, setLocalSearch] = useState('');
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
-
-  // Quick UTR Recording Dialog
-  const [utrDialog, setUtrDialog] = useState<{
-    isOpen: boolean;
-    record: InterbankTransferRecord | null;
-    utrValue: string;
-    proofUrl: string;
-  }>({
-    isOpen: false,
-    record: null,
-    utrValue: '',
-    proofUrl: '',
-  });
+  const [selectedIbtRecord, setSelectedIbtRecord] = useState<InterbankTransferRecord | null>(null);
 
   // Proof Preview Modal State
   const [previewDoc, setPreviewDoc] = useState<{
@@ -78,51 +103,14 @@ export const InterbankTransferView: React.FC<InterbankTransferViewProps> = ({
     return IBT_COLUMNS.filter(c => c.defaultVisible).map(c => c.id);
   });
 
-  const isDirector = isUserDirector(currentUser);
-  const isAccounts = (currentUser.departmentKeys || []).includes('ACCOUNTS') || 
-                     (currentUser.departmentName || '').toUpperCase().includes('ACCOUNTS') || 
-                     currentUser.role.toUpperCase().includes('ACCOUNTS');
-
   const refreshData = () => {
     setIbtRecords(storageAdapter.getIbtRecords());
     onRefresh();
   };
 
-  const handleApprove = (e: React.MouseEvent, record: InterbankTransferRecord) => {
-    e.stopPropagation();
-    storageAdapter.approveIbtRecord(record.id, true, currentUser);
-    refreshData();
-  };
-
-  const handleOpenUtrDialog = (e: React.MouseEvent, record: InterbankTransferRecord) => {
-    e.stopPropagation();
-    setUtrDialog({
-      isOpen: true,
-      record,
-      utrValue: record.utrRef || '',
-      proofUrl: record.paymentDoneProof || '',
-    });
-  };
-
-  const handleSubmitUtr = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!utrDialog.record || !utrDialog.utrValue.trim()) return;
-
-    storageAdapter.finalizeIbtPayment(
-      utrDialog.record.id,
-      'DONE',
-      utrDialog.utrValue.trim(),
-      utrDialog.proofUrl.trim() || undefined,
-      currentUser
-    );
-
-    setUtrDialog({ isOpen: false, record: null, utrValue: '', proofUrl: '' });
-    refreshData();
-  };
-
   const handleExportCsv = () => {
     const rows = [
-      ['Sheet Ref', 'Date', 'Source Account (From)', 'Destination Account (To)', 'Amount (₹)', 'Purpose / Justification', 'Requested By', 'Approval Status', 'Approved By', 'Settlement Status', 'UTR Number', 'Settled Date'],
+      ['Sheet Ref', 'Date', 'Source Account (From)', 'Destination Account (To)', 'Amount (₹)', 'Purpose', 'Remark', 'Requested By', 'Approval Status', 'Approved By', 'Bank Entry Status', 'Payment Status', 'UTR Number'],
       ...filteredRecords.map(i => [
         i.sheetNo,
         i.timestamp,
@@ -130,12 +118,13 @@ export const InterbankTransferView: React.FC<InterbankTransferViewProps> = ({
         i.transferTo,
         i.amount,
         i.purpose || '—',
+        i.remarks || '—',
         i.requestedBy,
         i.approvalStatus,
         i.approvedBy || '—',
-        i.paymentStatus === 'DONE' ? 'Settled' : 'Pending',
+        i.bankEntry || 'PENDING',
+        i.paymentStatus,
         i.utrRef || '—',
-        i.paymentDoneTimestamp || '—',
       ])
     ];
     downloadCsv('Interbank_Transfers_Ledger', rows);
@@ -144,7 +133,7 @@ export const InterbankTransferView: React.FC<InterbankTransferViewProps> = ({
   const filteredRecords = ibtRecords.filter(i => {
     if (statusFilter === 'PENDING' && i.approvalStatus !== 'PENDING') return false;
     if (statusFilter === 'APPROVED' && (i.approvalStatus !== 'APPROVED' || i.paymentStatus === 'DONE')) return false;
-    if (statusFilter === 'SETTLED' && i.paymentStatus !== 'DONE') return false;
+    if (statusFilter === 'SETTLED' && i.paymentStatus === 'DONE') return false;
 
     const effectiveSearch = (localSearch || searchQuery || '').trim().toLowerCase();
     if (effectiveSearch !== '') {
@@ -432,10 +421,11 @@ export const InterbankTransferView: React.FC<InterbankTransferViewProps> = ({
                 {visibleColumns.includes('transferFrom') && <th className="p-3.5">Source Bank (From)</th>}
                 {visibleColumns.includes('transferTo') && <th className="p-3.5">Destination Bank (To)</th>}
                 {visibleColumns.includes('amount') && <th className="p-3.5">Amount (₹)</th>}
-                {visibleColumns.includes('purpose') && <th className="p-3.5">Purpose / Remarks</th>}
-                {visibleColumns.includes('approvalStatus') && <th className="p-3.5">Approval Status</th>}
-                {visibleColumns.includes('paymentStatus') && <th className="p-3.5">Settlement (UTR)</th>}
+                {visibleColumns.includes('purpose') && <th className="p-3.5">Purpose</th>}
                 {visibleColumns.includes('proof') && <th className="p-3.5">Debit Advice Proof</th>}
+                {visibleColumns.includes('approvalStatus') && <th className="p-3.5">Approval Status</th>}
+                {visibleColumns.includes('bankEntry') && <th className="p-3.5">Bank Entry Status</th>}
+                {visibleColumns.includes('paymentStatus') && <th className="p-3.5">Payment Status</th>}
                 {visibleColumns.includes('actions') && <th className="p-3.5 text-right pr-5">Actions</th>}
               </tr>
             </thead>
@@ -493,45 +483,6 @@ export const InterbankTransferView: React.FC<InterbankTransferViewProps> = ({
                       </td>
                     )}
 
-                    {visibleColumns.includes('approvalStatus') && (
-                      <td className="p-3.5">
-                        {i.approvalStatus === 'PENDING' && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800">
-                            <Clock className="w-3 h-3 text-amber-600" /> Pending Sanction
-                          </span>
-                        )}
-                        {i.approvalStatus === 'APPROVED' && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Sanctioned
-                          </span>
-                        )}
-                        {i.approvalStatus === 'REJECTED' && (
-                          <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800">
-                            Rejected
-                          </span>
-                        )}
-                      </td>
-                    )}
-
-                    {visibleColumns.includes('paymentStatus') && (
-                      <td className="p-3.5">
-                        {i.paymentStatus === 'DONE' ? (
-                          <div className="space-y-0.5">
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Settled
-                            </span>
-                            <div className="font-mono text-[10px] text-slate-500 font-bold">
-                              UTR: {i.utrRef || 'REF-N/A'}
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700">
-                            <Clock className="w-3 h-3 text-slate-500" /> Awaiting Debit
-                          </span>
-                        )}
-                      </td>
-                    )}
-
                     {visibleColumns.includes('proof') && (
                       <td className="p-3.5">
                         <button
@@ -539,7 +490,7 @@ export const InterbankTransferView: React.FC<InterbankTransferViewProps> = ({
                           onClick={() => setPreviewDoc({
                             isOpen: true,
                             title: `Debit Advice / Bank Receipt - ${i.sheetNo}`,
-                            fileUrl: i.paymentDoneProof,
+                            fileUrl: i.paymentDoneProof || i.bankEntryProof,
                             referenceNo: i.sheetNo,
                             partyName: `${i.transferFrom} ➔ ${i.transferTo}`,
                             amount: i.amount
@@ -552,30 +503,182 @@ export const InterbankTransferView: React.FC<InterbankTransferViewProps> = ({
                       </td>
                     )}
 
+                    {/* Approval Status Column */}
+                    {visibleColumns.includes('approvalStatus') && (
+                      <td className="p-3.5">
+                        {i.approvalStatus === 'PENDING' && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                            <Clock className="w-3 h-3 text-amber-600" /> Pending
+                          </span>
+                        )}
+                        {i.approvalStatus === 'APPROVED' && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Approved
+                          </span>
+                        )}
+                        {i.approvalStatus === 'REJECTED' && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                            <XCircle className="w-3 h-3 text-rose-600" /> Rejected
+                          </span>
+                        )}
+                      </td>
+                    )}
+
+                    {/* Bank Entry Status Column */}
+                    {visibleColumns.includes('bankEntry') && (
+                      <td className="p-3.5">
+                        {(i.bankEntry === 'PENDING' || !i.bankEntry) && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                            <Clock className="w-3 h-3 text-amber-600" /> Pending
+                          </span>
+                        )}
+                        {i.bankEntry === 'DONE' && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Done
+                          </span>
+                        )}
+                        {i.bankEntry === 'CANCELLED' && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                            <XCircle className="w-3 h-3 text-rose-600" /> Cancelled
+                          </span>
+                        )}
+                      </td>
+                    )}
+
+                    {/* Payment Status Column */}
+                    {visibleColumns.includes('paymentStatus') && (
+                      <td className="p-3.5">
+                        {i.paymentStatus === 'PENDING' && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                            <Clock className="w-3 h-3 text-amber-600" /> Pending
+                          </span>
+                        )}
+                        {i.paymentStatus === 'DONE' && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Done
+                          </span>
+                        )}
+                        {i.paymentStatus === 'CANCELLED' && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                            <XCircle className="w-3 h-3 text-rose-600" /> Cancelled
+                          </span>
+                        )}
+                      </td>
+                    )}
+
+                    {/* Actions Column */}
                     {visibleColumns.includes('actions') && (
                       <td className="p-3.5 pr-5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {/* Director-Exclusive Sanction Action */}
-                          {isDirector && i.approvalStatus === 'PENDING' && (
-                            <button
-                              onClick={(e) => handleApprove(e, i)}
-                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                              title="Sanction Liquidity Transfer"
-                            >
-                              <ShieldCheck className="w-3.5 h-3.5" />
-                              <span>Sanction</span>
-                            </button>
+                          {/* Step 1: Pending Approval -> Approve / Reject */}
+                          {i.approvalStatus === 'PENDING' && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  storageAdapter.updateIbtRecordStatus(i.id, 'approvalStatus', 'APPROVED', currentUser);
+                                  refreshData();
+                                }}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                title="Approve Request"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Approve</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  storageAdapter.updateIbtRecordStatus(i.id, 'approvalStatus', 'REJECTED', currentUser);
+                                  refreshData();
+                                }}
+                                className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                title="Reject Request"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>Reject</span>
+                              </button>
+                            </>
                           )}
 
-                          {/* Accounts UTR Finalization Button */}
-                          {isAccounts && i.approvalStatus === 'APPROVED' && i.paymentStatus !== 'DONE' && (
+                          {/* Step 2: Approved, Awaiting Bank Entry -> Done / Cancelled */}
+                          {i.approvalStatus === 'APPROVED' && (i.bankEntry === 'PENDING' || !i.bankEntry) && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  storageAdapter.updateIbtRecordStatus(i.id, 'bankEntry', 'DONE', currentUser);
+                                  refreshData();
+                                }}
+                                className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                title="Bank Entry Done"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Done</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  storageAdapter.updateIbtRecordStatus(i.id, 'bankEntry', 'CANCELLED', currentUser);
+                                  refreshData();
+                                }}
+                                className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                title="Cancel Bank Entry"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>Cancelled</span>
+                              </button>
+                            </>
+                          )}
+
+                          {/* Step 3: Bank Entry Done, Awaiting Payment Status -> Done / Cancelled */}
+                          {i.bankEntry === 'DONE' && i.paymentStatus === 'PENDING' && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  storageAdapter.updateIbtRecordStatus(i.id, 'paymentStatus', 'DONE', currentUser);
+                                  refreshData();
+                                }}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                title="Payment Settlement Done"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Done</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  storageAdapter.updateIbtRecordStatus(i.id, 'paymentStatus', 'CANCELLED', currentUser);
+                                  refreshData();
+                                }}
+                                className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                title="Cancel Payment Settlement"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>Cancelled</span>
+                              </button>
+                            </>
+                          )}
+
+                          {/* Terminal State or Resolved -> View Only */}
+                          {(i.approvalStatus === 'REJECTED' ||
+                            i.bankEntry === 'CANCELLED' ||
+                            i.paymentStatus === 'CANCELLED' ||
+                            (i.approvalStatus === 'APPROVED' && i.bankEntry === 'DONE' && i.paymentStatus === 'DONE')) && (
                             <button
-                              onClick={(e) => handleOpenUtrDialog(e, i)}
-                              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                              title="Record Bank Debit UTR Number"
+                              type="button"
+                              onClick={() => setSelectedIbtRecord(i)}
+                              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs transition-colors cursor-pointer flex items-center gap-1"
+                              title="View Transfer Details"
                             >
-                              <Check className="w-3.5 h-3.5" />
-                              <span>Record UTR</span>
+                              <Eye className="w-3.5 h-3.5 text-slate-600" />
+                              <span>View</span>
                             </button>
                           )}
                         </div>
@@ -589,68 +692,218 @@ export const InterbankTransferView: React.FC<InterbankTransferViewProps> = ({
         </div>
       </div>
 
-      {/* Record UTR Dialog */}
-      {utrDialog.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <div>
-                <h4 className="text-sm font-bold text-slate-900">Record Bank Debit UTR</h4>
-                <p className="text-xs text-slate-500 font-mono">Ref: {utrDialog.record?.sheetNo}</p>
+      {/* View Details Read-Only Modal (Matches Bank Payment UI) */}
+      {selectedIbtRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-xl w-full my-8 shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="px-3 py-1 bg-indigo-100 text-indigo-700 font-mono font-bold text-xs rounded-xl">
+                  {selectedIbtRecord.sheetNo}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">{selectedIbtRecord.transferFrom} ➔ {selectedIbtRecord.transferTo}</h3>
+                  <p className="text-xs text-slate-500 font-medium">₹{selectedIbtRecord.amount.toLocaleString('en-IN')} • Interbank Transfer</p>
+                </div>
               </div>
               <button
                 type="button"
-                onClick={() => setUtrDialog({ isOpen: false, record: null, utrValue: '', proofUrl: '' })}
-                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
+                onClick={() => setSelectedIbtRecord(null)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-200 transition-colors cursor-pointer"
               >
-                ✕
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmitUtr} className="p-5 space-y-4 text-xs">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Bank UTR / Transaction Reference Number *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. UTR-9821873192 or CMS-77123"
-                  value={utrDialog.utrValue}
-                  onChange={(e) => setUtrDialog(prev => ({ ...prev, utrValue: e.target.value }))}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
+            {/* Modal Content */}
+            <div className="p-6 space-y-4 text-xs overflow-y-auto max-h-[80vh]">
+              {/* Card 1: Interbank Transfer Specification */}
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3">
+                <h4 className="font-bold text-slate-900 text-xs border-b border-slate-100 pb-2">
+                  Interbank Transfer Specification
+                </h4>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-slate-500 block text-[11px]">Source Account (From)</span>
+                    <span className="font-bold text-slate-900">{selectedIbtRecord.transferFrom}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[11px]">Destination Account (To)</span>
+                    <span className="font-bold text-indigo-900">{selectedIbtRecord.transferTo}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[11px]">Amount</span>
+                    <span className="font-mono font-bold text-indigo-700 text-sm">₹{selectedIbtRecord.amount.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[11px]">Requested Date</span>
+                    <span className="font-semibold text-slate-800">{selectedIbtRecord.timestamp}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[11px]">Purpose</span>
+                    <span className="font-medium text-slate-800">{selectedIbtRecord.purpose}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[11px]">Requested By</span>
+                    <span className="font-semibold text-slate-800">{selectedIbtRecord.requestedBy || 'System Requester'}</span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-slate-500 block text-[11px]">Remark</span>
+                    <span className="font-medium text-slate-800">{selectedIbtRecord.remarks || '—'}</span>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Debit Advice / Proof URL (Optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="Paste URL or reference of bank debit receipt"
-                  value={utrDialog.proofUrl}
-                  onChange={(e) => setUtrDialog(prev => ({ ...prev, proofUrl: e.target.value }))}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
+              {/* Card 2: Attached Documents & Verification Proofs */}
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3">
+                <h4 className="font-bold text-slate-900 text-xs border-b border-slate-100 pb-2">
+                  Attached Documents & Verification Proofs
+                </h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-[11px] font-bold text-slate-500 block mb-1">Debit Advice / Settlement Proof</span>
+                    {selectedIbtRecord.paymentDoneProof || selectedIbtRecord.bankEntryProof ? (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDoc({
+                          isOpen: true,
+                          title: `Debit Advice / Bank Receipt - ${selectedIbtRecord.sheetNo}`,
+                          fileUrl: selectedIbtRecord.paymentDoneProof || selectedIbtRecord.bankEntryProof,
+                          referenceNo: selectedIbtRecord.sheetNo,
+                          partyName: `${selectedIbtRecord.transferFrom} ➔ ${selectedIbtRecord.transferTo}`,
+                          amount: selectedIbtRecord.amount
+                        })}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>Inspect Debit Advice</span>
+                      </button>
+                    ) : (
+                      <span className="text-slate-400 text-[11px]">Pending Bank Settlement</span>
+                    )}
+                  </div>
+                </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setUtrDialog({ isOpen: false, record: null, utrValue: '', proofUrl: '' })}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors shadow-xs cursor-pointer"
-                >
-                  Confirm Settlement
-                </button>
-              </div>
-            </form>
+              {/* Card 3: 4-Step FMS Lifecycle & SLA Execution Audit Log */}
+              {(() => {
+                const intakeDate = parseDateString(selectedIbtRecord.timestamp);
+                const stage2PlannedDate = intakeDate ? addHours(intakeDate, 1) : null;
+                const stage2Planned = formatDateDisplay(stage2PlannedDate);
+                const stage2ActualDate = parseDateString(selectedIbtRecord.approvalTimestamp);
+
+                const stage3BaseDate = stage2ActualDate || stage2PlannedDate;
+                const stage3PlannedDate = stage3BaseDate ? addHours(stage3BaseDate, 1) : null;
+                const stage3Planned = formatDateDisplay(stage3PlannedDate);
+                const stage3ActualDate = parseDateString(selectedIbtRecord.bankEntryTimestamp);
+
+                const stage4BaseDate = stage3ActualDate || stage3PlannedDate;
+                const stage4PlannedDate = stage4BaseDate ? addHours(stage4BaseDate, 1) : null;
+                const stage4Planned = formatDateDisplay(stage4PlannedDate);
+
+                return (
+                  <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-200 space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                      <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>4-Step FMS Lifecycle & SLA Execution Audit Log</span>
+                      </span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full border border-indigo-200">
+                        1 Hr SLA / Stage (Starts Stage 2)
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {/* Stage 1: Intake */}
+                      <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1.5 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-900 text-[11px]">1. Intake</span>
+                          <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded-full">
+                            Submitted
+                          </span>
+                        </div>
+                        <div className="space-y-0.5 text-[10px] text-slate-600">
+                          <div><span className="text-slate-400">Actual:</span> <span className="font-semibold text-slate-800">{selectedIbtRecord.timestamp}</span></div>
+                          <div><span className="text-slate-400">By:</span> <span className="font-medium text-slate-700">{selectedIbtRecord.requestedBy || 'Requester'}</span></div>
+                        </div>
+                      </div>
+
+                      {/* Stage 2: Approval */}
+                      <div className={`p-3 rounded-xl border space-y-1.5 shadow-2xs ${
+                        selectedIbtRecord.approvalStatus === 'APPROVED' ? 'bg-white border-emerald-300' :
+                        selectedIbtRecord.approvalStatus === 'REJECTED' ? 'bg-rose-50/50 border-rose-200' : 'bg-amber-50/50 border-amber-300'
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-900 text-[11px]">2. Approval</span>
+                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                            selectedIbtRecord.approvalStatus === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' :
+                            selectedIbtRecord.approvalStatus === 'REJECTED' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {selectedIbtRecord.approvalStatus}
+                          </span>
+                        </div>
+                        <div className="space-y-0.5 text-[10px] text-slate-600">
+                          <div><span className="text-slate-400">Planned SLA:</span> <span className="font-semibold text-slate-800">{stage2Planned}</span></div>
+                          <div><span className="text-slate-400">Actual:</span> <span className="font-semibold text-slate-800">{selectedIbtRecord.approvalTimestamp || selectedIbtRecord.approvalStatus}</span></div>
+                        </div>
+                      </div>
+
+                      {/* Stage 3: Bank Entry */}
+                      <div className={`p-3 rounded-xl border space-y-1.5 shadow-2xs ${
+                        selectedIbtRecord.bankEntry === 'DONE' ? 'bg-white border-emerald-300' :
+                        selectedIbtRecord.bankEntry === 'CANCELLED' ? 'bg-slate-100 border-slate-200' : 'bg-amber-50/50 border-amber-300'
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-900 text-[11px]">3. Bank Entry</span>
+                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                            selectedIbtRecord.bankEntry === 'DONE' ? 'bg-emerald-100 text-emerald-800' :
+                            selectedIbtRecord.bankEntry === 'CANCELLED' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {selectedIbtRecord.bankEntry || 'PENDING'}
+                          </span>
+                        </div>
+                        <div className="space-y-0.5 text-[10px] text-slate-600">
+                          <div><span className="text-slate-400">Planned SLA:</span> <span className="font-semibold text-slate-800">{stage3Planned}</span></div>
+                          <div><span className="text-slate-400">Actual:</span> <span className="font-semibold text-slate-800">{selectedIbtRecord.bankEntryTimestamp || selectedIbtRecord.bankEntry || 'Pending'}</span></div>
+                        </div>
+                      </div>
+
+                      {/* Stage 4: Payment Status */}
+                      <div className={`p-3 rounded-xl border space-y-1.5 shadow-2xs ${
+                        selectedIbtRecord.paymentStatus === 'DONE' ? 'bg-white border-emerald-300' :
+                        selectedIbtRecord.paymentStatus === 'CANCELLED' ? 'bg-slate-100 border-slate-200' : 'bg-amber-50/50 border-amber-300'
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-900 text-[11px]">4. Settlement</span>
+                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                            selectedIbtRecord.paymentStatus === 'DONE' ? 'bg-emerald-100 text-emerald-800' :
+                            selectedIbtRecord.paymentStatus === 'CANCELLED' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {selectedIbtRecord.paymentStatus}
+                          </span>
+                        </div>
+                        <div className="space-y-0.5 text-[10px] text-slate-600">
+                          <div><span className="text-slate-400">Planned SLA:</span> <span className="font-semibold text-slate-800">{stage4Planned}</span></div>
+                          <div><span className="text-slate-400">Actual:</span> <span className="font-semibold text-slate-800">{selectedIbtRecord.paymentDoneTimestamp || selectedIbtRecord.paymentStatus || 'Pending'}</span></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedIbtRecord(null)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -3,6 +3,7 @@ import { X, GitBranch, AlertCircle, Plus, Check, CreditCard, ShoppingCart, Boxes
 import { FmsInstance, Priority, UserProfile, FmsTemplateDefinition, FmsStageTemplate, FmsLineItem, isUserSuperAdmin, isUserAdminOrSuperAdmin } from '../../types';
 import { generateCounterTrackingId, generateUniqueCounterTrackingId, getWorkflowIdTitle } from '../../utils/fmsUtils';
 import { 
+  FMS_SITE_TO_SITE_MATERIALS_STAGES,
   FMS_CHECK_STOCK_STAGES, 
   FMS_STANDARD_PURCHASE_STAGES, 
   FMS_PO_PAYMENT_STAGES,
@@ -40,7 +41,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
   const customTemplates = storageAdapter.getFmsTemplates();
   const [selectedCustomTemplateId, setSelectedCustomTemplateId] = useState<string | null>(null);
   const [customFormData, setCustomFormData] = useState<Record<string, any>>({});
-  const [flowType, setFlowType] = useState<'CHECK_STOCK' | 'INDENT_PURCHASE' | 'PO_TO_PAYMENT' | 'STORE_TO_SITE_DISPATCH' | 'PURCHASE_TO_STORE_DISPATCH' | 'PAYMENT_TO_DISPATCH' | 'SITE_RECEIVE' | 'ACCOUNTS_INVOICE_COLLECTION' | 'HR_ATTENDANCE_PAYMENT' | 'BREAKDOWN_REPORTING' | 'EQUIPMENT_PART_REPAIR' | 'DPR_REPORTING'>('CHECK_STOCK');
+  const [flowType, setFlowType] = useState<'SITE_TO_SITE_MATERIALS' | 'CHECK_STOCK' | 'INDENT_PURCHASE' | 'PO_TO_PAYMENT' | 'STORE_TO_SITE_DISPATCH' | 'PURCHASE_TO_STORE_DISPATCH' | 'PAYMENT_TO_DISPATCH' | 'SITE_RECEIVE' | 'ACCOUNTS_INVOICE_COLLECTION' | 'HR_ATTENDANCE_PAYMENT' | 'BREAKDOWN_REPORTING' | 'EQUIPMENT_PART_REPAIR' | 'DPR_REPORTING'>('SITE_TO_SITE_MATERIALS');
   const [indentNo, setIndentNo] = useState<string>('');
   const [poNumber, setPoNumber] = useState<string>('');
   const [vendorName, setVendorName] = useState<string>('');
@@ -170,7 +171,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
       const tpl = allMasterTemplates.find((t) => t.id === selectedCustomTemplateId);
       return tpl ? tpl.stages.map((s) => s.stageName) : [];
     }
-    const customizedBuiltin = allMasterTemplates.find((t) => t.templateKey === flowType);
+    const customizedBuiltin = allMasterTemplates.find((t) => t.templateKey === flowType || (flowType === 'CHECK_STOCK' && t.templateKey === 'STORE_CHECK_STOCK'));
     if (customizedBuiltin) {
       return customizedBuiltin.stages.map((s) => s.stageName);
     }
@@ -221,6 +222,16 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
     }
 
     switch (flowType) {
+      case 'SITE_TO_SITE_MATERIALS':
+        return FMS_SITE_TO_SITE_MATERIALS_STAGES.map((s) => ({
+          stageId: s.stageId,
+          stageName: s.name,
+          whoRole: s.whoRole,
+          whoDefaultAssignee: s.whoDefaultAssignee,
+          slaHours: s.slaHours !== undefined ? s.slaHours : 0,
+          fields: s.fields,
+          checkpoints: (s as any).checkpoints,
+        }));
       case 'CHECK_STOCK':
         return FMS_CHECK_STOCK_STAGES.map((s) => ({
           stageId: s.stageId,
@@ -533,7 +544,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
       }
 
       const flowId = `FLOW-STK-${indentNo.trim().replace(/[^a-zA-Z0-9]/g, '-')}`;
-      const customizedTpl = allMasterTemplates.find((t) => t.templateKey === 'CHECK_STOCK' || t.id === 'builtin_CHECK_STOCK');
+      const customizedTpl = allMasterTemplates.find((t) => t.templateKey === 'CHECK_STOCK' || t.templateKey === 'STORE_CHECK_STOCK' || t.id === 'builtin_CHECK_STOCK');
       const workShiftConfig = storageAdapter.getRegistryConfig().workShiftConfig || DEFAULT_WORK_SHIFT_CONFIG;
 
       const rawMultiItems = Array.isArray(customFormData.requisitionItems) ? customFormData.requisitionItems : [];
@@ -1302,8 +1313,8 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                 <div className="space-y-4">
                   {/* Primary Workflow Identifier (Auto-Generated Immutable Code - Visible to Super Admin & Administrative User) */}
                   {(isSuperAdmin || isAdminOrSuperAdmin) && (
-                    <div className="bg-slate-50/80 p-3 rounded-xl border border-indigo-200/90 shadow-2xs space-y-1.5">
-                      <label className="block text-xs font-bold text-indigo-950 uppercase tracking-wide">
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-slate-800 uppercase tracking-wide">
                         {getWorkflowIdTitle(tpl.name, tpl.referenceLabel)}
                       </label>
                       <input
@@ -1376,7 +1387,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                                 };
 
                                 return (
-                                  <div className="space-y-2 p-3.5 bg-slate-50 border border-indigo-200 rounded-xl shadow-2xs">
+                                  <div className="space-y-2">
                                     <div className="flex items-center justify-between gap-2 flex-wrap">
                                       <div>
                                         <span className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
@@ -1635,7 +1646,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                 };
 
                 return (
-                  <div className="space-y-2 p-3.5 bg-slate-50 border border-emerald-200 rounded-xl shadow-2xs">
+                  <div className="space-y-2">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <div>
                         <span className="text-xs font-extrabold text-emerald-950 flex items-center gap-1.5">

@@ -302,7 +302,7 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
             <div className="relative">
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs font-bold text-slate-700">
-                  Trade Vendor / Commercial Entity Name <span className="text-rose-500">*</span>
+                  Vendor Name <span className="text-rose-500">*</span>
                 </label>
                 {selectedVendor && (
                   <span className="text-[11px] font-mono text-indigo-600 font-bold">
@@ -504,7 +504,7 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
                       <>
                         <Building2 className="w-3.5 h-3.5 text-indigo-700" />
                         <span className="text-xs font-bold text-slate-800">
-                          Banking Requisition Coordinates
+                          Bank Account Details
                         </span>
                       </>
                     )}
@@ -525,10 +525,10 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
                   ) : null}
                 </div>
 
-                {/* Legal Beneficiary Name */}
+                {/* Name of Beneficiary */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Legal Bank Account Holder Title <span className="text-rose-500">*</span>
+                    Name of Beneficiary <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -704,7 +704,7 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Project Site Location <span className="text-rose-500">*</span>
+                  Site <span className="text-rose-500">*</span>
                 </label>
                 <select
                   value={site}
@@ -720,22 +720,23 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
               </div>
             </div>
 
-            {/* Purpose & Bill / PO Reference */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Purpose / Particulars <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. 500 Bags OPC Cement for Siladehi Pier Cap"
-                  value={purpose}
-                  onChange={(e) => setPurpose(e.target.value)}
-                  className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
+            {/* Purpose */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Purpose <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. 500 Bags OPC Cement for Siladehi Pier Cap"
+                value={purpose}
+                onChange={(e) => setPurpose(e.target.value)}
+                className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
 
+            {/* Bill / PO Reference & Remark */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   Bill No / PO Reference (Optional)
@@ -748,26 +749,9 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
                   className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
-            </div>
-
-            {/* Planned Execution Date & Remark */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Planned Execution Date (DD/MM/YYYY) <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="DD/MM/YYYY"
-                  value={plannedDate}
-                  onChange={(e) => setPlannedDate(e.target.value)}
-                  className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Requester Operational Remark</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Remark</label>
                 <input
                   type="text"
                   placeholder="e.g. Urgent advance required for dispatch release"
