@@ -24,7 +24,8 @@ import {
   Settings,
   FileSpreadsheet,
   Download,
-  Upload
+  Upload,
+  Boxes
 } from 'lucide-react';
 import { FmsTemplateDefinition, FmsStageTemplate, FmsStageFieldConfig, FmsSubWorkflowTriggerConfig, Priority } from '../../types';
 import { downloadFmsExcelTemplate, parseFmsExcelFile } from '../../services/fmsExcelService';
@@ -407,15 +408,16 @@ interface SelectOptionsEditorProps {
 }
 
 const SelectOptionsEditor: React.FC<SelectOptionsEditorProps> = ({ options = [], onChange }) => {
-  const [text, setText] = useState(() => (options ? options.join(', ') : ''));
+  const optionsJoined = options ? options.join(', ') : '';
+  const [text, setText] = useState(() => optionsJoined);
   const [singleInput, setSingleInput] = useState('');
   const isTypingRef = React.useRef(false);
 
   useEffect(() => {
     if (!isTypingRef.current) {
-      setText(options ? options.join(', ') : '');
+      setText(optionsJoined);
     }
-  }, [options]);
+  }, [optionsJoined]);
 
   const commitParsed = (val: string) => {
     const parsed = val
@@ -1072,35 +1074,8 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
           ];
         }
       } else if (key === 'CHECK_STOCK') {
-        if (idx === 2) {
-          defaultFields = [
-            { id: 'decision', label: 'IS MATERIAL PURCHASE REQUIRED?', type: 'SELECT', options: ['Yes', 'No'], required: true },
-            { id: 'remarks', label: 'PURCHASE JUSTIFICATION / REMARKS', type: 'TEXTAREA', required: false },
-          ];
-        } else if (idx === 3) {
-          defaultFields = [
-            { id: 'indentNumber', label: 'INDENT NUMBER', type: 'TEXT', required: true },
-            { id: 'purchaseQty', label: 'QUANTITY TO BE PURCHASED', type: 'NUMBER', required: true },
-            { id: 'requiredByDate', label: 'REQUIRED BY DATE', type: 'TEXT', required: true },
-            { id: 'formUrl', label: 'GOOGLE FORM LINK (INDENT TO PO)', type: 'URL', required: false },
-            { id: 'remarks', label: 'INDENT REMARKS', type: 'TEXTAREA', required: false },
-          ];
-        } else if (idx === 4) {
-          defaultFields = [
-            { id: 'isPartial', label: 'IS PARTIAL PURCHASE REQUIRED?', type: 'SELECT', options: ['Yes', 'No'], required: true },
-            { id: 'dispatchQty', label: 'QUANTITY TO BE DISPATCHED FROM STORE', type: 'NUMBER', required: false },
-            { id: 'balanceQty', label: 'BALANCE QUANTITY TO BE PURCHASED', type: 'NUMBER', required: false },
-            { id: 'remarks', label: 'PARTIAL ISSUE REMARKS', type: 'TEXTAREA', required: false },
-          ];
-        } else if (idx === 5) {
-          defaultFields = [
-            { id: 'dispatchChallanNo', label: 'DISPATCH / GATE PASS NUMBER', type: 'TEXT', required: true },
-            { id: 'dispatchedQty', label: 'DISPATCHED QUANTITY', type: 'NUMBER', required: true },
-            { id: 'receiverName', label: 'RECEIVER / DRIVER NAME', type: 'TEXT', required: true },
-            { id: 'formUrl', label: 'GOOGLE FORM LINK (STOCK TO DISPATCH)', type: 'URL', required: false },
-            { id: 'remarks', label: 'DISPATCH CONFIRMATION NOTES', type: 'TEXTAREA', required: false },
-          ];
-        }
+        // Streamlined 2-stage workflow: Stage 1 Receive Requisition -> Stage 2 Check Stock & Split (Auto-spawns Sub-Workflows)
+        defaultFields = [];
       } else if (key === 'PO_TO_PAYMENT') {
         if (idx === 6) {
           defaultFields = [
@@ -2000,59 +1975,125 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
                     </div>
 
                     {stg.logic?.gatewayType === 'CONDITIONAL_JUMP' && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-2.5 bg-indigo-50/60 rounded-lg border border-indigo-200 text-xs">
-                        <div className="space-y-1">
-                          <label className="block text-[11px] font-bold text-emerald-800 flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                            If Decision is 'YES' / Approved → Route To
-                          </label>
-                          <select
-                            value={stg.logic.yesTargetStageIndex ?? (sIdx + 1)}
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              handleUpdateStage(sIdx, {
-                                logic: {
-                                  ...stg.logic!,
-                                  yesTargetStageIndex: val,
-                                }
-                              });
-                            }}
-                            className="w-full text-xs bg-white border border-emerald-300 rounded p-1.5 font-semibold text-slate-800 cursor-pointer"
-                          >
-                            {stages.map((targetStg, tIdx) => (
-                              <option key={tIdx} value={tIdx}>
-                                {tIdx === sIdx + 1 ? `Proceed to Next: Stage #${tIdx + 1} (${targetStg.stageName})` : `Jump to: Stage #${tIdx + 1} (${targetStg.stageName})`}
-                              </option>
-                            ))}
-                            <option value={stages.length}>Complete &amp; Finalize Workflow</option>
-                          </select>
+                      <div className="space-y-2.5 p-2.5 bg-indigo-50/60 rounded-lg border border-indigo-200 text-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="block text-[11px] font-bold text-emerald-800 flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              If Decision / Condition is TRUE ('YES') → Route To
+                            </label>
+                            <select
+                              value={stg.logic.yesTargetStageIndex ?? (sIdx + 1)}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                handleUpdateStage(sIdx, {
+                                  logic: {
+                                    ...stg.logic!,
+                                    yesTargetStageIndex: val,
+                                  }
+                                });
+                              }}
+                              className="w-full text-xs bg-white border border-emerald-300 rounded p-1.5 font-semibold text-slate-800 cursor-pointer"
+                            >
+                              {stages.map((targetStg, tIdx) => (
+                                <option key={tIdx} value={tIdx}>
+                                  {tIdx === sIdx + 1 ? `Proceed to Next: Stage #${tIdx + 1} (${targetStg.stageName})` : `Jump to: Stage #${tIdx + 1} (${targetStg.stageName})`}
+                                </option>
+                              ))}
+                              <option value={stages.length}>Complete &amp; Finalize Workflow</option>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="block text-[11px] font-bold text-rose-800 flex items-center gap-1">
+                              <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                              If Decision / Condition is FALSE ('NO') → Route To
+                            </label>
+                            <select
+                              value={stg.logic.noTargetStageIndex ?? stages.length}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                handleUpdateStage(sIdx, {
+                                  logic: {
+                                    ...stg.logic!,
+                                    noTargetStageIndex: val,
+                                  }
+                                });
+                              }}
+                              className="w-full text-xs bg-white border border-rose-300 rounded p-1.5 font-semibold text-slate-800 cursor-pointer"
+                            >
+                              {stages.map((targetStg, tIdx) => (
+                                <option key={tIdx} value={tIdx}>
+                                  {tIdx === sIdx + 1 ? `Proceed to Next: Stage #${tIdx + 1} (${targetStg.stageName})` : `Skip Ahead to: Stage #${tIdx + 1} (${targetStg.stageName})`}
+                                </option>
+                              ))}
+                              <option value={stages.length}>Terminate / Reject Workflow</option>
+                            </select>
+                          </div>
                         </div>
 
-                        <div className="space-y-1">
-                          <label className="block text-[11px] font-bold text-rose-800 flex items-center gap-1">
-                            <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-                            If Decision is 'NO' / Rejected → Route To
-                          </label>
-                          <select
-                            value={stg.logic.noTargetStageIndex ?? stages.length}
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              handleUpdateStage(sIdx, {
-                                logic: {
-                                  ...stg.logic!,
-                                  noTargetStageIndex: val,
-                                }
-                              });
-                            }}
-                            className="w-full text-xs bg-white border border-rose-300 rounded p-1.5 font-semibold text-slate-800 cursor-pointer"
-                          >
-                            {stages.map((targetStg, tIdx) => (
-                              <option key={tIdx} value={tIdx}>
-                                {tIdx === sIdx + 1 ? `Proceed to Next: Stage #${tIdx + 1} (${targetStg.stageName})` : `Skip Ahead to: Stage #${tIdx + 1} (${targetStg.stageName})`}
-                              </option>
-                            ))}
-                            <option value={stages.length}>Terminate / Reject Workflow</option>
-                          </select>
+                        {/* Conditional Branch Condition Rules */}
+                        <div className="pt-2 border-t border-indigo-200/80 space-y-2">
+                          <span className="text-[11px] font-bold text-indigo-900 block uppercase tracking-wider flex items-center gap-1">
+                            <GitBranch className="w-3.5 h-3.5 text-indigo-600" />
+                            Conditional Command Configurator (Field-Based Rule)
+                          </span>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-700 mb-0.5">If Form Field:</label>
+                              <select
+                                value={stg.logic.conditionFieldId || ''}
+                                onChange={(e) => handleUpdateStage(sIdx, {
+                                  logic: { ...stg.logic!, conditionFieldId: e.target.value }
+                                })}
+                                className="w-full text-xs bg-white border border-slate-300 rounded p-1 font-semibold text-slate-800 cursor-pointer"
+                              >
+                                <option value="">Default Approval / Decision Field</option>
+                                {(stg.fields || []).map((f) => (
+                                  <option key={f.id} value={f.id || f.label}>
+                                    {f.label} ({f.type})
+                                  </option>
+                                ))}
+                                <option value="is_eway_required">Is E-Way Bill Required?</option>
+                                <option value="disposition">Disposition (Store vs Purchase)</option>
+                                <option value="payment_approved">Is Payment Approved?</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-700 mb-0.5">Condition Value:</label>
+                              <div className="flex gap-1">
+                                <select
+                                  value={stg.logic.conditionOperator || 'EQUALS'}
+                                  onChange={(e) => handleUpdateStage(sIdx, {
+                                    logic: { ...stg.logic!, conditionOperator: e.target.value as any }
+                                  })}
+                                  className="w-16 text-xs bg-white border border-slate-300 rounded p-1 font-bold text-slate-800 shrink-0"
+                                >
+                                  <option value="EQUALS">==</option>
+                                  <option value="NOT_EQUALS">!=</option>
+                                  <option value="CONTAINS">In</option>
+                                </select>
+                                <input
+                                  type="text"
+                                  value={stg.logic.conditionValue || ''}
+                                  onChange={(e) => handleUpdateStage(sIdx, {
+                                    logic: { ...stg.logic!, conditionValue: e.target.value }
+                                  })}
+                                  placeholder="e.g. Yes / Purchase"
+                                  className="flex-1 text-xs bg-white border border-slate-300 rounded p-1 font-medium text-slate-800"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-700 mb-0.5">Branch Action:</label>
+                              <div className="text-[11px] font-bold text-indigo-700 bg-white border border-indigo-200 px-2 py-1 rounded flex items-center justify-between">
+                                <span>If Equals → Stage #{ (stg.logic.yesTargetStageIndex ?? sIdx + 1) + 1 }</span>
+                                <span>Else → Stage #{ (stg.logic.noTargetStageIndex ?? stages.length) + 1 }</span>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -2155,6 +2196,40 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
                                </div>
                              </div>
 
+                             {/* Field Data Inheritance Config */}
+                             <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-slate-100">
+                               <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700 cursor-pointer">
+                                 <input
+                                   type="checkbox"
+                                   checked={!!fld.isInherited}
+                                   onChange={(e) => handleUpdateField(sIdx, fIdx, {
+                                     isInherited: e.target.checked,
+                                     isReadOnly: e.target.checked ? true : fld.isReadOnly,
+                                     inheritedSourceField: e.target.checked ? (fld.inheritedSourceField || 'Item List from Stage 1') : undefined
+                                   })}
+                                   className="rounded text-indigo-600 cursor-pointer w-3.5 h-3.5"
+                                 />
+                                 <span>Read-Only / Inherited from Parent Payload</span>
+                               </label>
+
+                               {fld.isInherited && (
+                                 <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
+                                   <span className="text-[10px] font-bold text-slate-500 shrink-0">Data Source:</span>
+                                   <select
+                                     value={fld.inheritedSourceField || 'Item List from Stage 1'}
+                                     onChange={(e) => handleUpdateField(sIdx, fIdx, { inheritedSourceField: e.target.value })}
+                                     className="text-[11px] bg-indigo-50/80 border border-indigo-300 rounded px-2 py-0.5 font-bold text-indigo-900 flex-1 cursor-pointer"
+                                   >
+                                     <option value="Item List from Stage 1">Item List from Stage 1 (Central Indent)</option>
+                                     <option value="Parent Indent Reference">Parent Indent / Requisition Number</option>
+                                     <option value="Site Name & Location">Site Name & Project Location</option>
+                                     <option value="Vendor Quotation Ledger">Vendor Quotation & CS Sheet Summary</option>
+                                     <option value="Total Indent Value">Total Indent Estimated Value (₹)</option>
+                                   </select>
+                                 </div>
+                               )}
+                             </div>
+
                              {/* Dropdown Options Customizer */}
                              {fld.type === 'SELECT' && (
                                <SelectOptionsEditor
@@ -2164,31 +2239,63 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
                                />
                              )}
 
-                             {/* Multi-Item Table Columns Customizer */}
+                             {/* Multi-Item Table Columns & Row Routing Customizer */}
                              {fld.type === 'MULTI_ITEM_TABLE' && (
-                               <div className="space-y-1 pt-1">
-                                 <span className="text-[10px] text-slate-500 font-bold block">
-                                   Table Column Names (Comma Separated):
-                                 </span>
-                                 <input
-                                   type="text"
-                                   value={fld.defaultValue !== undefined ? fld.defaultValue : (fld.columns && fld.columns.length > 0 ? fld.columns.map(c => c.label).join(', ') : 'Item Description, Quantity, Unit, Work / Purpose Details, Remarks')}
-                                   onChange={(e) => {
-                                     const rawVal = e.target.value;
-                                     const colLabels = rawVal.split(',').map(s => s.trim()).filter(Boolean);
-                                     const cols = colLabels.map(label => ({
-                                       key: label.toLowerCase().replace(/[^a-z0-9]/g, '_'),
-                                       label,
-                                       type: (label.toLowerCase().includes('rate') || label.toLowerCase().includes('qty') || label.toLowerCase().includes('quantity') || label.toLowerCase().includes('amount') || label.toLowerCase().includes('price') || label.toLowerCase().includes('nos')) ? ('NUMBER' as const) : ('TEXT' as const)
-                                     }));
-                                     handleUpdateField(sIdx, fIdx, {
-                                       defaultValue: rawVal,
-                                       columns: cols
-                                     });
-                                   }}
-                                   placeholder="e.g. Item Description, Quantity, Unit, Work / Purpose Details, Remarks"
-                                   className="w-full text-xs bg-slate-50 border border-slate-300 rounded px-2.5 py-1 text-slate-800 focus:bg-white focus:ring-1 focus:ring-indigo-500 font-medium"
-                                 />
+                               <div className="space-y-2 pt-1 border-t border-slate-100">
+                                 <div className="space-y-1">
+                                   <span className="text-[10px] text-slate-500 font-bold block">
+                                     Table Column Names (Comma Separated):
+                                   </span>
+                                   <input
+                                     type="text"
+                                     value={fld.defaultValue !== undefined ? fld.defaultValue : (fld.columns && fld.columns.length > 0 ? fld.columns.map(c => c.label).join(', ') : 'Item Description, Quantity, Unit, Work / Purpose Details, Disposition, Remarks')}
+                                     onChange={(e) => {
+                                       const rawVal = e.target.value;
+                                       const colLabels = rawVal.split(',').map(s => s.trim()).filter(Boolean);
+                                       const cols = colLabels.map(label => ({
+                                         key: label.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+                                         label,
+                                         type: (label.toLowerCase().includes('rate') || label.toLowerCase().includes('qty') || label.toLowerCase().includes('quantity') || label.toLowerCase().includes('amount') || label.toLowerCase().includes('price') || label.toLowerCase().includes('nos')) ? ('NUMBER' as const) : ('TEXT' as const)
+                                       }));
+                                       handleUpdateField(sIdx, fIdx, {
+                                         defaultValue: rawVal,
+                                         columns: cols
+                                       });
+                                     }}
+                                     placeholder="e.g. Item Description, Quantity, Unit, Work / Purpose Details, Disposition, Remarks"
+                                     className="w-full text-xs bg-slate-50 border border-slate-300 rounded px-2.5 py-1 text-slate-800 focus:bg-white focus:ring-1 focus:ring-indigo-500 font-medium"
+                                   />
+                                 </div>
+
+                                 {/* Row-Level Logic & Triage Routing Config */}
+                                 <div className="p-2 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg border border-emerald-200 text-xs space-y-1.5">
+                                   <div className="flex items-center justify-between">
+                                     <span className="font-bold text-emerald-950 text-[11px] flex items-center gap-1">
+                                       <GitBranch className="w-3.5 h-3.5 text-emerald-600" />
+                                       Row-Level Logic &amp; Item Triage Routing Strategy
+                                     </span>
+                                     <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded border border-emerald-300">
+                                       Store vs Purchase Triage Active
+                                     </span>
+                                   </div>
+                                   <p className="text-[10px] text-emerald-800 font-medium leading-tight">
+                                     Automatically inspects the 'Disposition' column in each row of this table during Stage completion and splits items into parallel tracks.
+                                   </p>
+                                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
+                                     <div className="bg-white p-1.5 rounded border border-emerald-200">
+                                       <span className="font-bold text-indigo-700 block">Store Dispatch Rows:</span>
+                                       <span className="text-[10px] text-slate-600">Route to Store Manager (Amanat)</span>
+                                     </div>
+                                     <div className="bg-white p-1.5 rounded border border-emerald-200">
+                                       <span className="font-bold text-amber-700 block">Purchase Indent Rows:</span>
+                                       <span className="text-[10px] text-slate-600">Route to Purchase Head (Brahmanand)</span>
+                                     </div>
+                                     <div className="bg-white p-1.5 rounded border border-emerald-200">
+                                       <span className="font-bold text-rose-700 block">Hold / Archive Rows:</span>
+                                       <span className="text-[10px] text-slate-600">Schedule 7-Day Store Review Task</span>
+                                     </div>
+                                   </div>
+                                 </div>
                                </div>
                              )}
 
@@ -2208,7 +2315,27 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
                           </div>
                         ))
                       ) : (
-                        <p className="text-[11px] text-slate-400 italic">No input fields attached. Only basic stage verification will be required.</p>
+                        <div className="space-y-2">
+                          {sIdx > 0 && (
+                            <div className="p-2.5 bg-gradient-to-r from-indigo-50/90 via-purple-50/80 to-blue-50/90 rounded-lg border border-indigo-200 text-xs flex items-center justify-between shadow-2xs">
+                              <div className="flex items-center gap-2">
+                                <Layers className="w-4 h-4 text-indigo-600 shrink-0" />
+                                <div>
+                                  <span className="font-bold text-indigo-950 block text-[11px] flex items-center gap-1.5">
+                                    <span>Reusable Payload Data Inheritance Active</span>
+                                    <span className="text-[9px] font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.2 rounded border border-emerald-300">
+                                      Stage 1 Requisition Items Linked
+                                    </span>
+                                  </span>
+                                  <span className="text-[10px] text-indigo-900 font-medium leading-snug block">
+                                    This stage automatically inherits the Itemized Grid Table &amp; Requisition Payload from Stage 1 (Receive Material Requisition). Doers can verify, triage, or approve the inherited item table directly without re-entering data.
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          <p className="text-[11px] text-slate-500 italic">No custom field overrides configured for this stage yet. Inherited items from Stage 1 are active for validation.</p>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -2316,6 +2443,88 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
                             </select>
                           </div>
                         </div>
+
+                        {/* Dynamic Assignee Routing Configuration */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-indigo-200/80">
+                          <div className="space-y-1">
+                            <label className="block text-[11px] font-bold text-indigo-950 flex items-center justify-between">
+                              <span>Dynamic Assignee Routing Rule</span>
+                              <span className="text-[10px] text-indigo-700 font-bold bg-indigo-100/90 px-1.5 py-0.2 rounded">
+                                Role-Based Routing
+                              </span>
+                            </label>
+                            <select
+                              value={stg.subWorkflowTrigger.targetAssigneeRule || 'DYNAMIC_ROLE'}
+                              onChange={(e) => handleUpdateSubWorkflowTrigger(sIdx, { targetAssigneeRule: e.target.value as any })}
+                              className="w-full text-xs bg-white border border-indigo-300 rounded-lg p-1.5 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-xs"
+                            >
+                              <option value="DYNAMIC_ROLE">Role-Based Queue (e.g. Purchase Head / Store Incharge)</option>
+                              <option value="SPECIFIC_USER">Specific Individual User</option>
+                              <option value="INHERIT_PARENT">Inherit Current Stage Assignee ({stg.whoDefaultAssignee || 'Parent Assignee'})</option>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="block text-[11px] font-bold text-indigo-950">
+                              Target Role / Assigned Queue
+                            </label>
+                            {stg.subWorkflowTrigger.targetAssigneeRule === 'SPECIFIC_USER' ? (
+                              <select
+                                value={stg.subWorkflowTrigger.targetAssignee || 'Brahmanand Patel'}
+                                onChange={(e) => handleUpdateSubWorkflowTrigger(sIdx, { targetAssignee: e.target.value })}
+                                className="w-full text-xs bg-white border border-indigo-300 rounded-lg p-1.5 font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-xs"
+                              >
+                                <option value="Brahmanand Patel">Brahmanand Patel (Asst. Manager Purchase & Store)</option>
+                                <option value="Amanat Bharadwaj">Amanat Bharadwaj (Store Manager)</option>
+                                <option value="Manish Koshle">Manish Koshle (Finance & Accounts)</option>
+                                <option value="Shyam Rao Sureshe">Shyam Rao Sureshe (Purchase Executive)</option>
+                                <option value="Pranjal Agrawal">Pranjal Agrawal (Director)</option>
+                              </select>
+                            ) : stg.subWorkflowTrigger.targetAssigneeRule === 'INHERIT_PARENT' ? (
+                              <input
+                                type="text"
+                                disabled
+                                value={stg.whoDefaultAssignee || 'Inherited from current stage'}
+                                className="w-full text-xs bg-slate-100 border border-slate-300 rounded-lg p-1.5 font-semibold text-slate-600 cursor-not-allowed"
+                              />
+                            ) : (
+                              <select
+                                value={stg.subWorkflowTrigger.targetRole || (stg.subWorkflowTrigger.targetTemplateKey === 'INDENT_PURCHASE' ? 'PURCHASE_MANAGER' : stg.subWorkflowTrigger.targetTemplateKey === 'STORE_TO_SITE_DISPATCH' ? 'STORE_MANAGER' : 'PURCHASE_MANAGER')}
+                                onChange={(e) => handleUpdateSubWorkflowTrigger(sIdx, { targetRole: e.target.value })}
+                                className="w-full text-xs bg-white border border-indigo-300 rounded-lg p-1.5 font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-xs"
+                              >
+                                <option value="PURCHASE_MANAGER">Role: PURCHASE_HEAD / PURCHASE_MANAGER (Brahmanand Patel)</option>
+                                <option value="STORE_MANAGER">Role: STORE_MANAGER / DISPATCH (Amanat Bharadwaj)</option>
+                                <option value="FINANCE_ACCOUNTS">Role: FINANCE_ACCOUNTS (Manish Koshle)</option>
+                                <option value="PROJECT_MANAGER">Role: PROJECT_MANAGER (Pranay Ghosh / Chakravarti Ji)</option>
+                              </select>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Multi-Track Output Mapping Guide for Check Stock & Split */}
+                        {(stg.subWorkflowTrigger.targetTemplateKey === 'CHECK_STOCK' || stg.stageName.toLowerCase().includes('stock') || sIdx === 1) && (
+                          <div className="bg-indigo-900/5 border border-indigo-200/80 rounded-lg p-2.5 text-[11px] space-y-1.5">
+                            <span className="font-bold text-indigo-950 flex items-center gap-1.5">
+                              <Boxes className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>Multi-Output Dynamic Triage Mapping (Stage 2 Split Architecture)</span>
+                            </span>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px]">
+                              <div className="bg-white p-2 rounded border border-emerald-200 text-emerald-900">
+                                <span className="font-bold block">1. Store In-Stock Items</span>
+                                <span>Spawns <strong className="font-mono">-DISP</strong> &rarr; Assigned to <strong>STORE_MANAGER</strong> (Amanat)</span>
+                              </div>
+                              <div className="bg-white p-2 rounded border border-indigo-200 text-indigo-900">
+                                <span className="font-bold block">2. Purchase Requisition Items</span>
+                                <span>Spawns <strong className="font-mono">-PUR</strong> &rarr; Assigned to <strong>PURCHASE_MANAGER</strong> (Brahmanand)</span>
+                              </div>
+                              <div className="bg-white p-2 rounded border border-amber-200 text-amber-900">
+                                <span className="font-bold block">3. Archive / Hold Items</span>
+                                <span>Scheduled 7-day Review Task &rarr; Assigned to <strong>STORE_MANAGER</strong></span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Stage 1 Connected Workflow Container & Live Preview UI */}
                         {(() => {

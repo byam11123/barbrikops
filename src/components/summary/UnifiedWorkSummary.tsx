@@ -39,7 +39,8 @@ import {
   Flag,
   FileSpreadsheet,
   Layers,
-  Landmark
+  Landmark,
+  ListFilter
 } from 'lucide-react';
 import { downloadCsv } from '../../utils/csvExporter';
 import { CustomSelect } from '../common/CustomSelect';
@@ -63,7 +64,7 @@ import {
 } from '../../data/initialData';
 import { isUserResponsibleForStage } from '../../services/stageAssignment';
 
-export type StatCondition = 'ALL' | 'DUE_TODAY' | 'OVERDUE' | 'PENDING' | 'COMPLETED';
+export type StatCondition = 'ALL' | 'DUE_TODAY' | 'DUE_THIS_WEEK' | 'OVERDUE' | 'PENDING' | 'COMPLETED';
 
 export function getDynamicGreeting(name: string): string {
   const hr = new Date().getHours();
@@ -92,6 +93,7 @@ export interface UnifiedItem {
   isCompleted: boolean;
   isOverdue: boolean;
   isDueToday: boolean;
+  isDueThisWeek?: boolean;
   isMine?: boolean;
   priority?: string;
   channelOrFreq?: string;
@@ -224,7 +226,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   onCreateFmsFlow,
   onOpenStageAction,
 }) => {
-  const [selectedCondition, setSelectedCondition] = useState<StatCondition>('DUE_TODAY');
+  const [selectedCondition, setSelectedCondition] = useState<StatCondition>('PENDING');
   const [moduleFilter, setModuleFilter] = useState<'ALL' | 'FMS' | 'CHECKLIST' | 'DELEGATION' | 'BANKING'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [assigneeFilter, setAssigneeFilter] = useState<string>('ALL');
@@ -506,11 +508,14 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
     const dateObj = parseDate(chk.plannedDate);
     let isDueToday = false;
     let isOverdue = false;
+    let isDueThisWeek = false;
 
     if (dateObj) {
       dateObj.setHours(0, 0, 0, 0);
+      const diffDays = Math.round((dateObj.getTime() - today.getTime()) / 86400000);
       isDueToday = dateObj.getTime() === today.getTime();
       isOverdue = !isCompleted && dateObj.getTime() < today.getTime();
+      isDueThisWeek = !isCompleted && diffDays >= 0 && diffDays <= 7;
     }
 
     unifiedItems.push({
@@ -529,6 +534,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       isCompleted,
       isOverdue,
       isDueToday,
+      isDueThisWeek,
       isMine: isMineChecklist(chk),
       channelOrFreq: chk.frequency,
       rawItem: chk,
@@ -544,11 +550,14 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
     const dateObj = parseDate(del.latestRevision || del.firstDate);
     let isDueToday = false;
     let isOverdue = false;
+    let isDueThisWeek = false;
 
     if (dateObj) {
       dateObj.setHours(0, 0, 0, 0);
+      const diffDays = Math.round((dateObj.getTime() - today.getTime()) / 86400000);
       isDueToday = dateObj.getTime() === today.getTime();
       isOverdue = !isCompleted && dateObj.getTime() < today.getTime();
+      isDueThisWeek = !isCompleted && diffDays >= 0 && diffDays <= 7;
     }
 
     unifiedItems.push({
@@ -567,6 +576,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       isCompleted,
       isOverdue,
       isDueToday,
+      isDueThisWeek,
       isMine: isMineDelegation(del),
       priority: del.priority,
       rawItem: del,
@@ -646,7 +656,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
 
       if (isRelevantForPc) {
         const isCompleted = stage.status === 'Done' || stage.status === 'Skipped';
-        const isCurrentActiveStage = !isCompleted && flow.status === 'In Progress' && idx === flow.currentStageIndex;
+        const isCurrentActiveStage = !isCompleted && (flow.status === 'In Progress' || flow.status === 'Pending') && idx === flow.currentStageIndex;
         const plannedDateTimeStr = stage.plannedDateTime
           || (flow.indentDate ? `${flow.indentDate} 11:00 AM` : undefined)
           || (flow.poDate ? `${flow.poDate} 11:00 AM` : undefined)
@@ -656,15 +666,18 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         const dateObj = parseDate(plannedDateTimeStr);
         let isDueToday = false;
         let isOverdue = false;
+        let isDueThisWeek = false;
 
         if (dateObj) {
           dateObj.setHours(0, 0, 0, 0);
           const diffDays = Math.round((dateObj.getTime() - today.getTime()) / 86400000);
-          // Due today if target date is today, OR if it's the current active stage awaiting action within 24h
-          isDueToday = diffDays === 0 || (isCurrentActiveStage && diffDays <= 1);
+          // Active current stage awaiting user action is always marked as due today and due this week
+          isDueToday = diffDays === 0 || isCurrentActiveStage || (diffDays <= 1);
           isOverdue = !isCompleted && dateObj.getTime() < today.getTime();
+          isDueThisWeek = !isCompleted && ((diffDays >= 0 && diffDays <= 7) || isCurrentActiveStage);
         } else if (isCurrentActiveStage) {
           isDueToday = true;
+          isDueThisWeek = true;
         }
 
         const refCode = flow.flowType === 'CHECK_STOCK'
@@ -695,6 +708,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           isCompleted,
           isOverdue,
           isDueToday,
+          isDueThisWeek,
           isMine: isMineFmsStage(def, stage),
           priority: flow.priority,
           channelOrFreq: def.howChannel,
@@ -841,6 +855,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
 
   // 3. Count matching items for the 4 Stat Cards
   const dueTodayItems = unifiedItems.filter((i) => !i.isCompleted && i.isDueToday);
+  const dueThisWeekItems = unifiedItems.filter((i) => !i.isCompleted && (i.isDueToday || (i.isDueThisWeek ?? false)));
   const overdueItems = unifiedItems.filter((i) => !i.isCompleted && i.isOverdue);
   const pendingItems = unifiedItems.filter((i) => !i.isCompleted);
   const completedItems = unifiedItems.filter((i) => i.isCompleted);
@@ -849,6 +864,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   let conditionFiltered = unifiedItems;
   if (selectedCondition === 'DUE_TODAY') {
     conditionFiltered = dueTodayItems;
+  } else if (selectedCondition === 'DUE_THIS_WEEK') {
+    conditionFiltered = dueThisWeekItems;
   } else if (selectedCondition === 'OVERDUE') {
     conditionFiltered = overdueItems;
   } else if (selectedCondition === 'PENDING') {
@@ -892,8 +909,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
     if (item.sourceModule === 'DELEGATION') return true;
     if (item.sourceModule === 'FMS') {
       const { flow, stageIndex } = item.rawItem;
-      // FMS stage can ONLY be actioned if flow is in progress AND this is the current active stage
-      return flow.status === 'In Progress' && stageIndex === flow.currentStageIndex;
+      // FMS stage can ONLY be actioned if flow is in progress or pending AND this is the current active stage
+      return (flow.status === 'In Progress' || flow.status === 'Pending') && stageIndex === flow.currentStageIndex;
     }
     if (item.sourceModule === 'BANKING') {
       return true;
@@ -1070,7 +1087,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
     // 3. FMS
     if (item.sourceModule === 'FMS') {
       if (!isItemActionable(item)) {
-        return !item.isCompleted && item.rawItem.flow.status === 'In Progress' ? (
+        return !item.isCompleted && (item.rawItem.flow.status === 'In Progress' || item.rawItem.flow.status === 'Pending') ? (
           <span className="text-[10px] text-slate-400 font-mono italic pr-1">
             Awaiting Stg {item.rawItem.flow.currentStageIndex + 1}
           </span>
@@ -1466,17 +1483,18 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           {/* Workload Status Selector Dropdown */}
           <CustomSelect
             options={[
-              { value: 'ALL', label: `All (${unifiedItems.length})` },
+              { value: 'ALL', label: `All Tasks (${unifiedItems.length})` },
+              { value: 'PENDING', label: `All Pending (${pendingItems.length})` },
               { value: 'DUE_TODAY', label: `Due Today (${dueTodayItems.length})`, badge: 'Today' },
+              { value: 'DUE_THIS_WEEK', label: `Due This Week (${dueThisWeekItems.length})`, badge: 'Week' },
               { value: 'OVERDUE', label: `Overdue (${overdueItems.length})`, badge: 'Alert' },
-              { value: 'PENDING', label: `Pending (${pendingItems.length})` },
               { value: 'COMPLETED', label: `Completed (${completedItems.length})` },
             ]}
             value={selectedCondition}
             onChange={(val) => setSelectedCondition(val as StatCondition)}
             size="xs"
             variant="default"
-            className="w-36"
+            className="w-44"
           />
 
           {/* Module Dropdown */}
@@ -1550,6 +1568,45 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Helpful Filter Context & Guidance Banner: Prevents confusion when Due Today hides 48h tasks */}
+      {selectedCondition === 'DUE_TODAY' && pendingItems.length > 0 && (
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 rounded-xl px-3.5 py-2 text-xs flex flex-wrap items-center justify-between gap-2 shadow-2xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <div className="p-1 bg-amber-100 rounded-lg text-amber-700 shrink-0">
+              <Calendar className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="font-bold text-amber-950">
+                Filter: Due Today ({dueTodayItems.length})
+              </span>
+              <span className="text-amber-800 ml-1.5">
+                {dueTodayItems.length === 0 
+                  ? `No items due strictly today, but you have ${pendingItems.length} active pending task${pendingItems.length === 1 ? '' : 's'} (SLA 24-48h).`
+                  : `${pendingItems.length - dueTodayItems.length > 0 ? `+${pendingItems.length - dueTodayItems.length} other pending task${pendingItems.length - dueTodayItems.length === 1 ? '' : 's'} scheduled for later this week.` : 'All active tasks are due today.'}`}
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 ml-auto">
+            <button
+              type="button"
+              onClick={() => setSelectedCondition('DUE_THIS_WEEK')}
+              className="px-2.5 py-1 text-[11px] font-bold text-amber-900 bg-amber-200/70 hover:bg-amber-200 rounded-lg border border-amber-300 transition-colors flex items-center gap-1 cursor-pointer"
+            >
+              <Clock className="w-3 h-3 text-amber-800" />
+              <span>Due This Week ({dueThisWeekItems.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedCondition('PENDING')}
+              className="px-2.5 py-1 text-[11px] font-bold text-indigo-700 bg-white hover:bg-indigo-50 rounded-lg border border-indigo-200 transition-colors shadow-2xs flex items-center gap-1 cursor-pointer"
+            >
+              <ListFilter className="w-3 h-3 text-indigo-600" />
+              <span>View All Pending ({pendingItems.length})</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Batch Action Floating Bar */}
       {selectedBatchIds.length > 0 && (
@@ -2247,7 +2304,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                               )}
                               {(() => {
                                 if (!isItemActionable(item)) {
-                                  return !item.isCompleted && item.rawItem.flow.status === 'In Progress' ? (
+                                  return !item.isCompleted && (item.rawItem.flow.status === 'In Progress' || item.rawItem.flow.status === 'Pending') ? (
                                     <span className="text-[10px] text-slate-400 font-mono italic pr-1">
                                       Awaiting Stg {item.rawItem.flow.currentStageIndex + 1}
                                     </span>

@@ -18,6 +18,7 @@ import { storageAdapter } from '../../services/storageAdapter';
 interface StoreTriageModalProps {
   flow: FmsInstance;
   currentUser: UserProfile;
+  readOnly?: boolean;
   onClose: () => void;
   onCompleteTriage: (
     updatedFlow: FmsInstance,
@@ -33,6 +34,7 @@ interface StoreTriageModalProps {
 export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
   flow,
   currentUser,
+  readOnly = false,
   onClose,
   onCompleteTriage,
 }) => {
@@ -99,12 +101,21 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
     index: number,
     allocation: 'STORE_DISPATCH' | 'PURCHASE_REQUISITION' | 'HELD_ARCHIVED'
   ) => {
+    if (readOnly) return;
     setLineItems(prev => {
       const next = [...prev];
-      const target = { ...next[index], triageAllocation: allocation };
-      if (allocation === 'STORE_DISPATCH') {
+      const current = next[index];
+      const avail = current.storeStockQtyAvailable ?? 0;
+
+      let finalAlloc = allocation;
+      if (allocation === 'STORE_DISPATCH' && avail === 0) {
+        finalAlloc = 'PURCHASE_REQUISITION';
+      }
+
+      const target = { ...current, triageAllocation: finalAlloc };
+      if (finalAlloc === 'STORE_DISPATCH') {
         target.purchaseQtyRequired = 0;
-      } else if (allocation === 'PURCHASE_REQUISITION') {
+      } else if (finalAlloc === 'PURCHASE_REQUISITION') {
         target.purchaseQtyRequired = target.qty;
       }
       next[index] = target;
@@ -325,9 +336,10 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
             <textarea
               rows={2}
               value={triageNotes}
+              disabled={readOnly}
               onChange={(e) => setTriageNotes(e.target.value)}
               placeholder="e.g. 2 items issued from Siladehi Store; remaining 3 items routed to Purchase Dept for vendor quotation..."
-              className="w-full text-xs p-2.5 border border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+              className="w-full text-xs p-2.5 border border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-60"
             />
           </div>
         </div>
@@ -336,25 +348,27 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
         <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
           <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
             <Info className="w-4 h-4 text-indigo-500 shrink-0" />
-            <span>Parallel tracks will launch automatically upon submission without duplicating the indent.</span>
+            <span>{readOnly ? 'Stage 2 Store Triage Complete (Read-Only View).' : 'Parallel tracks will launch automatically upon submission without duplicating the indent.'}</span>
           </p>
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors"
+              className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
             >
-              Cancel
+              {readOnly ? 'Close Details' : 'Cancel'}
             </button>
-            <button
-              type="button"
-              onClick={handleSubmitTriage}
-              disabled={isSubmitting}
-              className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl shadow-md transition-all flex items-center gap-2"
-            >
-              <Save className="w-4 h-4" />
-              <span>{isSubmitting ? 'Launching Parallel Tracks...' : 'Confirm Stock Triage & Launch Sub-Tracks'}</span>
-            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={handleSubmitTriage}
+                disabled={isSubmitting}
+                className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <Save className="w-4 h-4" />
+                <span>{isSubmitting ? 'Launching Parallel Tracks...' : 'Confirm Stock Triage & Launch Sub-Tracks'}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

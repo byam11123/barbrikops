@@ -647,7 +647,7 @@ export default function App() {
         setActiveTab('profile');
       }
     }
-  }, [currentUser, activeTab, isSuperAdmin, isAdminOrSuperAdmin]);
+  }, [currentUser.userId, currentUser.role, activeTab, isSuperAdmin, isAdminOrSuperAdmin]);
 
   const handleUserChange = (newUser: UserProfile) => {
     const latestUser = usersList.find((u) => u.userId === newUser.userId) || newUser;
@@ -774,37 +774,9 @@ export default function App() {
         nextIndex = target;
       }
     } else if (flow.flowType === 'CHECK_STOCK') {
-      // 1. Stage 2: CHECK STOCK & INDENT TRIAGE
+      // Stage 2: CHECK STOCK & SPLIT - Finishes Store Manager triage and completes manual stages
       if (currentStage.stageId === 'STG-STK-02' || currentIndex === 1) {
-        const purchaseCount = submittedData?.purchaseItemsCount !== undefined ? submittedData.purchaseItemsCount : (decision === 'Yes' ? 1 : 0);
-        if (purchaseCount === 0) {
-          // All items fulfilled from physical store! Skip Stage 3 and Stage 4
-          if (updatedStages[2]) {
-            updatedStages[2].status = 'Skipped';
-            updatedStages[2].notes = 'Skipped: All items available in store, direct Store Dispatch issued';
-          }
-          if (updatedStages[3]) {
-            updatedStages[3].status = 'Skipped';
-            updatedStages[3].notes = 'Skipped: All items available in store, no purchase indent needed';
-          }
-          nextIndex = 4; // Jump directly to Stage 5: DISPATCH MATERIAL AVAILABLE
-        } else {
-          nextIndex = 2; // Proceed to Stage 3: SEND INDENT FOR MATERIAL TO BE PURCHASED
-        }
-      }
-
-      // 2. Stage 4: IS PARTIAL PURCHASE REQUIRED?
-      if (currentStage.stageId === 'STG-STK-04') {
-        if (decision === 'Yes') {
-          nextIndex = 4; // Proceed to Stage 5: DISPATCH MATERIAL AVAILABLE
-        } else if (decision === 'No') {
-          // Zero available in store; 100% full purchase needed from vendor
-          if (updatedStages[4]) {
-            updatedStages[4].status = 'Skipped';
-            updatedStages[4].notes = 'Skipped: Full purchase required from vendor';
-          }
-          nextIndex = 5;
-        }
+        nextIndex = updatedStages.length; // Completes parent stages; enters Awaiting Fulfillment
       }
     } else if (flow.flowType === 'PO_TO_PAYMENT') {
       // Stage 1: IS PAYMENT TO BE DONE FROM ACCOUNT?
@@ -979,7 +951,7 @@ export default function App() {
 
     const updatedFlow: FmsInstance = {
       ...flow,
-      currentStageIndex: isComplete ? updatedStages.length : nextIndex,
+      currentStageIndex: isComplete ? Math.max(0, updatedStages.length - 1) : nextIndex,
       currentStageId: nextStageId,
       status: isComplete ? 'Completed' : 'In Progress',
       updatedAt: formattedNow,
@@ -993,7 +965,9 @@ export default function App() {
       ...(submittedData?.purchaserLineItems && Array.isArray(submittedData.purchaserLineItems) ? { lineItems: submittedData.purchaserLineItems } : {}),
     };
 
-    let updatedFlowsList = flows.map((f) => (f.id === updatedFlow.id ? updatedFlow : f));
+    let updatedFlowsList = storageAdapter.syncParentChildWorkflowStatuses(
+      flows.map((f) => (f.id === updatedFlow.id ? updatedFlow : f))
+    );
 
     // DYNAMIC SUB-WORKFLOW TRIGGER EVALUATOR (Configured via Template Studio)
     if (currentStage.subWorkflowTrigger && currentStage.subWorkflowTrigger.enabled && currentStage.subWorkflowTrigger.targetTemplateKey) {
@@ -1039,22 +1013,41 @@ export default function App() {
           };
           updatedFlowsList = updatedFlowsList.map((f, idx) => (idx === existingChildIndex ? updatedChild : f));
           showToast(`Dynamic sub-workflow (${targetType}) updated automatically from Template Studio rule for Indent #${flow.indentNo}.`);
-        } else {
           let childStages = FMS_PO_PAYMENT_STAGES;
           if (targetType === 'CHECK_STOCK') childStages = FMS_CHECK_STOCK_STAGES;
+          else if (targetType === 'INDENT_PURCHASE' || targetType === 'PURCHASE') childStages = FMS_STANDARD_PURCHASE_STAGES;
           else if (targetType === 'PURCHASE_TO_STORE_DISPATCH') childStages = FMS_PURCHASE_TO_STORE_DISPATCH_STAGES;
           else if (targetType === 'STORE_TO_SITE_DISPATCH') childStages = FMS_STORE_TO_SITE_DISPATCH_STAGES;
           else if (targetType === 'PAYMENT_TO_DISPATCH') childStages = FMS_PAYMENT_TO_DISPATCH_STAGES;
           else if (targetType === 'SITE_RECEIVE') childStages = FMS_SITE_RECEIVE_STAGES;
 
+          // Resolve Dynamic Assignee Rule
+          let resolvedChildAssignee = trigger.targetAssignee;
+          if (!resolvedChildAssignee) {
+            if (trigger.targetRole === 'PURCHASE_MANAGER' || trigger.targetRole === 'PURCHASE_HEAD' || targetType === 'INDENT_PURCHASE' || targetType === 'PURCHASE') {
+              resolvedChildAssignee = 'Brahmanand Patel';
+            } else if (trigger.targetRole === 'STORE_MANAGER' || trigger.targetRole === 'STORE_DISPATCH' || targetType === 'STORE_TO_SITE_DISPATCH') {
+              resolvedChildAssignee = 'Amanat Bharadwaj';
+            } else if (trigger.targetRole === 'FINANCE_ACCOUNTS' || targetType === 'PO_TO_PAYMENT') {
+              resolvedChildAssignee = 'MANISH KOSHLE';
+            } else if (trigger.targetAssigneeRule === 'INHERIT_PARENT') {
+              resolvedChildAssignee = currentStage.assignee || flow.poAssignTo || currentUser.name;
+            } else {
+              resolvedChildAssignee = childStages[0]?.whoDefaultAssignee || 'Operations';
+            }
+          }
+
           const newChildFlow: FmsInstance = {
             id: `fms-inst-${targetType.toLowerCase()}-${flow.indentNo}-${Date.now().toString().slice(-4)}`,
             flowId: `FLOW-${targetType}-${flow.indentNo}`,
             flowType: targetType,
+            parentFlowId: flow.id,
+            parentFlowType: flow.flowType,
+            parentFlowIndentNo: flow.indentNo,
             linkedFlowId: flow.flowId,
             poNumber: targetPoNumber,
             vendorName: targetVendor,
-            poAssignTo: 'MANISH KOSHLE',
+            poAssignTo: resolvedChildAssignee,
             indentNo: flow.indentNo,
             indentDate: flow.indentDate || formattedNow,
             poDate: formattedNow,
@@ -1073,7 +1066,7 @@ export default function App() {
             stages: childStages.map((s, sIdx) => ({
               stageId: s.stageId,
               stageName: s.name,
-              assignee: s.whoDefaultAssignee,
+              assignee: sIdx === 0 ? resolvedChildAssignee : s.whoDefaultAssignee,
               how: s.howChannel,
               status: sIdx === 0 ? 'In Progress' : 'Pending',
               plannedDateTime: sIdx === 0 ? formattedNow : undefined,
@@ -1081,7 +1074,7 @@ export default function App() {
             }))
           };
           updatedFlowsList = [newChildFlow, ...updatedFlowsList];
-          showToast(`Linked sub-workflow (${targetType}) triggered automatically via Template Studio rule for Indent #${flow.indentNo}!`);
+          showToast(`Linked sub-workflow (${targetType}) triggered automatically via Template Studio rule for Indent #${flow.indentNo}! Assigned to: ${resolvedChildAssignee}`);
         }
       }
     }
@@ -1154,7 +1147,7 @@ export default function App() {
             stages: FMS_STORE_TO_SITE_DISPATCH_STAGES.map((s, sIdx) => ({
               stageId: s.stageId,
               stageName: s.name,
-              assignee: s.whoDefaultAssignee,
+              assignee: s.whoDefaultAssignee || 'Amanat Bharadwaj',
               how: s.howChannel,
               status: sIdx === 0 ? 'In Progress' : 'Pending',
               plannedDateTime: sIdx === 0 ? formattedNow : undefined,
@@ -1217,7 +1210,7 @@ export default function App() {
             indentDate: flow.indentDate || formattedNow,
             siteName: flow.siteName,
             priority: flow.priority,
-            poAssignTo: 'Bramhanand Patel',
+            poAssignTo: 'Brahmanand Patel',
             currentStageId: 'STG-02',
             currentStageIndex: 1,
             totalStages: FMS_STANDARD_PURCHASE_STAGES.length,
@@ -1230,7 +1223,7 @@ export default function App() {
             stages: FMS_STANDARD_PURCHASE_STAGES.map((s, sIdx) => ({
               stageId: s.stageId,
               stageName: s.name,
-              assignee: sIdx === 1 ? 'Bramhanand Patel' : s.whoDefaultAssignee,
+              assignee: sIdx <= 1 ? 'Brahmanand Patel' : s.whoDefaultAssignee,
               how: s.howChannel,
               status: sIdx === 0 ? 'Done' : sIdx === 1 ? 'In Progress' : 'Pending',
               plannedDateTime: sIdx <= 1 ? formattedNow : undefined,
@@ -1240,11 +1233,11 @@ export default function App() {
           };
           updatedFlowsList = [newPurchaseFlow, ...updatedFlowsList];
 
-          // Emit high-priority notification to Bramhanand Patel
+          // Emit high-priority notification to Brahmanand Patel
           storageAdapter.addNotification({
-            userId: 'USR-002', // Bramhanand Patel
+            userId: 'USR-002', // Brahmanand Patel
             title: `Action Required: Purchase Indent #${purchaseIndentNo}`,
-            message: `Purchase requisition triaged from Stock Check #${flow.indentNo} (${purchaseItems.length} items). Stage 2: DEGRADED MATERIAL CHECK.`,
+            message: `Purchase requisition triaged from Stock Check #${flow.indentNo} (${purchaseItems.length} items). Assigned to Brahmanand Patel for Stage 2: DEGRADED MATERIAL CHECK.`,
             type: 'FMS_ACTION_REQUIRED',
             linkTab: 'fms',
             linkEntityId: newPurchaseFlow.id,
@@ -1266,13 +1259,66 @@ export default function App() {
 
       if (generatedSubFlows.length > 0) {
         updatedFlow.linkedSubFlows = generatedSubFlows;
-        updatedFlowsList = updatedFlowsList.map((f) => (f.id === updatedFlow.id ? { ...f, linkedSubFlows: generatedSubFlows, lineItems: submittedItems } : f));
+        updatedFlow.status = 'Awaiting Fulfillment';
+        updatedFlow.poAssignTo = 'System / Child Workflows';
+        if (updatedFlow.stages && updatedFlow.stages[1]) {
+          updatedFlow.stages[1].assignee = 'System / Child Workflows';
+        }
+        updatedFlowsList = updatedFlowsList.map((f) => (
+          f.id === updatedFlow.id 
+            ? { 
+                ...f, 
+                status: 'Awaiting Fulfillment' as const, 
+                poAssignTo: 'System / Child Workflows',
+                linkedSubFlows: generatedSubFlows, 
+                lineItems: submittedItems,
+                stages: f.stages.map((stg, sIdx) => sIdx === 1 ? { ...stg, assignee: 'System / Child Workflows', status: 'Done' as const } : stg)
+              } 
+            : f
+        ));
+      }
+
+      // 3. Generate 7-Day Archive Review Task for Amanat Bharadwaj if hold items exist
+      if (holdItems.length > 0) {
+        const targetDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        const day = String(targetDate.getDate()).padStart(2, '0');
+        const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+        const year = targetDate.getFullYear();
+        const formattedTargetDate = `${day}/${month}/${year}`;
+
+        const holdItemSummary = holdItems.map((i) => `${i.itemDescription} (${i.holdQty} ${i.unit || 'Nos'})`).join(', ');
+        const newHoldTask: DelegationTask = {
+          id: `task_hold_${Date.now()}`,
+          taskId: `d_hold_${Date.now().toString().slice(-4)}`,
+          name: 'Amanat Bharadwaj',
+          rolePhone: 'STORE MANAGER',
+          task: `Archive Review: Requisition #${flow.indentNo} - Hold Items (${holdItemSummary})`,
+          firstDate: formattedTargetDate,
+          latestRevision: formattedTargetDate,
+          totalRevisions: 0,
+          status: 'Pending',
+          priority: 'Normal',
+          notes: `Stock placed on hold during Stage 2 stock verification on ${new Date().toLocaleDateString('en-GB')} for Indent #${flow.indentNo} (${flow.siteName}). Action required in 7 days: verify shelf inventory, confirm site necessity, or release/archive hold.`,
+        };
+
+        const existingTasks = storageAdapter.getDelegationTasks();
+        const updatedTasks = [newHoldTask, ...existingTasks];
+        storageAdapter.saveDelegationTasks(updatedTasks);
+        setDelegationTasks(updatedTasks);
+
+        storageAdapter.addNotification({
+          userId: 'USR-001', // Amanat Bharadwaj
+          title: `Archive Review Scheduled: Indent #${flow.indentNo}`,
+          message: `Archive review task scheduled for 7 days later (${formattedTargetDate}) for ${holdItems.length} hold item(s). View in Delegation dashboard.`,
+          type: 'FMS_ACTION_REQUIRED',
+          linkTab: 'delegation',
+        });
       }
 
       const toastParts = [];
       if (storeItems.length > 0) toastParts.push(`Store Dispatch (${storeItems.length} items)`);
       if (purchaseItems.length > 0) toastParts.push(`Purchase Indent (${purchaseItems.length} items)`);
-      if (holdItems.length > 0) toastParts.push(`${holdItems.length} on Hold`);
+      if (holdItems.length > 0) toastParts.push(`${holdItems.length} on Hold (Review in 7 days)`);
       showToast(`Stock Check triage complete: ${toastParts.join(' • ')}`);
     }
 
@@ -2153,11 +2199,7 @@ export default function App() {
                 currentUser={currentUser}
                 viewScope={isAdminOrSuperAdmin ? viewScope : 'USER_ONLY'}
                 onToggleScope={handleToggleScope}
-                onUpdateFlow={(flow) => {
-                  const updated = flows.map((f) => (f.id === flow.id ? flow : f));
-                  setFlows(updated);
-                  storageAdapter.saveFmsFlows(updated);
-                }}
+                onUpdateFlow={handleUpdateFlow}
                 onDeleteFlow={handleDeleteFlow}
                 onCreateFlow={(isSuperAdmin || hasModulePermission(currentUser, 'fms', 'edit')) ? () => setIsCreateFmsOpen(true) : undefined}
                 onSelectFlow={(f) => setSelectedFmsDetail(f)}

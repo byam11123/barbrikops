@@ -402,6 +402,9 @@ export interface FmsStageDefinition {
   formUrl?: string;
   hasYesNoDecision?: boolean;
   fields?: FmsStageFieldConfig[];
+  logic?: FmsStageLogicConfig;
+  subWorkflowTrigger?: FmsSubWorkflowTriggerConfig;
+  subWorkflowTriggers?: FmsSubWorkflowTriggerConfig[];
 }
 
 export interface FmsStageFieldColumnConfig {
@@ -416,7 +419,7 @@ export interface FmsStageFieldColumnConfig {
 export interface FmsStageFieldConfig {
   id: string;
   label: string;
-  type: 'TEXT' | 'NUMBER' | 'SELECT' | 'APPROVAL' | 'STATUS_DONE' | 'URL' | 'TEXTAREA' | 'DATE' | 'FILE' | 'CHECKBOX' | 'MULTI_ITEM_TABLE';
+  type: 'TEXT' | 'NUMBER' | 'SELECT' | 'APPROVAL' | 'STATUS_DONE' | 'URL' | 'TEXTAREA' | 'DATE' | 'FILE' | 'CHECKBOX' | 'MULTI_ITEM_TABLE' | 'CS_MODULE_EMBED' | 'CS_L1_APPROVAL_EMBED' | 'SPLIT_PO_GENERATOR';
   options?: string[];
   required?: boolean;
   defaultValue?: string;
@@ -446,14 +449,77 @@ export interface DepartmentDefinition {
 }
 
 export interface FmsSubWorkflowTriggerConfig {
+  id?: string;
   enabled: boolean;
-  targetTemplateKey: string; // e.g. 'PO_TO_PAYMENT', 'CHECK_STOCK', etc.
-  triggerCondition?: 'ON_COMPLETE' | 'ON_DECISION_YES' | 'ON_DECISION_NO';
+  name?: string;
+  targetTemplateKey: string; // e.g. 'INDENT_PURCHASE', 'STORE_TO_SITE_DISPATCH', 'PO_TO_PAYMENT', etc.
+  triggerCondition?: 'ON_COMPLETE' | 'ON_DECISION_YES' | 'ON_DECISION_NO' | 'ON_FIELD_MATCH';
+  filterFieldId?: string; // e.g. 'disposition', 'purchaseRequired'
+  filterFieldValue?: string; // e.g. 'Purchase', 'Yes'
   targetStageId?: string;
   fieldMappings?: Array<{
     sourceField: string;
     targetField: string;
   }>;
+  // Dynamic Assignee Routing Configuration
+  targetAssigneeRule?: 'DYNAMIC_ROLE' | 'SPECIFIC_USER' | 'INHERIT_PARENT';
+  targetRole?: string; // e.g., 'PURCHASE_MANAGER', 'STORE_MANAGER', 'FINANCE_ACCOUNTS', 'PROJECT_MANAGER'
+  targetAssignee?: string; // e.g., 'Brahmanand Patel', 'Amanat Bharadwaj'
+  payloadItemFilter?: 'ALL_ITEMS' | 'MATCHING_ROWS_ONLY' | 'REQUISITION_HEADER_ONLY';
+  splitOutputs?: {
+    storeRole?: string;
+    storeAssignee?: string;
+    purchaseRole?: string;
+    purchaseAssignee?: string;
+    holdReviewAssignee?: string;
+  };
+}
+
+export interface FmsStageFieldColumnConfig {
+  key: string;
+  label: string;
+  type?: 'TEXT' | 'NUMBER' | 'SELECT';
+  options?: string[];
+  placeholder?: string;
+  defaultValue?: string;
+}
+
+export interface FmsStageFieldConfig {
+  id: string;
+  label: string;
+  type: 'TEXT' | 'NUMBER' | 'SELECT' | 'APPROVAL' | 'STATUS_DONE' | 'URL' | 'TEXTAREA' | 'DATE' | 'FILE' | 'CHECKBOX' | 'MULTI_ITEM_TABLE' | 'CS_MODULE_EMBED' | 'CS_L1_APPROVAL_EMBED' | 'SPLIT_PO_GENERATOR';
+  options?: string[];
+  required?: boolean;
+  defaultValue?: string;
+  placeholder?: string;
+  columns?: FmsStageFieldColumnConfig[];
+  // Inheritance / Auto-Populate from Upstream Stages
+  isInherited?: boolean;
+  inheritedSourceField?: string; // e.g. "Stage 1 - requisitionItems", "Header - siteName"
+  isReadOnly?: boolean;
+  // Multi-Item Table Row Routing Config
+  rowRoutingConfig?: {
+    dispositionColumnKey?: string; // e.g. 'triageAllocation', 'disposition'
+    storeAllocationValue?: string; // e.g. 'STORE_DISPATCH', 'Store Stock'
+    purchaseAllocationValue?: string; // e.g. 'PURCHASE_REQUISITION', 'Purchase'
+    holdAllocationValue?: string; // e.g. 'HELD_ARCHIVED', 'Hold / Archive'
+  };
+}
+
+export interface FmsStageLogicConfig {
+  slaHours?: number;
+  gatewayType: 'STANDARD_ADVANCE' | 'APPROVAL_DECISION' | 'CONDITIONAL_JUMP' | 'VERIFY_CLOSE';
+  rejectionBehavior?: 'HALT_WORKFLOW' | 'RETURN_TO_PREVIOUS';
+  yesTargetStageIndex?: number;
+  noTargetStageIndex?: number;
+  yesConditionLabel?: string;
+  noConditionLabel?: string;
+  // Conditional Branch Builder (If Field Equals Value Then Go To Stage N Else Go To Stage M)
+  conditionFieldId?: string; // Field to evaluate, e.g. "is_eway_required"
+  conditionOperator?: 'EQUALS' | 'NOT_EQUALS' | 'CONTAINS' | 'GREATER_THAN';
+  conditionValue?: string; // Value to compare, e.g. "Yes", "Purchase"
+  thenTargetStageIndex?: number; // Jump to stage index if True
+  elseTargetStageIndex?: number; // Jump to stage index if False
 }
 
 export interface FmsStageTemplate {
@@ -467,6 +533,7 @@ export interface FmsStageTemplate {
   fields?: FmsStageFieldConfig[];
   checkpoints?: string[];
   subWorkflowTrigger?: FmsSubWorkflowTriggerConfig;
+  subWorkflowTriggers?: FmsSubWorkflowTriggerConfig[]; // Support multiple triggers per stage
 }
 
 export interface FmsTemplateDefinition {
@@ -526,6 +593,7 @@ export interface FmsStageExecution {
   checkpoints?: string[];
   checkedCheckpoints?: string[];
   subWorkflowTrigger?: FmsSubWorkflowTriggerConfig;
+  subWorkflowTriggers?: FmsSubWorkflowTriggerConfig[];
   inheritedData?: Record<string, any>;
   linkedModuleRecord?: {
     moduleType: 'CS_SHEET' | 'PO' | 'GRN' | 'INVOICE' | 'APPROVAL' | string;
@@ -590,7 +658,7 @@ export interface FmsInstance {
   currentStageId: string;
   currentStageIndex: number;
   totalStages: number;
-  status: 'In Progress' | 'Completed' | 'On Hold' | 'Cancelled' | 'CLOSED';
+  status: 'In Progress' | 'Pending' | 'Completed' | 'On Hold' | 'Cancelled' | 'CLOSED' | 'Awaiting Fulfillment' | string;
   isClosed?: boolean;
   closedAt?: string;
   closedBy?: string;

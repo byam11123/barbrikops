@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Layers, 
   Plus, 
@@ -1404,57 +1404,129 @@ export const FmsTemplateStudioPage: React.FC<FmsTemplateStudioPageProps> = ({
                   </div>
 
                   {stages[selectedStageIndex].logic?.gatewayType === 'CONDITIONAL_JUMP' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 bg-indigo-50/70 rounded-xl border border-indigo-200 text-xs">
-                      <div className="space-y-1.5">
-                        <label className="block text-xs font-bold text-emerald-800 flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          <span>If Decision is 'YES' / Approved → Route To:</span>
-                        </label>
-                        <select
-                          value={stages[selectedStageIndex].logic?.yesTargetStageIndex ?? (selectedStageIndex + 1)}
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            handleUpdateCurrentStageField('logic', {
-                              ...stages[selectedStageIndex].logic,
-                              gatewayType: 'CONDITIONAL_JUMP',
-                              yesTargetStageIndex: val,
-                            });
-                          }}
-                          className="w-full text-xs bg-white border border-emerald-300 rounded-xl p-2 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer shadow-2xs"
-                        >
-                          {stages.map((targetStg, tIdx) => (
-                            <option key={tIdx} value={tIdx}>
-                              {tIdx === selectedStageIndex + 1 ? `Proceed to Next: Stage #${tIdx + 1} (${targetStg.stageName})` : `Jump to: Stage #${tIdx + 1} (${targetStg.stageName})`}
-                            </option>
-                          ))}
-                          <option value={stages.length}>Complete & Finalize Workflow</option>
-                        </select>
+                    <div className="space-y-3 p-4 bg-indigo-50/70 rounded-xl border border-indigo-200 text-xs shadow-2xs">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-bold text-emerald-800 flex items-center gap-1.5">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            <span>If Decision / Condition is TRUE ('YES') → Route To:</span>
+                          </label>
+                          <select
+                            value={stages[selectedStageIndex].logic?.yesTargetStageIndex ?? (selectedStageIndex + 1)}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              handleUpdateCurrentStageField('logic', {
+                                ...stages[selectedStageIndex].logic,
+                                gatewayType: 'CONDITIONAL_JUMP',
+                                yesTargetStageIndex: val,
+                              });
+                            }}
+                            className="w-full text-xs bg-white border border-emerald-300 rounded-xl p-2 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer shadow-2xs"
+                          >
+                            {stages.map((targetStg, tIdx) => (
+                              <option key={tIdx} value={tIdx}>
+                                {tIdx === selectedStageIndex + 1 ? `Proceed to Next: Stage #${tIdx + 1} (${targetStg.stageName})` : `Jump to: Stage #${tIdx + 1} (${targetStg.stageName})`}
+                              </option>
+                            ))}
+                            <option value={stages.length}>Complete &amp; Finalize Workflow</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-bold text-rose-800 flex items-center gap-1.5">
+                            <AlertCircle className="w-4 h-4 text-rose-600" />
+                            <span>If Decision / Condition is FALSE ('NO') → Route To:</span>
+                          </label>
+                          <select
+                            value={stages[selectedStageIndex].logic?.noTargetStageIndex ?? stages.length}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              handleUpdateCurrentStageField('logic', {
+                                ...stages[selectedStageIndex].logic,
+                                gatewayType: 'CONDITIONAL_JUMP',
+                                noTargetStageIndex: val,
+                              });
+                            }}
+                            className="w-full text-xs bg-white border border-rose-300 rounded-xl p-2 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500 cursor-pointer shadow-2xs"
+                          >
+                            {stages.map((targetStg, tIdx) => (
+                              <option key={tIdx} value={tIdx}>
+                                {tIdx === selectedStageIndex + 1 ? `Proceed to Next: Stage #${tIdx + 1} (${targetStg.stageName})` : `Skip Ahead to: Stage #${tIdx + 1} (${targetStg.stageName})`}
+                              </option>
+                            ))}
+                            <option value={stages.length}>Terminate / Reject Workflow</option>
+                          </select>
+                        </div>
                       </div>
 
-                      <div className="space-y-1.5">
-                        <label className="block text-xs font-bold text-rose-800 flex items-center gap-1.5">
-                          <AlertCircle className="w-4 h-4 text-rose-600" />
-                          <span>If Decision is 'NO' / Rejected → Route To:</span>
-                        </label>
-                        <select
-                          value={stages[selectedStageIndex].logic?.noTargetStageIndex ?? stages.length}
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            handleUpdateCurrentStageField('logic', {
-                              ...stages[selectedStageIndex].logic,
-                              gatewayType: 'CONDITIONAL_JUMP',
-                              noTargetStageIndex: val,
-                            });
-                          }}
-                          className="w-full text-xs bg-white border border-rose-300 rounded-xl p-2 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500 cursor-pointer shadow-2xs"
-                        >
-                          {stages.map((targetStg, tIdx) => (
-                            <option key={tIdx} value={tIdx}>
-                              {tIdx === selectedStageIndex + 1 ? `Proceed to Next: Stage #${tIdx + 1} (${targetStg.stageName})` : `Skip Ahead to: Stage #${tIdx + 1} (${targetStg.stageName})`}
-                            </option>
-                          ))}
-                          <option value={stages.length}>Terminate / Reject Workflow</option>
-                        </select>
+                      {/* Field-Based Conditional Rule Configurator */}
+                      <div className="pt-2 border-t border-indigo-200/80 space-y-2">
+                        <span className="text-xs font-bold text-indigo-900 block uppercase tracking-wider flex items-center gap-1.5">
+                          <GitBranch className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>Conditional Command Configurator (Field-Based Rule)</span>
+                        </span>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">If Form Field:</label>
+                            <select
+                              value={stages[selectedStageIndex].logic?.conditionFieldId || ''}
+                              onChange={(e) => handleUpdateCurrentStageField('logic', {
+                                ...stages[selectedStageIndex].logic,
+                                gatewayType: 'CONDITIONAL_JUMP',
+                                conditionFieldId: e.target.value
+                              })}
+                              className="w-full text-xs bg-white border border-slate-300 rounded-lg p-1.5 font-semibold text-slate-800 cursor-pointer"
+                            >
+                              <option value="">Default Approval / Decision Field</option>
+                              {(stages[selectedStageIndex].fields || []).map((f) => (
+                                <option key={f.id} value={f.id || f.label}>
+                                  {f.label} ({f.type})
+                                </option>
+                              ))}
+                              <option value="is_eway_required">Is E-Way Bill Required?</option>
+                              <option value="disposition">Disposition (Store vs Purchase)</option>
+                              <option value="payment_approved">Is Payment Approved?</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">Condition Operator &amp; Value:</label>
+                            <div className="flex gap-1.5">
+                              <select
+                                value={stages[selectedStageIndex].logic?.conditionOperator || 'EQUALS'}
+                                onChange={(e) => handleUpdateCurrentStageField('logic', {
+                                  ...stages[selectedStageIndex].logic,
+                                  gatewayType: 'CONDITIONAL_JUMP',
+                                  conditionOperator: e.target.value as any
+                                })}
+                                className="w-20 text-xs bg-white border border-slate-300 rounded-lg p-1.5 font-bold text-slate-800 shrink-0"
+                              >
+                                <option value="EQUALS">==</option>
+                                <option value="NOT_EQUALS">!=</option>
+                                <option value="CONTAINS">In</option>
+                              </select>
+                              <input
+                                type="text"
+                                value={stages[selectedStageIndex].logic?.conditionValue || ''}
+                                onChange={(e) => handleUpdateCurrentStageField('logic', {
+                                  ...stages[selectedStageIndex].logic,
+                                  gatewayType: 'CONDITIONAL_JUMP',
+                                  conditionValue: e.target.value
+                                })}
+                                placeholder="e.g. Yes / Purchase"
+                                className="flex-1 text-xs bg-white border border-slate-300 rounded-lg p-1.5 font-medium text-slate-800"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">Branch Action:</label>
+                            <div className="text-xs font-bold text-indigo-700 bg-white border border-indigo-200 p-1.5 rounded-lg flex items-center justify-between">
+                              <span>If Match → Stage #{ (stages[selectedStageIndex].logic?.yesTargetStageIndex ?? selectedStageIndex + 1) + 1 }</span>
+                              <span>Else → Stage #{ (stages[selectedStageIndex].logic?.noTargetStageIndex ?? stages.length) + 1 }</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1483,11 +1555,31 @@ export const FmsTemplateStudioPage: React.FC<FmsTemplateStudioPageProps> = ({
                     </button>
                   </div>
 
-                  <div className="space-y-2">
+                  {/* Reusable Payload Data Inheritance Banner for Stage 2+ */}
+                  {selectedStageIndex > 0 && (
+                    <div className="p-3 bg-gradient-to-r from-indigo-50/90 via-purple-50/80 to-blue-50/90 rounded-xl border border-indigo-200 text-xs flex items-center justify-between shadow-2xs">
+                      <div className="flex items-center gap-2.5">
+                        <Layers className="w-4.5 h-4.5 text-indigo-600 shrink-0" />
+                        <div>
+                          <span className="font-black text-indigo-950 block text-xs flex items-center gap-2">
+                            <span>Reusable Payload Data Inheritance Active</span>
+                            <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-300">
+                              Stage 1 Requisition Items Linked
+                            </span>
+                          </span>
+                          <span className="text-[11px] text-indigo-900 font-medium leading-snug block">
+                            This stage automatically inherits the Itemized Grid Table &amp; Requisition Payload from Stage 1 (Receive Material Requisition). Assignees can verify, triage, or approve inherited items directly without re-entering data.
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
                     {(stages[selectedStageIndex].fields || []).map((f, fIdx) => (
                       <div
                         key={f.id || fIdx}
-                        className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                        className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3 text-xs"
                       >
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1">
                           {/* Label */}
@@ -1542,7 +1634,7 @@ export const FmsTemplateStudioPage: React.FC<FmsTemplateStudioPageProps> = ({
                             ) : f.type === 'MULTI_ITEM_TABLE' ? (
                               <input
                                 type="text"
-                                value={f.defaultValue !== undefined ? f.defaultValue : (f.columns && f.columns.length > 0 ? f.columns.map(c => c.label).join(', ') : 'Item Description, Quantity, Unit, Work / Purpose Details, Remarks')}
+                                value={f.defaultValue !== undefined ? f.defaultValue : (f.columns && f.columns.length > 0 ? f.columns.map(c => c.label).join(', ') : 'Item Description, Quantity, Unit, Work / Purpose Details, Disposition, Remarks')}
                                 onChange={(e) => {
                                   const rawVal = e.target.value;
                                   const colLabels = rawVal.split(',').map(s => s.trim()).filter(Boolean);
@@ -1556,7 +1648,7 @@ export const FmsTemplateStudioPage: React.FC<FmsTemplateStudioPageProps> = ({
                                     columns: cols
                                   });
                                 }}
-                                placeholder="Item Description, Quantity, Unit, Work / Purpose Details, Remarks"
+                                placeholder="Item Description, Quantity, Unit, Work / Purpose Details, Disposition, Remarks"
                                 className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
                               />
                             ) : (
@@ -1571,33 +1663,98 @@ export const FmsTemplateStudioPage: React.FC<FmsTemplateStudioPageProps> = ({
                           </div>
                         </div>
 
-                        {/* Required & Delete */}
-                        <div className="flex items-center gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200">
-                          <label className="flex items-center gap-1.5 cursor-pointer">
+                        {/* Field Data Inheritance & Multi-Item Table Row Routing */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-200">
+                          <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700">
                             <input
                               type="checkbox"
-                              checked={Boolean(f.required)}
-                              onChange={(e) => handleUpdateStageFormField(fIdx, { required: e.target.checked })}
-                              className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                              checked={Boolean(f.isInherited)}
+                              onChange={(e) => handleUpdateStageFormField(fIdx, {
+                                isInherited: e.target.checked,
+                                isReadOnly: e.target.checked ? true : f.isReadOnly,
+                                inheritedSourceField: e.target.checked ? (f.inheritedSourceField || 'Item List from Stage 1') : undefined
+                              })}
+                              className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
                             />
-                            <span className="text-[11px] font-semibold text-slate-600">Required</span>
+                            <span>Read-Only / Inherited from Parent Payload</span>
                           </label>
 
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveStageFormField(fIdx)}
-                            className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                            title="Remove field"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {f.isInherited && (
+                            <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+                              <span className="text-[11px] font-bold text-slate-500 shrink-0">Data Source:</span>
+                              <select
+                                value={f.inheritedSourceField || 'Item List from Stage 1'}
+                                onChange={(e) => handleUpdateStageFormField(fIdx, { inheritedSourceField: e.target.value })}
+                                className="text-xs bg-indigo-50 border border-indigo-300 rounded-lg px-2.5 py-1 font-bold text-indigo-900 flex-1 cursor-pointer"
+                              >
+                                <option value="Item List from Stage 1">Item List from Stage 1 (Central Indent)</option>
+                                <option value="Parent Indent Reference">Parent Indent / Requisition Number</option>
+                                <option value="Site Name & Location">Site Name & Project Location</option>
+                                <option value="Vendor Quotation Ledger">Vendor Quotation & CS Sheet Summary</option>
+                                <option value="Total Indent Value">Total Indent Estimated Value (₹)</option>
+                              </select>
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-3 shrink-0 ml-auto">
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(f.required)}
+                                onChange={(e) => handleUpdateStageFormField(fIdx, { required: e.target.checked })}
+                                className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                              />
+                              <span className="text-[11px] font-semibold text-slate-600">Required</span>
+                            </label>
+
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveStageFormField(fIdx)}
+                              className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                              title="Remove field"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
+
+                        {/* Multi-Item Table Row-Level Triage Routing Strategy */}
+                        {f.type === 'MULTI_ITEM_TABLE' && (
+                          <div className="p-3 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-200 text-xs space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-emerald-950 text-xs flex items-center gap-1.5">
+                                <GitBranch className="w-4 h-4 text-emerald-600" />
+                                <span>Row-Level Logic &amp; Item Triage Routing Strategy</span>
+                              </span>
+                              <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300">
+                                Store vs Purchase Triage Active
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-emerald-900 font-medium leading-tight">
+                              Automatically inspects the 'Disposition' column in each row of this table during Stage completion and splits items into parallel tracks.
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                              <div className="bg-white p-2 rounded-lg border border-emerald-200">
+                                <span className="font-bold text-indigo-700 block">Store Dispatch Rows:</span>
+                                <span className="text-[11px] text-slate-600">Route to Store Manager (Amanat)</span>
+                              </div>
+                              <div className="bg-white p-2 rounded-lg border border-emerald-200">
+                                <span className="font-bold text-amber-700 block">Purchase Indent Rows:</span>
+                                <span className="text-[11px] text-slate-600">Route to Purchase Head (Brahmanand)</span>
+                              </div>
+                              <div className="bg-white p-2 rounded-lg border border-emerald-200">
+                                <span className="font-bold text-rose-700 block">Hold / Archive Rows:</span>
+                                <span className="text-[11px] text-slate-600">Schedule 7-Day Store Review Task</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
 
                     {(!stages[selectedStageIndex].fields || stages[selectedStageIndex].fields?.length === 0) && (
-                      <div className="p-4 bg-slate-50/70 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-400">
-                        No custom fields configured for this stage yet. Click "+ Add Form Field" to design validation inputs.
+                      <div className="p-4 bg-slate-50/70 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-500 italic">
+                        No custom fields configured for this stage yet. Inherited items and requisition payload from Stage 1 are active for validation.
                       </div>
                     )}
                   </div>
@@ -1655,6 +1812,181 @@ export const FmsTemplateStudioPage: React.FC<FmsTemplateStudioPageProps> = ({
                       </div>
                     ))}
                   </div>
+                </div>
+
+                {/* Automated Sub-Workflow Trigger & Cross-Department Routing Configurator */}
+                <div className="p-5 border-t border-slate-200 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                        <GitBranch className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Automated Sub-Workflow Trigger &amp; Cross-Department Routing</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        Configure sub-workflow spawning, target process selection, and dynamic assignee routing rules for Stage #{selectedStageIndex + 1}.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cur = stages[selectedStageIndex].subWorkflowTrigger || { enabled: false, targetTemplateKey: 'INDENT_PURCHASE' };
+                        handleUpdateCurrentStageField('subWorkflowTrigger', {
+                          ...cur,
+                          enabled: !cur.enabled,
+                          targetTemplateKey: cur.targetTemplateKey || 'INDENT_PURCHASE',
+                          triggerCondition: cur.triggerCondition || 'ON_COMPLETE',
+                          targetAssigneeRule: cur.targetAssigneeRule || 'DYNAMIC_ROLE',
+                          targetRole: cur.targetRole || 'PURCHASE_MANAGER',
+                        });
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 border ${
+                        stages[selectedStageIndex].subWorkflowTrigger?.enabled
+                          ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
+                          : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
+                      }`}
+                    >
+                      {stages[selectedStageIndex].subWorkflowTrigger?.enabled ? '✓ Automation Enabled' : '+ Add Sub-Workflow Trigger'}
+                    </button>
+                  </div>
+
+                  {stages[selectedStageIndex].subWorkflowTrigger?.enabled ? (
+                    <div className="p-4 bg-gradient-to-r from-indigo-50/90 via-purple-50/90 to-indigo-50/90 rounded-2xl border border-indigo-200 space-y-4 text-xs shadow-2xs">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-bold text-indigo-950 flex items-center justify-between">
+                            <span>Target Sub-Workflow Process</span>
+                            <span className="text-[10px] text-emerald-800 font-bold bg-emerald-100/90 px-2 py-0.5 rounded border border-emerald-300">
+                              Connected Target
+                            </span>
+                          </label>
+                          <select
+                            value={stages[selectedStageIndex].subWorkflowTrigger?.targetTemplateKey || 'INDENT_PURCHASE'}
+                            onChange={(e) => {
+                              const cur = stages[selectedStageIndex].subWorkflowTrigger || { enabled: true };
+                              handleUpdateCurrentStageField('subWorkflowTrigger', { ...cur, targetTemplateKey: e.target.value });
+                            }}
+                            className="w-full text-xs bg-white border border-indigo-300 rounded-xl p-2 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-2xs"
+                          >
+                            <option value="INDENT_PURCHASE">Purchase Indent to PO (INDENT_PURCHASE)</option>
+                            <option value="STORE_TO_SITE_DISPATCH">Store to Site Dispatch (STORE_TO_SITE_DISPATCH)</option>
+                            <option value="PO_TO_PAYMENT">Accounts PO to Payment (PO_TO_PAYMENT)</option>
+                            <option value="CHECK_STOCK">Store Check Stock (CHECK_STOCK)</option>
+                            <option value="PURCHASE_TO_STORE_DISPATCH">Purchase to Store Dispatch (PURCHASE_TO_STORE_DISPATCH)</option>
+                            <option value="PAYMENT_TO_DISPATCH">Vendor Payment to Dispatch (PAYMENT_TO_DISPATCH)</option>
+                            <option value="SITE_RECEIVE">Site Material Receive MRN (SITE_RECEIVE)</option>
+                            <option value="ACCOUNTS_INVOICE_COLLECTION">Accounts Invoice Collection (ACCOUNTS_INVOICE_COLLECTION)</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-bold text-indigo-950">
+                            Execution Trigger Condition
+                          </label>
+                          <select
+                            value={stages[selectedStageIndex].subWorkflowTrigger?.triggerCondition || 'ON_COMPLETE'}
+                            onChange={(e) => {
+                              const cur = stages[selectedStageIndex].subWorkflowTrigger || { enabled: true, targetTemplateKey: 'INDENT_PURCHASE' };
+                              handleUpdateCurrentStageField('subWorkflowTrigger', { ...cur, enabled: true, targetTemplateKey: cur.targetTemplateKey || 'INDENT_PURCHASE', triggerCondition: e.target.value as any });
+                            }}
+                            className="w-full text-xs bg-white border border-indigo-300 rounded-xl p-2 font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-2xs"
+                          >
+                            <option value="ON_COMPLETE">Trigger whenever Stage #{selectedStageIndex + 1} completes</option>
+                            <option value="ON_DECISION_YES">Trigger ONLY when Decision / Approval = YES</option>
+                            <option value="ON_DECISION_NO">Trigger ONLY when Decision / Approval = NO</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Dynamic Assignee Routing Configuration */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-indigo-200/80">
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-bold text-indigo-950 flex items-center justify-between">
+                            <span>Dynamic Assignee Routing Rule</span>
+                            <span className="text-[10px] text-indigo-700 font-bold bg-indigo-100/90 px-2 py-0.5 rounded">
+                              Role-Based Queue
+                            </span>
+                          </label>
+                          <select
+                            value={stages[selectedStageIndex].subWorkflowTrigger?.targetAssigneeRule || 'DYNAMIC_ROLE'}
+                            onChange={(e) => {
+                              const cur = stages[selectedStageIndex].subWorkflowTrigger || { enabled: true, targetTemplateKey: 'INDENT_PURCHASE' };
+                              handleUpdateCurrentStageField('subWorkflowTrigger', { ...cur, enabled: true, targetTemplateKey: cur.targetTemplateKey || 'INDENT_PURCHASE', targetAssigneeRule: e.target.value as any });
+                            }}
+                            className="w-full text-xs bg-white border border-indigo-300 rounded-xl p-2 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-2xs"
+                          >
+                            <option value="DYNAMIC_ROLE">Role-Based Queue (e.g. Purchase Head / Store Incharge)</option>
+                            <option value="SPECIFIC_USER">Specific Individual User</option>
+                            <option value="INHERIT_PARENT">Inherit Current Stage Assignee ({stages[selectedStageIndex].whoDefaultAssignee || 'Parent Assignee'})</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-bold text-indigo-950">
+                            Target Role / Assigned Queue
+                          </label>
+                          {stages[selectedStageIndex].subWorkflowTrigger?.targetAssigneeRule === 'SPECIFIC_USER' ? (
+                            <select
+                              value={stages[selectedStageIndex].subWorkflowTrigger?.targetAssignee || 'Brahmanand Patel'}
+                              onChange={(e) => {
+                                const cur = stages[selectedStageIndex].subWorkflowTrigger || { enabled: true, targetTemplateKey: 'INDENT_PURCHASE' };
+                                handleUpdateCurrentStageField('subWorkflowTrigger', { ...cur, enabled: true, targetTemplateKey: cur.targetTemplateKey || 'INDENT_PURCHASE', targetAssignee: e.target.value });
+                              }}
+                              className="w-full text-xs bg-white border border-indigo-300 rounded-xl p-2 font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-2xs"
+                            >
+                              <option value="Brahmanand Patel">Brahmanand Patel (Asst. Manager Purchase &amp; Store)</option>
+                              <option value="Amanat Bharadwaj">Amanat Bharadwaj (Store Manager)</option>
+                              <option value="Manish Koshle">Manish Koshle (Finance &amp; Accounts)</option>
+                              <option value="Shyam Rao Sureshe">Shyam Rao Sureshe (Purchase Executive)</option>
+                              <option value="Pranjal Agrawal">Pranjal Agrawal (Director)</option>
+                            </select>
+                          ) : stages[selectedStageIndex].subWorkflowTrigger?.targetAssigneeRule === 'INHERIT_PARENT' ? (
+                            <input
+                              type="text"
+                              disabled
+                              value={stages[selectedStageIndex].whoDefaultAssignee || 'Inherited from current stage'}
+                              className="w-full text-xs bg-slate-100 border border-slate-300 rounded-xl p-2 font-semibold text-slate-600 cursor-not-allowed"
+                            />
+                          ) : (
+                            <select
+                              value={stages[selectedStageIndex].subWorkflowTrigger?.targetRole || (stages[selectedStageIndex].subWorkflowTrigger?.targetTemplateKey === 'INDENT_PURCHASE' ? 'PURCHASE_MANAGER' : 'STORE_MANAGER')}
+                              onChange={(e) => {
+                                const cur = stages[selectedStageIndex].subWorkflowTrigger || { enabled: true, targetTemplateKey: 'INDENT_PURCHASE' };
+                                handleUpdateCurrentStageField('subWorkflowTrigger', { ...cur, enabled: true, targetTemplateKey: cur.targetTemplateKey || 'INDENT_PURCHASE', targetRole: e.target.value });
+                              }}
+                              className="w-full text-xs bg-white border border-indigo-300 rounded-xl p-2 font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-2xs"
+                            >
+                              <option value="PURCHASE_MANAGER">Role: PURCHASE_HEAD / PURCHASE_MANAGER (Brahmanand Patel)</option>
+                              <option value="STORE_MANAGER">Role: STORE_MANAGER / DISPATCH (Amanat Bharadwaj)</option>
+                              <option value="FINANCE_ACCOUNTS">Role: FINANCE_ACCOUNTS (Manish Koshle)</option>
+                              <option value="PROJECT_MANAGER">Role: PROJECT_MANAGER (Pranay Ghosh / Chakravarti Ji)</option>
+                            </select>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs flex items-center justify-between text-slate-500">
+                      <span>No sub-workflow trigger configured for Stage #{selectedStageIndex + 1}. Stage completion will advance sequentially within this process.</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const cur = stages[selectedStageIndex].subWorkflowTrigger || { enabled: false, targetTemplateKey: 'INDENT_PURCHASE' };
+                          handleUpdateCurrentStageField('subWorkflowTrigger', {
+                            ...cur,
+                            enabled: true,
+                            targetTemplateKey: 'INDENT_PURCHASE',
+                            triggerCondition: 'ON_COMPLETE',
+                            targetAssigneeRule: 'DYNAMIC_ROLE',
+                            targetRole: 'PURCHASE_MANAGER',
+                          });
+                        }}
+                        className="text-xs font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer shrink-0"
+                      >
+                        + Add Sub-Workflow Trigger
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

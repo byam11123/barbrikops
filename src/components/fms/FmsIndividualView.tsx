@@ -25,12 +25,15 @@ import {
   CheckCircle,
   FileCheck,
   Zap,
-  Info
+  Info,
+  X,
+  Eye
 } from 'lucide-react';
 import { FmsInstance, FmsStageExecution, UserProfile, isUserSuperAdmin, isUserAdminOrSuperAdmin } from '../../types';
 import { downloadCsv } from '../../utils/csvExporter';
 import { StoreTriageModal } from './StoreTriageModal';
 import { EmbeddedL1ApprovalModal } from './EmbeddedL1ApprovalModal';
+import { FmsItemTable } from './FmsItemTable';
 import { storageAdapter } from '../../services/storageAdapter';
 
 interface FmsIndividualViewProps {
@@ -52,11 +55,12 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
   const [isStoreTriageOpen, setIsStoreTriageOpen] = useState(false);
   const [isL1ModalOpen, setIsL1ModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'STAGE_TABLE' | 'LINE_ITEMS' | 'UNIVERSAL_DATA'>('STAGE_TABLE');
+  const [previewTableModal, setPreviewTableModal] = useState<{ isOpen: boolean; title: string; items: any[] } | null>(null);
 
   // Keep activeFlow synced whenever the parent flow prop updates after stage submission
   useEffect(() => {
     setActiveFlow(flow);
-  }, [flow]);
+  }, [flow.id, flow.currentStageIndex, flow.status, flow.updatedAt]);
 
   const isSuperAdmin = isUserSuperAdmin(currentUser);
   const isAdmin = isUserAdminOrSuperAdmin(currentUser);
@@ -225,6 +229,8 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
             <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${
               activeFlow.status === 'Completed'
                 ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                : activeFlow.status === 'Awaiting Fulfillment'
+                ? 'bg-amber-100 text-amber-800 border-amber-300'
                 : 'bg-indigo-100 text-indigo-800 border-indigo-300'
             }`}>
               {activeFlow.status}
@@ -242,15 +248,7 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
             <span>Export CSV</span>
           </button>
 
-          {activeFlow.currentStageIndex === 1 && (
-            <button
-              onClick={() => setIsStoreTriageOpen(true)}
-              className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition-all flex items-center gap-1.5"
-            >
-              <Boxes className="w-4 h-4" />
-              <span>Stage 2 Store Stock Triage</span>
-            </button>
-          )}
+
 
           {activeFlow.stages[activeFlow.currentStageIndex]?.stageName.toLowerCase().includes('l1') && (
             <button
@@ -314,12 +312,32 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
             <Clock className="w-4 h-4 text-emerald-500" />
           </div>
           <div>
-            <p className="text-base font-bold text-slate-900">
-              Stage {activeFlow.currentStageIndex + 1} of {activeFlow.totalStages}
-            </p>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Active: {activeFlow.stages[activeFlow.currentStageIndex]?.stageName || 'Completed'}
-            </p>
+            {activeFlow.status === 'Completed' ? (
+              <>
+                <p className="text-base font-bold text-emerald-700">
+                  All {activeFlow.totalStages} Stages Completed
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">Workflow Finished</p>
+              </>
+            ) : activeFlow.status === 'Awaiting Fulfillment' ? (
+              <>
+                <p className="text-base font-bold text-amber-700">
+                  Awaiting Fulfillment
+                </p>
+                <p className="text-xs text-amber-600 font-medium mt-0.5">
+                  Waiting for child tracks (-DISP / -PUR)
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-base font-bold text-slate-900">
+                  Stage {Math.min(activeFlow.currentStageIndex + 1, activeFlow.totalStages)} of {activeFlow.totalStages}
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Active: {activeFlow.stages[activeFlow.currentStageIndex]?.stageName || 'Completed'}
+                </p>
+              </>
+            )}
           </div>
           <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
             <span className="text-slate-500">Doer/Assignee:</span>
@@ -424,6 +442,7 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
               <tbody className="divide-y divide-slate-200">
                 {activeFlow.stages.map((stage, idx) => {
                   const isActive = idx === activeFlow.currentStageIndex;
+                  const isDone = stage.status === 'Done' || stage.status === 'Completed' || stage.status === 'Skipped';
 
                   return (
                     <tr
@@ -478,28 +497,127 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                       </td>
                       <td className="py-3.5 px-3">
                         {stage.submittedData && Object.keys(stage.submittedData).length > 0 ? (
-                          <div className="space-y-1">
-                            {Object.entries(stage.submittedData).slice(0, 2).map(([k, v]) => (
-                              <div key={k} className="text-[11px]">
-                                <span className="text-slate-400 font-medium">{k}: </span>
-                                <span className="font-semibold text-slate-800">{String(v)}</span>
-                              </div>
-                            ))}
+                          <div className="space-y-1.5">
+                            {Object.entries(stage.submittedData)
+                              .filter(([k]) => !k.startsWith('_'))
+                              .slice(0, 3)
+                              .map(([k, rawVal]) => {
+                                // Extract / recover real data
+                                let v = rawVal;
+                                if (typeof v === 'string' && (v.trim().startsWith('[') || v.trim().startsWith('{'))) {
+                                  try {
+                                    v = JSON.parse(v);
+                                  } catch {
+                                    // keep raw string
+                                  }
+                                }
+
+                                // If corrupted [object Object] string, attempt recovery from activeFlow lineItems or instanceDataPool
+                                if (typeof v === 'string' && (v === '[object Object]' || v.includes('[object Object]'))) {
+                                  if (k.toLowerCase().includes('item') && activeFlow.lineItems && activeFlow.lineItems.length > 0) {
+                                    v = activeFlow.lineItems;
+                                  } else if (activeFlow.instanceDataPool && activeFlow.instanceDataPool[k]) {
+                                    v = activeFlow.instanceDataPool[k];
+                                  }
+                                }
+
+                                // Check if v represents an array of items (or object with items)
+                                const isItemArray = Array.isArray(v);
+                                const isItemObject = typeof v === 'object' && v !== null && (
+                                  Array.isArray((v as any).items) ||
+                                  (k.toLowerCase().includes('item') && Object.values(v).every((sub) => typeof sub === 'object' && sub !== null))
+                                );
+
+                                const candidateItems: any[] | null = isItemArray
+                                  ? v
+                                  : isItemObject
+                                  ? (Array.isArray((v as any).items) ? (v as any).items : Object.values(v))
+                                  : null;
+
+                                if (candidateItems && candidateItems.length > 0) {
+                                  const itemNames = candidateItems
+                                    .map((i: any) => i.itemDescription || i.item_description || i.description || i.name)
+                                    .filter(Boolean);
+                                  return (
+                                    <div key={k} className="text-[11px] space-y-0.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => setPreviewTableModal({ isOpen: true, title: `${stage.stageName} - ${k}`, items: candidateItems })}
+                                        className="text-indigo-600 hover:text-indigo-800 font-bold inline-flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded cursor-pointer transition-colors shadow-2xs"
+                                        title="Click to view full items table"
+                                      >
+                                        <Layers className="w-3 h-3 text-indigo-600" />
+                                        <span>{candidateItems.length} item{candidateItems.length === 1 ? '' : 's'} (View Data Table)</span>
+                                      </button>
+                                      {itemNames.length > 0 && (
+                                        <p className="text-[10px] text-slate-700 font-medium truncate max-w-[220px]" title={itemNames.join(', ')}>
+                                          {itemNames.slice(0, 3).join(', ')}{itemNames.length > 3 ? ` (+${itemNames.length - 3} more)` : ''}
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                }
+
+                                if (typeof v === 'object' && v !== null) {
+                                  return (
+                                    <div key={k} className="text-[11px]">
+                                      <span className="text-slate-400 font-medium">{k}: </span>
+                                      <span className="font-semibold text-slate-800">
+                                        {Object.entries(v)
+                                          .map(([sk, sv]) => `${sk}: ${typeof sv === 'object' ? JSON.stringify(sv) : sv}`)
+                                          .join(' • ')}
+                                      </span>
+                                    </div>
+                                  );
+                                }
+
+                                const displayStr = String(v ?? '');
+                                return (
+                                  <div key={k} className="text-[11px] truncate max-w-[200px]" title={displayStr}>
+                                    <span className="text-slate-400 font-medium">{k}: </span>
+                                    <span className="font-semibold text-slate-800">
+                                      {displayStr === '[object Object]' ? '—' : displayStr}
+                                    </span>
+                                  </div>
+                                );
+                              })}
                           </div>
                         ) : (
                           <span className="text-slate-400 italic text-[11px]">Inherited from Master Data</span>
                         )}
                       </td>
                       <td className="py-3.5 px-3 text-center">
-                        {isActive && onOpenStageAction && (
+                        {idx === 1 || stage.stageId === 'STG-STK-02' ? (
+                          <button
+                            type="button"
+                            onClick={() => setIsStoreTriageOpen(true)}
+                            className={`px-3 py-1.5 rounded-lg font-bold text-[11px] transition-all flex items-center gap-1 mx-auto cursor-pointer ${
+                              isActive
+                                ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 shadow-2xs'
+                            }`}
+                          >
+                            {isDone && <Eye className="w-3.5 h-3.5 text-slate-500" />}
+                            <span>{isActive ? 'Execute Stage' : 'View Details'}</span>
+                          </button>
+                        ) : isActive && onOpenStageAction ? (
                           <button
                             type="button"
                             onClick={() => onOpenStageAction(activeFlow, idx)}
-                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-[11px] shadow-xs transition-all flex items-center gap-1 mx-auto"
+                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-[11px] shadow-xs transition-all flex items-center gap-1 mx-auto cursor-pointer"
                           >
                             <span>Execute Stage</span>
                           </button>
-                        )}
+                        ) : isDone && onOpenStageAction ? (
+                          <button
+                            type="button"
+                            onClick={() => onOpenStageAction(activeFlow, idx)}
+                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold text-[11px] border border-slate-300 shadow-2xs transition-all flex items-center gap-1 mx-auto cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-slate-500" />
+                            <span>View Details</span>
+                          </button>
+                        ) : null}
                       </td>
                     </tr>
                   );
@@ -634,6 +752,7 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
         <StoreTriageModal
           flow={activeFlow}
           currentUser={currentUser}
+          readOnly={activeFlow.stages[1]?.status === 'Done' || activeFlow.stages[1]?.status === 'Completed' || activeFlow.stages[1]?.status === 'Skipped' || activeFlow.status === 'Awaiting Fulfillment' || activeFlow.status === 'Completed'}
           onClose={() => setIsStoreTriageOpen(false)}
           onCompleteTriage={handleCompleteTriage}
         />
@@ -650,6 +769,48 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
           onClose={() => setIsL1ModalOpen(false)}
           onApproveL1={handleApproveL1InModal}
         />
+      )}
+
+      {/* Items Table Viewer Modal Dialog */}
+      {previewTableModal && previewTableModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[85vh] shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in zoom-in-95">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 flex items-center justify-center font-bold">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-black text-sm text-slate-900">{previewTableModal.title}</h4>
+                  <p className="text-[11px] text-slate-500">
+                    {previewTableModal.items.length} itemized row{previewTableModal.items.length === 1 ? '' : 's'} recorded
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewTableModal(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto">
+              <FmsItemTable items={previewTableModal.items} />
+            </div>
+
+            <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setPreviewTableModal(null)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -38,6 +38,7 @@ import { FmsStagePreviewAccordion } from './FmsStagePreviewAccordion';
 import { EmbeddedCsCreatorModal } from './EmbeddedCsCreatorModal';
 import { EmbeddedL1ApprovalModal } from './EmbeddedL1ApprovalModal';
 import { FmsStageOverrideModal } from './FmsStageOverrideModal';
+import { FmsItemTable } from './FmsItemTable';
 import { FileSpreadsheet, Award, ShieldAlert } from 'lucide-react';
 
 interface StageActionModalProps {
@@ -853,59 +854,133 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                     </div>
 
                     {submittedEntries.length > 0 ? (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-0.5 text-[11px]">
-                        {submittedEntries.map(([k, v]) => {
-                          const displayLabel = resolveFieldLabel(k, prior, pIdx);
-                          const strVal = String(v ?? '');
-                          const isDataFile = strVal.startsWith('data:');
-                          const isRefFile = strVal.startsWith('[File: ');
-                          const isHttpLink = strVal.startsWith('http://') || strVal.startsWith('https://');
+                      <div className="space-y-3 pt-0.5 text-[11px]">
+                        {/* Normal / Scalar fields grid */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {submittedEntries
+                            .map(([k, rawVal]) => {
+                              let v = rawVal;
+                              if (typeof v === 'string' && (v.trim().startsWith('[') || v.trim().startsWith('{'))) {
+                                try {
+                                  v = JSON.parse(v);
+                                } catch {
+                                  // keep raw
+                                }
+                              }
 
-                          return (
-                            <div key={k} className="overflow-hidden">
-                              <span className="text-[10px] text-slate-400 font-semibold block capitalize truncate" title={displayLabel}>
-                                {displayLabel}
-                              </span>
-                              {isDataFile || isRefFile ? (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setPreviewFile({
-                                      url: strVal,
-                                      name: isRefFile
-                                        ? strVal.replace(/^\[File:\s*/, '').replace(/\]$/, '')
-                                        : `${displayLabel} Attachment`,
-                                    })
-                                  }
-                                  className="font-bold text-indigo-600 hover:text-indigo-800 hover:underline inline-flex items-center gap-1 truncate text-[11px] cursor-pointer"
-                                  title="Click to open file in dialog box"
-                                >
-                                  <Paperclip className="w-3 h-3 shrink-0" />
-                                  <span className="truncate">
-                                    {isRefFile
-                                      ? strVal.replace(/^\[File:\s*/, '').replace(/\]$/, '')
-                                      : 'View Attachment'}
+                              // If corrupted [object Object] string, attempt recovery from lineItems
+                              if (typeof v === 'string' && (v === '[object Object]' || v.includes('[object Object]'))) {
+                                if (k.toLowerCase().includes('item') && flow.lineItems && flow.lineItems.length > 0) {
+                                  v = flow.lineItems;
+                                }
+                              }
+
+                              const isItemArray = Array.isArray(v);
+                              const isItemObj = typeof v === 'object' && v !== null && (
+                                Array.isArray((v as any).items) ||
+                                (k.toLowerCase().includes('item') && Object.values(v).every((sub) => typeof sub === 'object' && sub !== null))
+                              );
+
+                              if (isItemArray || isItemObj) {
+                                return null; // rendered below in itemized section
+                              }
+
+                              const displayLabel = resolveFieldLabel(k, prior, pIdx);
+                              const isObject = typeof v === 'object' && v !== null;
+                              const strVal = isObject
+                                ? Object.entries(v)
+                                    .map(([sk, sv]) => `${sk}: ${typeof sv === 'object' ? JSON.stringify(sv) : sv}`)
+                                    .join(' • ')
+                                : String(v ?? '');
+                              const isDataFile = strVal.startsWith('data:');
+                              const isRefFile = strVal.startsWith('[File: ');
+                              const isHttpLink = strVal.startsWith('http://') || strVal.startsWith('https://');
+
+                              return (
+                                <div key={k} className="overflow-hidden">
+                                  <span className="text-[10px] text-slate-400 font-semibold block capitalize truncate" title={displayLabel}>
+                                    {displayLabel}
                                   </span>
-                                </button>
-                              ) : isHttpLink ? (
-                                <a
-                                  href={strVal}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="font-bold text-indigo-600 hover:text-indigo-800 hover:underline inline-flex items-center gap-1 truncate text-[11px]"
-                                  title={strVal}
-                                >
-                                  <ExternalLink className="w-3 h-3 shrink-0" />
-                                  <span className="truncate">{strVal}</span>
-                                </a>
-                              ) : (
-                                <span className="font-medium text-slate-800 block truncate" title={strVal}>
-                                  {strVal}
-                                </span>
-                              )}
-                            </div>
-                          );
-                        })}
+                                  {isDataFile || isRefFile ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setPreviewFile({
+                                          url: strVal,
+                                          name: isRefFile
+                                            ? strVal.replace(/^\[File:\s*/, '').replace(/\]$/, '')
+                                            : `${displayLabel} Attachment`,
+                                        })
+                                      }
+                                      className="font-bold text-indigo-600 hover:text-indigo-800 hover:underline inline-flex items-center gap-1 truncate text-[11px] cursor-pointer"
+                                      title="Click to open file in dialog box"
+                                    >
+                                      <Paperclip className="w-3 h-3 shrink-0" />
+                                      <span className="truncate">
+                                        {isRefFile
+                                          ? strVal.replace(/^\[File:\s*/, '').replace(/\]$/, '')
+                                          : 'View Attachment'}
+                                      </span>
+                                    </button>
+                                  ) : isHttpLink ? (
+                                    <a
+                                      href={strVal}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="font-bold text-indigo-600 hover:text-indigo-800 hover:underline inline-flex items-center gap-1 truncate text-[11px]"
+                                      title={strVal}
+                                    >
+                                      <ExternalLink className="w-3 h-3 shrink-0" />
+                                      <span className="truncate">{strVal}</span>
+                                    </a>
+                                  ) : (
+                                    <span className="font-medium text-slate-800 block truncate" title={strVal}>
+                                      {strVal === '[object Object]' ? '—' : strVal}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                        </div>
+
+                        {/* Array / Itemized Table Fields */}
+                        {submittedEntries
+                          .map(([k, rawVal]) => {
+                            let v = rawVal;
+                            if (typeof v === 'string' && (v.trim().startsWith('[') || v.trim().startsWith('{'))) {
+                              try {
+                                v = JSON.parse(v);
+                              } catch {
+                                // keep raw
+                              }
+                            }
+                            if (typeof v === 'string' && (v === '[object Object]' || v.includes('[object Object]'))) {
+                              if (k.toLowerCase().includes('item') && flow.lineItems && flow.lineItems.length > 0) {
+                                v = flow.lineItems;
+                              }
+                            }
+
+                            const isItemArray = Array.isArray(v);
+                            const isItemObj = typeof v === 'object' && v !== null && (
+                              Array.isArray((v as any).items) ||
+                              (k.toLowerCase().includes('item') && Object.values(v).every((sub) => typeof sub === 'object' && sub !== null))
+                            );
+
+                            const itemsList = isItemArray
+                              ? v
+                              : isItemObj
+                              ? (Array.isArray((v as any).items) ? (v as any).items : Object.values(v))
+                              : null;
+
+                            if (!itemsList || itemsList.length === 0) return null;
+
+                            const displayLabel = resolveFieldLabel(k, prior, pIdx);
+                            return (
+                              <div key={k} className="pt-2 border-t border-slate-100">
+                                <FmsItemTable items={itemsList as any[]} title={displayLabel} />
+                              </div>
+                            );
+                          })}
                       </div>
                     ) : (
                       <p className="text-[11px] text-slate-500 italic">Stage verified by {prior.assignee}</p>
@@ -931,7 +1006,7 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
             </div>
           )}
 
-          {flow.linkedSubFlows && flow.linkedSubFlows.length > 0 && (
+          {flow.linkedSubFlows && flow.linkedSubFlows.length > 0 && (stage.status === 'Done' || stage.status === 'Skipped' || flow.status === 'Awaiting Fulfillment') && (
             <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 shadow-2xs">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
@@ -1256,7 +1331,9 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                                     step="any"
                                     value={item.storeQty ?? 0}
                                     onChange={(e) => {
-                                      const sq = parseFloat(e.target.value) || 0;
+                                      const rawSq = parseFloat(e.target.value) || 0;
+                                      const maxStoreAllowed = Math.max(0, item.physicalStockFound ?? 0);
+                                      const sq = Math.min(maxStoreAllowed, rawSq);
                                       const next = [...triageItems];
                                       const pq = Math.max(0, approved - sq);
                                       next[idx] = {
@@ -1866,7 +1943,54 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                     );
                   }
 
+                  // Extract items if val is array, JSON array, or object with items
+                  let parsedItems: any[] | null = null;
+                  if (Array.isArray(val)) {
+                    parsedItems = val;
+                  } else if (typeof val === 'string' && (val.trim().startsWith('[') || val.trim().startsWith('{'))) {
+                    try {
+                      const p = JSON.parse(val);
+                      if (Array.isArray(p)) parsedItems = p;
+                      else if (p && typeof p === 'object' && Array.isArray(p.items)) parsedItems = p.items;
+                    } catch {
+                      // ignore parse error
+                    }
+                  } else if (typeof val === 'object' && val !== null) {
+                    if (Array.isArray((val as any).items)) {
+                      parsedItems = (val as any).items;
+                    } else if (field.id.toLowerCase().includes('item') && Object.values(val).every((sub) => typeof sub === 'object' && sub !== null)) {
+                      parsedItems = Object.values(val);
+                    }
+                  }
+
+                  // Fallback recovery if field is items and val is corrupted [object Object]
+                  if (!parsedItems && field.id.toLowerCase().includes('item') && (val === '[object Object]' || String(val).includes('[object Object]'))) {
+                    if (flow.lineItems && flow.lineItems.length > 0) {
+                      parsedItems = flow.lineItems;
+                    } else if (flow.instanceDataPool && flow.instanceDataPool.requisitionItems) {
+                      parsedItems = flow.instanceDataPool.requisitionItems;
+                    }
+                  }
+
+                  // If field received an array/list of items, render the full DataTable component (unless Stage 2 Stock Register is active)
+                  if (parsedItems && parsedItems.length > 0) {
+                    if (isStage2CheckStock) return null;
+                    return (
+                      <div key={field.id} className="sm:col-span-2 space-y-1">
+                        <FmsItemTable items={parsedItems} title={field.label} />
+                      </div>
+                    );
+                  }
+
                   // Default TEXT
+                  const safeVal = typeof val === 'object' && val !== null
+                    ? Object.entries(val)
+                        .map(([sk, sv]) => `${sk}: ${typeof sv === 'object' ? JSON.stringify(sv) : sv}`)
+                        .join(' • ')
+                    : String(val ?? '') === '[object Object]'
+                    ? ''
+                    : val ?? '';
+
                   return (
                     <div key={field.id} className="space-y-1">
                       <label className="block text-xs font-semibold text-slate-700">
@@ -1874,7 +1998,7 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                       </label>
                       <input
                         type="text"
-                        value={val}
+                        value={safeVal}
                         onChange={(e) => handleFieldChange(field.id, e.target.value)}
                         placeholder={field.placeholder || `Enter ${field.label}...`}
                         className="w-full text-xs bg-white border border-slate-300 rounded-lg p-2 font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -1977,21 +2101,27 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
             onClick={onClose}
             className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold rounded-lg text-xs transition-colors cursor-pointer"
           >
-            Cancel
+            {stage.status === 'Done' || stage.status === 'Skipped' ? 'Close Details' : 'Cancel'}
           </button>
           
           <button
             type="submit"
             form="stage-action-form"
-            disabled={flow.isClosed || flow.status === 'CLOSED'}
+            disabled={flow.isClosed || flow.status === 'CLOSED' || stage.status === 'Done' || stage.status === 'Skipped'}
             className={`px-5 py-2 font-bold rounded-lg text-xs shadow-sm transition-all flex items-center gap-1.5 ${
-              flow.isClosed || flow.status === 'CLOSED'
-                ? 'bg-slate-300 text-slate-500 cursor-not-allowed border border-slate-300'
+              flow.isClosed || flow.status === 'CLOSED' || stage.status === 'Done' || stage.status === 'Skipped'
+                ? 'bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300'
                 : 'bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white cursor-pointer'
             }`}
           >
             <CheckCircle2 className="w-4 h-4" />
-            <span>{flow.isClosed || flow.status === 'CLOSED' ? 'Workflow Closed (Locked)' : 'Submit & Advance Stage'}</span>
+            <span>
+              {stage.status === 'Done' || stage.status === 'Skipped'
+                ? 'Stage Completed (Read-Only)'
+                : flow.isClosed || flow.status === 'CLOSED'
+                ? 'Workflow Closed (Locked)'
+                : 'Submit & Advance Stage'}
+            </span>
           </button>
         </div>
 

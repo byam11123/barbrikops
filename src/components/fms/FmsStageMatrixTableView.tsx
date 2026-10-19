@@ -338,15 +338,35 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
   const getStageFieldValue = (stageExec: any, fieldId: string, fallbackKey?: string) => {
     if (!stageExec) return '—';
     if (stageExec.submittedData && stageExec.submittedData[fieldId] !== undefined) {
-      const val = stageExec.submittedData[fieldId];
+      let val = stageExec.submittedData[fieldId];
+      if (typeof val === 'string' && (val.trim().startsWith('[') || val.trim().startsWith('{'))) {
+        try {
+          val = JSON.parse(val);
+        } catch {
+          // ignore
+        }
+      }
       if (typeof val === 'boolean') return val ? 'Yes' : 'No';
       if (Array.isArray(val)) {
-        return `${val.length} item(s)`;
+        const itemNames = val.map((i: any) => i.itemDescription || i.item_description || i.description || i.name).filter(Boolean);
+        return itemNames.length > 0 ? `${val.length} item(s): ${itemNames.slice(0, 2).join(', ')}` : `${val.length} item(s)`;
+      }
+      if (typeof val === 'object' && val !== null) {
+        if (Array.isArray(val.items)) {
+          return `${val.items.length} item(s)`;
+        }
+        return Object.entries(val)
+          .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+          .join(' • ');
+      }
+      if (String(val) === '[object Object]') {
+        return '—';
       }
       return String(val);
     }
     if (fallbackKey && stageExec[fallbackKey] !== undefined) {
-      return String(stageExec[fallbackKey]);
+      const fbVal = String(stageExec[fallbackKey]);
+      return fbVal === '[object Object]' ? '—' : fbVal;
     }
     return '—';
   };

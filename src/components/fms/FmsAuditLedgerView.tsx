@@ -733,9 +733,40 @@ export const FmsAuditLedgerView: React.FC<FmsAuditLedgerViewProps> = ({
                                   </div>
                                 ) : (
                                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                                    {entries.map(([key, val]) => {
+                                    {entries.map(([key, rawVal]) => {
                                       const label = resolveFieldLabel(key, stage, flow);
-                                      const strVal = String(val ?? '');
+                                      let val = rawVal;
+                                      if (typeof val === 'string' && (val.trim().startsWith('[') || val.trim().startsWith('{'))) {
+                                        try {
+                                          val = JSON.parse(val);
+                                        } catch {
+                                          // keep raw
+                                        }
+                                      }
+                                      if (typeof val === 'string' && (val === '[object Object]' || val.includes('[object Object]'))) {
+                                        if (key.toLowerCase().includes('item') && flow.lineItems && flow.lineItems.length > 0) {
+                                          val = flow.lineItems;
+                                        }
+                                      }
+
+                                      const isItemArray = Array.isArray(val);
+                                      const isItemObj = typeof val === 'object' && val !== null && (
+                                        Array.isArray((val as any).items) ||
+                                        (key.toLowerCase().includes('item') && Object.values(val).every((sub) => typeof sub === 'object' && sub !== null))
+                                      );
+
+                                      const itemsList = isItemArray
+                                        ? val
+                                        : isItemObj
+                                        ? (Array.isArray((val as any).items) ? (val as any).items : Object.values(val))
+                                        : null;
+
+                                      const strVal = typeof val === 'object' && val !== null && !itemsList
+                                        ? Object.entries(val)
+                                            .map(([sk, sv]) => `${sk}: ${typeof sv === 'object' ? JSON.stringify(sv) : sv}`)
+                                            .join(' • ')
+                                        : String(val ?? '');
+
                                       const isDataFile = strVal.startsWith('data:');
                                       const isRefFile = strVal.startsWith('[File: ');
                                       const isHttpLink = strVal.startsWith('http://') || strVal.startsWith('https://');
@@ -750,27 +781,33 @@ export const FmsAuditLedgerView: React.FC<FmsAuditLedgerViewProps> = ({
                                             {label}
                                           </div>
                                           <div className="text-xs font-semibold text-slate-800 break-words">
-                                            {Array.isArray(val) ? (
+                                            {itemsList && itemsList.length > 0 ? (
                                               <div className="space-y-1">
                                                 <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 inline-block">
-                                                  {val.length} Itemized Row{val.length === 1 ? '' : 's'}
+                                                  {itemsList.length} Itemized Row{itemsList.length === 1 ? '' : 's'}
                                                 </span>
                                                 <div className="text-[11px] text-slate-700 max-h-28 overflow-y-auto space-y-1 font-mono bg-white p-2 rounded border border-slate-200 shadow-2xs">
-                                                  {val.length === 0 ? (
-                                                    <span className="text-slate-400 italic">No rows recorded</span>
-                                                  ) : (
-                                                    val.map((itemRow: any, rIdx: number) => {
-                                                      const rowVals = Object.entries(itemRow)
-                                                        .filter(([rk]) => rk !== 'id')
-                                                        .map(([_, rv]) => String(rv ?? ''))
-                                                        .filter(Boolean);
+                                                  {itemsList.map((itemRow: any, rIdx: number) => {
+                                                    const desc = itemRow.itemDescription || itemRow.item_description || itemRow.description || itemRow.name;
+                                                    const qty = itemRow.qty || itemRow.quantity || itemRow.requestedQty || itemRow.storeQty || '';
+                                                    const unit = itemRow.unit || 'Nos';
+                                                    if (desc) {
                                                       return (
                                                         <div key={rIdx} className="truncate border-b border-slate-100 last:border-b-0 pb-0.5">
-                                                          <span className="font-bold text-indigo-900">#{rIdx + 1}:</span> {rowVals.join(' | ')}
+                                                          <span className="font-bold text-indigo-900">#{rIdx + 1}:</span> {desc} {qty ? `(${qty} ${unit})` : ''}
                                                         </div>
                                                       );
-                                                    })
-                                                  )}
+                                                    }
+                                                    const rowVals = Object.entries(itemRow)
+                                                      .filter(([rk]) => rk !== 'id')
+                                                      .map(([_, rv]) => String(rv ?? ''))
+                                                      .filter(Boolean);
+                                                    return (
+                                                      <div key={rIdx} className="truncate border-b border-slate-100 last:border-b-0 pb-0.5">
+                                                        <span className="font-bold text-indigo-900">#{rIdx + 1}:</span> {rowVals.join(' | ')}
+                                                      </div>
+                                                    );
+                                                  })}
                                                 </div>
                                               </div>
                                             ) : isDataFile || isRefFile ? (
@@ -814,7 +851,7 @@ export const FmsAuditLedgerView: React.FC<FmsAuditLedgerViewProps> = ({
                                                 {strVal}
                                               </span>
                                             ) : (
-                                              <span>{strVal}</span>
+                                              <span>{strVal === '[object Object]' ? '—' : strVal}</span>
                                             )}
                                           </div>
                                         </div>

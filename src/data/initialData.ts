@@ -508,7 +508,7 @@ export const FMS_CHECK_STOCK_STAGES: FmsStageDefinition[] = [
     stageNumber: 1,
     name: 'RECEIVE MATERIAL REQUISITION',
     what: 'Receive material requisition details from site or company requester with required items',
-    whoRole: 'REQUESTER / STORE MANAGER',
+    whoRole: 'REQUESTER / SITE USER',
     whoDefaultAssignee: 'Amanat Bharadwaj',
     howChannel: 'IN-APP FORM / REQUISITION SLIP',
     slaHours: 0,
@@ -544,11 +544,11 @@ export const FMS_CHECK_STOCK_STAGES: FmsStageDefinition[] = [
   {
     stageId: 'STG-STK-02',
     stageNumber: 2,
-    name: 'CHECK STOCK',
-    what: 'Verify physical stock at site store and central warehouse against requisition',
+    name: 'Check Stock & Triage',
+    what: 'Verify physical stock at site store and central warehouse, allocate available stock for Store Dispatch, and route shortage to Purchase',
     whoRole: 'STORE MANAGER',
     whoDefaultAssignee: 'Amanat Bharadwaj',
-    howChannel: 'WHATSAPP / EMAIL / PHYSICALLY',
+    howChannel: 'IN-APP STORE TRIAGE DESK',
     slaHours: 4,
     hasYesNoDecision: false,
     fields: [
@@ -558,55 +558,43 @@ export const FMS_CHECK_STOCK_STAGES: FmsStageDefinition[] = [
         type: 'TEXTAREA',
         placeholder: 'Enter physical inspection summary, bin status, or dispatch handover remarks...'
       }
+    ],
+    subWorkflowTrigger: {
+      enabled: true,
+      targetTemplateKey: 'STORE_TO_SITE_DISPATCH',
+      triggerCondition: 'ON_COMPLETE',
+      targetAssigneeRule: 'DYNAMIC_ROLE',
+      targetRole: 'STORE_MANAGER',
+      targetAssignee: 'Amanat Bharadwaj'
+    },
+    subWorkflowTriggers: [
+      {
+        id: 'trig-store-disp',
+        enabled: true,
+        name: 'Store to Site Dispatch Trigger',
+        targetTemplateKey: 'STORE_TO_SITE_DISPATCH',
+        triggerCondition: 'ON_COMPLETE',
+        filterFieldId: 'disposition',
+        filterFieldValue: 'Store Items',
+        targetAssigneeRule: 'DYNAMIC_ROLE',
+        targetRole: 'STORE_MANAGER',
+        targetAssignee: 'Amanat Bharadwaj',
+        payloadItemFilter: 'MATCHING_ROWS_ONLY'
+      },
+      {
+        id: 'trig-pur-indent',
+        enabled: true,
+        name: 'Purchase Indent to PO Trigger',
+        targetTemplateKey: 'INDENT_TO_PO',
+        triggerCondition: 'ON_COMPLETE',
+        filterFieldId: 'disposition',
+        filterFieldValue: 'Purchase Items',
+        targetAssigneeRule: 'DYNAMIC_ROLE',
+        targetRole: 'PURCHASE_MANAGER',
+        targetAssignee: 'Brahmanand Patel',
+        payloadItemFilter: 'MATCHING_ROWS_ONLY'
+      }
     ]
-  },
-  {
-    stageId: 'STG-STK-03',
-    stageNumber: 3,
-    name: 'IS MATERIAL PURCHASE REQUIRED?',
-    what: 'Check if requisition can be fulfilled from existing stock or new purchase is required',
-    whoRole: 'STORE MANAGER',
-    whoDefaultAssignee: 'Amanat Bharadwaj',
-    howChannel: 'WHATSAPP / EMAIL / PHYSICALLY',
-    slaHours: 1,
-    isCheckpoint: true,
-    hasYesNoDecision: true
-  },
-  {
-    stageId: 'STG-STK-04',
-    stageNumber: 4,
-    name: 'SEND INDENT FOR MATERIAL TO BE PURCHASED',
-    what: 'Submit material indent requisition to Purchase Department via Google Form',
-    whoRole: 'STORE MANAGER',
-    whoDefaultAssignee: 'Amanat Bharadwaj',
-    howChannel: 'IN-APP REQUISITION ENTRY',
-    formUrl: undefined,
-    slaHours: 2,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-STK-05',
-    stageNumber: 5,
-    name: 'IS PARTIAL PURCHASE REQUIRED?',
-    what: 'Determine if partial available stock should be dispatched while balance is purchased',
-    whoRole: 'STORE MANAGER',
-    whoDefaultAssignee: 'Amanat Bharadwaj',
-    howChannel: 'WHATSAPP / EMAIL / PHYSICALLY',
-    slaHours: 1,
-    isCheckpoint: true,
-    hasYesNoDecision: true
-  },
-  {
-    stageId: 'STG-STK-06',
-    stageNumber: 6,
-    name: 'DISPATCH MATERIAL AVAILABLE',
-    what: 'Dispatch available store stock to site and record gate pass/issue entry',
-    whoRole: 'STORE MANAGER',
-    whoDefaultAssignee: 'Amanat Bharadwaj',
-    howChannel: 'IN-APP DISPATCH VOUCHER',
-    formUrl: undefined,
-    slaHours: 12,
-    hasYesNoDecision: false
   }
 ];
 
@@ -692,38 +680,6 @@ export const FMS_SITE_TO_SITE_MATERIALS_STAGES: FmsStageDefinition[] = [
   {
     stageId: 'STG-SSM-03',
     stageNumber: 3,
-    name: 'IS MATERIAL PURCHASE REQUIRED?',
-    what: 'Determine if material purchase is required for shortage items',
-    whoRole: 'STORE MANAGER',
-    whoDefaultAssignee: 'Amanat Bharadwaj',
-    howChannel: 'WHATSAPP / EMAIL / PHYSICALLY',
-    slaHours: 4,
-    isCheckpoint: true,
-    hasYesNoDecision: true,
-    fields: [
-      {
-        id: 'purchaseRequiredToggle',
-        label: 'Is Material Purchase Required?',
-        type: 'SELECT',
-        options: ['Yes', 'No'],
-        required: true
-      },
-      {
-        id: 'communicationChannel',
-        label: 'Communication Mode',
-        type: 'SELECT',
-        options: ['WhatsApp', 'Email', 'Physically / In-Person']
-      },
-      {
-        id: 'decisionNotes',
-        label: 'Decision Notes',
-        type: 'TEXTAREA'
-      }
-    ]
-  },
-  {
-    stageId: 'STG-SSM-04',
-    stageNumber: 4,
     name: 'PURCHASE REQUISITION & QUOTATION COMPARATIVE',
     what: 'Central Purchase Department procurement, vendor quotes and comparative statement',
     whoRole: 'PURCHASE MANAGER',
@@ -733,8 +689,8 @@ export const FMS_SITE_TO_SITE_MATERIALS_STAGES: FmsStageDefinition[] = [
     hasYesNoDecision: false
   },
   {
-    stageId: 'STG-SSM-05',
-    stageNumber: 5,
+    stageId: 'STG-SSM-04',
+    stageNumber: 4,
     name: 'ACCOUNT VOUCHER & PAYMENT APPROVAL',
     what: 'Accounts verification, advance/credit voucher authorization and payment approval',
     whoRole: 'FINANCE / ACCOUNTS HEAD',
@@ -744,8 +700,8 @@ export const FMS_SITE_TO_SITE_MATERIALS_STAGES: FmsStageDefinition[] = [
     hasYesNoDecision: false
   },
   {
-    stageId: 'STG-SSM-06',
-    stageNumber: 6,
+    stageId: 'STG-SSM-05',
+    stageNumber: 5,
     name: 'STORE MATERIAL RECEIPT & MRN',
     what: 'Material arrival at store, physical quality verification, MRN entry and stock inward',
     whoRole: 'STORE MANAGER',
@@ -755,8 +711,8 @@ export const FMS_SITE_TO_SITE_MATERIALS_STAGES: FmsStageDefinition[] = [
     hasYesNoDecision: false
   },
   {
-    stageId: 'STG-SSM-07',
-    stageNumber: 7,
+    stageId: 'STG-SSM-06',
+    stageNumber: 6,
     name: 'SITE DISPATCH & ACKNOWLEDGEMENT',
     what: 'Final dispatch to requesting site location and site engineer sign-off',
     whoRole: 'SITE ENGINEER / STORE MANAGER',
@@ -771,140 +727,262 @@ export const FMS_STANDARD_PURCHASE_STAGES: FmsStageDefinition[] = [
   {
     stageId: 'STG-01',
     stageNumber: 1,
-    name: 'INDENT RECIEVE',
-    what: 'Indent receipt and registration at store',
-    whoRole: 'STORE MANAGER',
-    whoDefaultAssignee: 'Amanat Bharadwaj',
-    howChannel: 'WHATSAPP / CALL / PHYSICAL',
-    slaHours: 1,
-    hasYesNoDecision: false
+    name: 'Receive Indent & Verify Evidence',
+    what: 'Review inherited items from Store Triage and view site photos for degraded materials',
+    whoRole: 'ASST. MANAGER PURCHASE',
+    whoDefaultAssignee: 'Brahmanand Patel',
+    howChannel: 'IN-APP PURCHASE DESK',
+    slaHours: 2,
+    hasYesNoDecision: false,
+    fields: [
+      {
+        id: 'purchaseItems',
+        label: 'Purchase Requisition Items',
+        type: 'MULTI_ITEM_TABLE',
+        required: true,
+        isInherited: true,
+        inheritedSourceField: 'requisitionItems',
+        isReadOnly: false,
+        columns: [
+          { key: 'item_description', label: 'Item Description', type: 'TEXT' },
+          { key: 'quantity', label: 'Purchase Qty Required', type: 'NUMBER' },
+          { key: 'unit', label: 'Unit', type: 'TEXT' },
+          { key: 'work_purpose', label: 'Work Purpose / Site', type: 'TEXT' },
+          { key: 'remarks', label: 'Remarks / Urgency', type: 'TEXT' }
+        ]
+      },
+      {
+        id: 'degradedMaterialPhotos',
+        label: 'Degraded / Worn-out Material Site Photo Proof',
+        type: 'FILE',
+        placeholder: 'Upload site photo proof of damaged or required item...'
+      },
+      {
+        id: 'purchaseHeadNotes',
+        label: 'Purchase Head Verification Notes',
+        type: 'TEXTAREA',
+        placeholder: 'Enter verification remarks, urgency confirmation, or vendor direction...'
+      }
+    ]
   },
   {
     stageId: 'STG-02',
     stageNumber: 2,
-    name: 'DEGRADED MATERIAL CHECK',
-    what: 'Is there any degraded / damaged material to return? (Check point)',
+    name: 'Get Quotation & Generate CS',
+    what: 'Fetch/upload vendor quotes and auto-generate Comparative Statement (CS) matrix',
     whoRole: 'PURCHASE EXECUTIVE',
-    whoDefaultAssignee: 'Bramhanand Patel',
-    howChannel: 'WHATSAPP / CALL / PHYSICAL',
-    slaHours: 1,
-    isCheckpoint: true,
-    hasYesNoDecision: true
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'COMPARATIVE STATEMENT MODULE',
+    slaHours: 24,
+    hasYesNoDecision: false,
+    fields: [
+      {
+        id: 'csModule',
+        label: 'Comparative Statement (CS) Quotation Matrix',
+        type: 'CS_MODULE_EMBED',
+        required: true,
+        placeholder: 'Fetch vendor master rates, add quotes for 2-3 vendors per item, enter GST & freight, compute L1 rates.'
+      },
+      {
+        id: 'rfqVendorQuotes',
+        label: 'Vendor Quotation PDFs / Scans',
+        type: 'FILE',
+        placeholder: 'Upload PDF quotation attachments received from vendors...'
+      },
+      {
+        id: 'purchaserNotes',
+        label: 'Purchase Executive Summary & Recommendation',
+        type: 'TEXTAREA',
+        placeholder: 'Enter price comparison notes, delivery timelines, or vendor payment term exceptions...'
+      }
+    ]
   },
   {
     stageId: 'STG-03',
     stageNumber: 3,
-    name: 'RETURN OF DEGRADED MATERIAL FORM',
-    what: 'Fill Google Form for Return of Degraded Material Sheet',
-    whoRole: 'PURCHASE EXECUTIVE',
-    whoDefaultAssignee: 'Shyam Rao Sureshe',
-    howChannel: 'IN-APP FORM',
-    formUrl: undefined,
-    slaHours: 1,
-    hasYesNoDecision: false
+    name: 'Director L1 CS Approval & Digital Sign',
+    what: 'Review CS, edit awarded vendor selections/quantities, and digitally sign to lock CS',
+    whoRole: 'DIRECTOR / PROJECT MANAGER',
+    whoDefaultAssignee: 'Pranjal Agrawal',
+    howChannel: 'DIRECTOR APPROVAL DESK',
+    slaHours: 12,
+    hasYesNoDecision: false,
+    fields: [
+      {
+        id: 'csL1Approval',
+        label: 'Director L1 Award Allocation & Digital Sign-off',
+        type: 'CS_L1_APPROVAL_EMBED',
+        required: true
+      },
+      {
+        id: 'approvalRemarks',
+        label: 'Director / PM Approval Notes & Directives',
+        type: 'TEXTAREA',
+        placeholder: 'Enter approval remarks, discount negotiation notes, or budget authorization...'
+      },
+      {
+        id: 'digitalSignature',
+        label: 'Digital Sign-Off Lock Timestamp',
+        type: 'TEXT',
+        placeholder: 'Auto-recorded digital sign-off lock upon approval'
+      }
+    ]
   },
   {
     stageId: 'STG-04',
     stageNumber: 4,
-    name: 'PURCHASE APPROVAL',
-    what: 'Technical & Commercial approval for procurement',
-    whoRole: 'PROJECT MANAGER / MANAGER MECHANICAL',
-    whoDefaultAssignee: 'Pranay Ghosh / Chakravarti Ji',
-    howChannel: 'WHATSAPP / CALL / MANUAL SHEET',
-    slaHours: 3,
-    hasYesNoDecision: false
+    name: 'Generate & Issue Purchase Order (PO)',
+    what: 'Generate individual POs per awarded vendorPoGroup from locked CS payload',
+    whoRole: 'PURCHASE EXECUTIVE',
+    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    howChannel: 'SPLIT PO GENERATOR MODULE',
+    slaHours: 6,
+    hasYesNoDecision: false,
+    fields: [
+      {
+        id: 'splitPoGenerator',
+        label: 'Awarded Vendor PO Generation & Ref Assignment',
+        type: 'SPLIT_PO_GENERATOR',
+        required: true
+      },
+      {
+        id: 'poDocumentPdf',
+        label: 'Signed PO Copy (PDF Attachment)',
+        type: 'FILE',
+        placeholder: 'Upload signed Purchase Order PDF document...'
+      }
+    ]
   },
   {
     stageId: 'STG-05',
     stageNumber: 5,
-    name: 'SEND FOR QUOTATIONS',
-    what: 'Solicit preliminary vendor quotations and auto-create Comparative Statement (CS)',
-    whoRole: 'ASST. MANAGER PURCHASE & STORE',
-    whoDefaultAssignee: 'Bramhanand Patel',
-    howChannel: 'IN-APP COMPARATIVE SHEET',
-    slaHours: 12,
-    hasYesNoDecision: false
+    name: 'Is Advance Payment Required?',
+    what: 'Check point: Is payment to be made in advance prior to dispatch?',
+    whoRole: 'ASST. MANAGER PURCHASE',
+    whoDefaultAssignee: 'Brahmanand Patel',
+    howChannel: 'CONDITIONAL DECISION GATEWAY',
+    slaHours: 1,
+    isCheckpoint: true,
+    hasYesNoDecision: true,
+    fields: [
+      {
+        id: 'isAdvancePaymentRequired',
+        label: 'Advance Payment Required Before Dispatch?',
+        type: 'SELECT',
+        required: true,
+        options: ['Yes', 'No']
+      },
+      {
+        id: 'advanceAmount',
+        label: 'Advance Payment Amount (₹)',
+        type: 'NUMBER',
+        placeholder: 'Enter advance amount required (if Yes)...'
+      },
+      {
+        id: 'paymentTerms',
+        label: 'Advance Payment Instructions / Proforma Reference',
+        type: 'TEXTAREA',
+        placeholder: 'Enter proforma invoice ref or bank disbursement instructions...'
+      }
+    ],
+    logic: {
+      gatewayType: 'CONDITIONAL_JUMP',
+      conditionFieldId: 'isAdvancePaymentRequired',
+      conditionOperator: 'EQUALS',
+      conditionValue: 'Yes',
+      thenTargetStageIndex: 5,
+      elseTargetStageIndex: 6,
+      slaHours: 1
+    }
   },
   {
     stageId: 'STG-06',
     stageNumber: 6,
-    name: 'CHECK OTHER QUOTATIONS',
-    what: 'Is other quotation required? (Check point)',
-    whoRole: 'ASST. MANAGER PURCHASE & STORE',
-    whoDefaultAssignee: 'Bramhanand Patel',
-    howChannel: 'WHATSAPP / CALL / MANUAL SHEET',
-    slaHours: 1,
-    isCheckpoint: true,
-    hasYesNoDecision: true
+    name: 'Send for Advance Payment',
+    what: 'Submit approval dossier to accounts for bank disbursement prior to dispatch',
+    whoRole: 'ACCOUNTS / FINANCE',
+    whoDefaultAssignee: 'Priyanka / Manish Koshle',
+    howChannel: 'ACCOUNTS BANKING DISBURSEMENT',
+    slaHours: 4,
+    hasYesNoDecision: false,
+    fields: [
+      {
+        id: 'advanceVoucherRef',
+        label: 'Payment Voucher / Bank Ref Number',
+        type: 'TEXT',
+        required: true,
+        placeholder: 'e.g. PV/2026/0912 or Bank Ref'
+      },
+      {
+        id: 'utrNumber',
+        label: 'Bank UTR Transaction Number',
+        type: 'TEXT',
+        required: true,
+        placeholder: 'Enter 12 to 16 digit bank UTR transaction number...'
+      },
+      {
+        id: 'accountsPaymentRemarks',
+        label: 'Accounts Disbursement Confirmation Notes',
+        type: 'TEXTAREA',
+        placeholder: 'Enter bank payment confirmation details...'
+      }
+    ],
+    subWorkflowTrigger: {
+      enabled: true,
+      name: 'Trigger Accounts PO to Payment Workflow',
+      targetTemplateKey: 'PO_TO_PAYMENT',
+      triggerCondition: 'ON_COMPLETE',
+      targetAssigneeRule: 'DYNAMIC_ROLE',
+      targetRole: 'FINANCE_ACCOUNTS',
+      targetAssignee: 'Manish Koshle'
+    }
   },
   {
     stageId: 'STG-07',
     stageNumber: 7,
-    name: 'GET OTHER QUOTATION',
-    what: 'Collect secondary / comparative vendor quotes into CS Sheet',
-    whoRole: 'ASST. MANAGER PURCHASE & STORE',
-    whoDefaultAssignee: 'Bramhanand Patel',
-    howChannel: 'WHATSAPP / CALL / MANUAL SHEET',
-    slaHours: 12,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-08',
-    stageNumber: 8,
-    name: 'APPROVAL FROM DIRECTOR',
-    what: 'Director item-wise vendor selection & L1 purchase authorization',
-    whoRole: 'DIRECTOR / FINANCE HEAD',
-    whoDefaultAssignee: 'Pranjal Agrawal',
-    howChannel: 'IN-APP CS DIRECTOR APPROVAL',
-    slaHours: 2,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-09',
-    stageNumber: 9,
-    name: 'GENERATE & SEND PO',
-    what: 'PO draft generation and dispatch to vendor',
-    whoRole: 'PURCHASE EXECUTIVE',
-    whoDefaultAssignee: 'Shyam Rao Sureshe',
-    howChannel: 'WHATSAPP / CALL / MANUAL PO',
-    slaHours: 3,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-10',
-    stageNumber: 10,
-    name: 'ADVANCE PAYMENT DECISION',
-    what: 'Is payment to be made in advance? (Check point)',
-    whoRole: 'PURCHASE EXECUTIVE',
-    whoDefaultAssignee: 'Shyam Rao Sureshe',
-    howChannel: 'IN-APP FORM',
-    formUrl: undefined,
-    slaHours: 1,
-    isCheckpoint: true,
-    hasYesNoDecision: true
-  },
-  {
-    stageId: 'STG-11',
-    stageNumber: 11,
-    name: 'SEND FOR PAYMENT',
-    what: 'Submit approval dossier to accounts for disbursement (Account / UPI)',
-    whoRole: 'ACCOUNTS / FINANCE',
-    whoDefaultAssignee: 'Pranjal Agrawal / Accounts Team',
-    howChannel: 'PAYMENT APPROVAL SHEET / ONLINE PAYMENT',
-    slaHours: 1,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-12',
-    stageNumber: 12,
-    name: 'MATERIAL COLLECTION PO',
-    what: 'Send purchase order for material collection & gate pass',
-    whoRole: 'PURCHASE EXECUTIVE',
-    whoDefaultAssignee: 'Shyam Rao Sureshe',
-    howChannel: 'IN-APP FORM',
-    formUrl: undefined,
-    slaHours: 1,
-    hasYesNoDecision: false
+    name: 'Send PO for Material Collection & Dispatch',
+    what: 'Send PO to vendor for collection, gate pass generation, and store dispatch',
+    whoRole: 'PURCHASE ASSISTANT',
+    whoDefaultAssignee: 'Rajendra / Vivek / Rajnikant',
+    howChannel: 'STORE DISPATCH HANDOVER',
+    slaHours: 4,
+    hasYesNoDecision: false,
+    fields: [
+      {
+        id: 'vendorDispatchChallanNo',
+        label: 'Vendor Delivery Challan / LR Reference',
+        type: 'TEXT',
+        required: true,
+        placeholder: 'e.g. DC/2026/884 or Transporter LR No.'
+      },
+      {
+        id: 'expectedStoreArrivalDate',
+        label: 'Expected Store Arrival Date',
+        type: 'DATE',
+        required: true
+      },
+      {
+        id: 'transporterDriverDetails',
+        label: 'Transporter & Driver Contact Details',
+        type: 'TEXT',
+        placeholder: 'e.g. Truck CG-04-1234, Driver Rajesh (9827012345)'
+      },
+      {
+        id: 'dispatchHandoverNotes',
+        label: 'Dispatch & Store Handover Notes',
+        type: 'TEXTAREA',
+        placeholder: 'Enter dispatch status, driver contact, or gate arrival instructions...'
+      }
+    ],
+    subWorkflowTrigger: {
+      enabled: true,
+      name: 'Trigger Purchase to Store Dispatch & MRN Workflow',
+      targetTemplateKey: 'PURCHASE_TO_STORE_DISPATCH',
+      triggerCondition: 'ON_COMPLETE',
+      targetAssigneeRule: 'DYNAMIC_ROLE',
+      targetRole: 'STORE_MANAGER',
+      targetAssignee: 'Amanat Bharadwaj'
+    }
   }
 ];
 
@@ -3597,9 +3675,9 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
     indentDate: '07/08/2026',
     siteName: 'BIJETALA',
     priority: 'Urgent',
-    currentStageId: 'COMPLETED',
-    currentStageIndex: 6,
-    totalStages: 6,
+    currentStageId: 'STG-STK-02',
+    currentStageIndex: 1,
+    totalStages: 2,
     status: 'Completed',
     createdAt: '07/08/2026 16:55:36',
     updatedAt: '08/08/2026 10:58:51',
@@ -3618,57 +3696,14 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
       },
       {
         stageId: 'STG-STK-02',
-        stageName: 'CHECK STOCK',
+        stageName: 'CHECK STOCK & SPLIT',
         assignee: 'Amanat Bharadwaj',
         how: 'WHATSAPP/EMAIL/PHYSICALLY',
         plannedDateTime: '08/08/2026 12:55:36',
         actualDateTime: '07/08/2026 17:00:33',
         status: 'Done',
-        timeDelayHours: 0
-      },
-      {
-        stageId: 'STG-STK-03',
-        stageName: 'IS MATERIAL PURCHASE REQUIRED?',
-        assignee: 'Amanat Bharadwaj',
-        how: 'WHATSAPP/EMAIL/PHYSICALLY',
-        plannedDateTime: '08/08/2026 13:00:33',
-        actualDateTime: '07/08/2026 17:00:33',
-        status: 'Done',
-        decisionValue: 'Yes',
-        timeDelayHours: 0
-      },
-      {
-        stageId: 'STG-STK-04',
-        stageName: 'SEND INDENT FOR MATERIAL TO BE PURCHASED',
-        assignee: 'Amanat Bharadwaj',
-        how: 'IN-APP REQUISITION ENTRY',
-        plannedDateTime: '08/08/2026 11:00:33',
-        actualDateTime: '07/08/2026 17:00:51',
-        status: 'Done',
         timeDelayHours: 0,
-        formResponseRef: undefined,
-      },
-      {
-        stageId: 'STG-STK-05',
-        stageName: 'IS PARTIAL PURCHASE REQUIRED?',
-        assignee: 'Amanat Bharadwaj',
-        how: 'WHATSAPP/EMAIL/PHYSICALLY',
-        plannedDateTime: '08/08/2026 13:00:51',
-        actualDateTime: '07/08/2026 17:00:33',
-        status: 'Done',
-        decisionValue: 'Yes',
-        timeDelayHours: 0
-      },
-      {
-        stageId: 'STG-STK-06',
-        stageName: 'DISPATCH MATERIAL AVAILABLE',
-        assignee: 'Amanat Bharadwaj',
-        how: 'IN-APP DISPATCH VOUCHER',
-        plannedDateTime: '10/08/2026 13:00:51',
-        actualDateTime: '08/08/2026 10:58:51',
-        status: 'Done',
-        timeDelayHours: 0,
-        formResponseRef: undefined,
+        notes: 'Stock verified and triaged into Store Dispatch and Purchase sub-workflows.'
       }
     ]
   },
@@ -3681,10 +3716,10 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
     indentDate: '10/07/2026',
     siteName: 'SILADEHI',
     priority: 'Urgent',
-    currentStageId: 'STG-STK-06',
-    currentStageIndex: 5,
-    totalStages: 6,
-    status: 'In Progress',
+    currentStageId: 'STG-STK-02',
+    currentStageIndex: 1,
+    totalStages: 2,
+    status: 'Awaiting Fulfillment',
     createdAt: '10/07/2026 14:00:00',
     updatedAt: '10/07/2026 15:25:00',
     totalDelayHours: 0,
@@ -3702,55 +3737,14 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
       },
       {
         stageId: 'STG-STK-02',
-        stageName: 'CHECK STOCK',
+        stageName: 'CHECK STOCK & SPLIT',
         assignee: 'Amanat Bharadwaj',
         how: 'WHATSAPP / EMAIL / PHYSICALLY',
         plannedDateTime: '10/07/2026 18:00:00',
         actualDateTime: '10/07/2026 14:30:00',
         status: 'Done',
-        timeDelayHours: 0
-      },
-      {
-        stageId: 'STG-STK-03',
-        stageName: 'IS MATERIAL PURCHASE REQUIRED?',
-        assignee: 'Amanat Bharadwaj',
-        how: 'WHATSAPP / EMAIL / PHYSICALLY',
-        plannedDateTime: '10/07/2026 18:30:00',
-        actualDateTime: '10/07/2026 14:35:00',
-        status: 'Done',
-        decisionValue: 'Yes',
-        timeDelayHours: 0
-      },
-      {
-        stageId: 'STG-STK-04',
-        stageName: 'SEND INDENT FOR MATERIAL TO BE PURCHASED',
-        assignee: 'Amanat Bharadwaj',
-        how: 'IN-APP REQUISITION ENTRY',
-        plannedDateTime: '10/07/2026 16:35:00',
-        actualDateTime: '10/07/2026 15:20:00',
-        status: 'Done',
         timeDelayHours: 0,
-        formResponseRef: undefined,
-      },
-      {
-        stageId: 'STG-STK-05',
-        stageName: 'IS PARTIAL PURCHASE REQUIRED?',
-        assignee: 'Amanat Bharadwaj',
-        how: 'WHATSAPP / EMAIL / PHYSICALLY',
-        plannedDateTime: '10/07/2026 19:20:00',
-        actualDateTime: '10/07/2026 15:25:00',
-        status: 'Done',
-        decisionValue: 'Yes',
-        timeDelayHours: 0
-      },
-      {
-        stageId: 'STG-STK-06',
-        stageName: 'DISPATCH MATERIAL AVAILABLE',
-        assignee: 'Amanat Bharadwaj',
-        how: 'IN-APP DISPATCH VOUCHER',
-        plannedDateTime: '11/07/2026 03:25:00',
-        status: 'In Progress',
-        formResponseRef: undefined,
+        notes: 'Stage 2 triage complete: 1 Store Dispatch sub-workflow, 1 Purchase Indent sub-workflow auto-spawned.'
       }
     ]
   },
@@ -5102,7 +5096,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     departmentHub: 'PURCHASE',
     referenceLabel: 'BPL/SSPASS/2026/',
     defaultPriority: 'Normal',
-    description: '7-stage site to site complete material requisition, store stock check, purchase, accounts, receipt & dispatch workflow.',
+    description: '6-stage site to site complete material requisition, store stock check, purchase, accounts, receipt & dispatch workflow.',
     createdAt: '18/10/2026',
     updatedAt: '18/10/2026',
     stages: FMS_SITE_TO_SITE_MATERIALS_STAGES.map((s, idx) => ({
@@ -5124,7 +5118,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     departmentHub: 'PURCHASE',
     referenceLabel: 'BPL/IND/',
     defaultPriority: 'Normal',
-    description: '12-stage requisition, RFQ quotation, approval & PO generation process.',
+    description: '7-stage purchase procurement, CS quotation analysis, Director L1 approval, advance payment branching & PO issuance.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
     stages: FMS_STANDARD_PURCHASE_STAGES.map((s, idx) => ({
@@ -5134,6 +5128,11 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
       whoDefaultAssignee: s.whoDefaultAssignee,
       howChannel: s.howChannel,
       slaHours: idx === 0 ? 0 : s.slaHours,
+      fields: s.fields,
+      hasYesNoDecision: s.hasYesNoDecision,
+      logic: (s as any).logic,
+      subWorkflowTrigger: (s as any).subWorkflowTrigger,
+      subWorkflowTriggers: (s as any).subWorkflowTriggers,
     })),
   },
   {
@@ -5143,7 +5142,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     departmentHub: 'STORE',
     referenceLabel: 'BPL/STK/',
     defaultPriority: 'Normal',
-    description: '6-stage site store inventory verification, stock availability check, and material requisition.',
+    description: '2-stage requisition & store stock verification with automated sub-workflow dispatch & purchase splitting.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
     stages: FMS_CHECK_STOCK_STAGES.map((s, idx) => ({
@@ -5155,6 +5154,8 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
       slaHours: idx === 0 ? 0 : s.slaHours,
       fields: s.fields,
       hasYesNoDecision: s.hasYesNoDecision,
+      subWorkflowTrigger: (s as any).subWorkflowTrigger,
+      subWorkflowTriggers: (s as any).subWorkflowTriggers,
     })),
   },
   {

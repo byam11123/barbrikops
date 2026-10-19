@@ -60,11 +60,49 @@ export const isUserResponsibleForStage = (
 ): boolean => {
   if (!user || (!stageDef && !stageExec)) return false;
 
-  const userName = user.name.toLowerCase().trim();
-  const userRole = user.role.toLowerCase().trim();
-  const targetAssignee = (stageExec?.assignee || stageDef?.whoDefaultAssignee || '').toLowerCase().trim();
+  const rawUserName = user.name.toLowerCase().trim();
+  const rawUserRole = user.role.toLowerCase().trim();
+  const rawTargetAssignee = (stageExec?.assignee || stageDef?.whoDefaultAssignee || '').toLowerCase().trim();
 
-  // 1. Direct Explicit Assignee Name Check
+  // Normalize spelling variations for Brahmanand / Bramhanand
+  const userName = rawUserName.replace(/brahmanand/g, 'bramhanand');
+  const userRole = rawUserRole.replace(/brahmanand/g, 'bramhanand');
+  const targetAssignee = rawTargetAssignee.replace(/brahmanand/g, 'bramhanand');
+
+  // 1. Direct Dynamic Role Mapping
+  // e.g. If stage is routed to PURCHASE_HEAD, PURCHASE_MANAGER, STORE_MANAGER, etc.
+  if (
+    targetAssignee.includes('purchase_head') ||
+    targetAssignee.includes('purchase_manager') ||
+    targetAssignee.includes('purchase head') ||
+    targetAssignee.includes('purchase manager') ||
+    targetAssignee.includes('asst. manager purchase & store') ||
+    targetAssignee.includes('asst manager purchase')
+  ) {
+    if (
+      userRole.includes('purchase manager') ||
+      userRole.includes('asst. manager purchase & store') ||
+      userRole.includes('purchase head') ||
+      userName.includes('bramhanand') ||
+      userName.includes('patel')
+    ) {
+      return true;
+    }
+  }
+
+  if (
+    targetAssignee.includes('store_manager') ||
+    targetAssignee.includes('store_head') ||
+    targetAssignee.includes('store manager') ||
+    targetAssignee.includes('store dispatch') ||
+    targetAssignee.includes('store incharge')
+  ) {
+    if (userRole.includes('store') || userName.includes('amanat')) {
+      return true;
+    }
+  }
+
+  // 1.1 Direct Explicit Assignee Name Check
   if (targetAssignee) {
     const userParts = userName.split(/[\s,._/-]+/).filter(Boolean);
     const hasNameMatch = userParts.some(p => p.length >= 3 && targetAssignee.includes(p));
@@ -72,7 +110,7 @@ export const isUserResponsibleForStage = (
 
     // List of specific individuals in the organization
     const knownIndividuals = [
-      'khushboo', 'pranjal', 'bramhanand', 'shyam', 'rajnikant', 
+      'khushboo', 'pranjal', 'bramhanand', 'brahmanand', 'shyam', 'rajnikant', 
       'rajendra', 'vivek', 'amanat', 'sumant', 'hemant', 
       'garima', 'mamta', 'khilesh', 'nandita', 'pranay', 
       'chakravarti', 'byamkesh', 'manish', 'priyanka', 'ritu'
@@ -488,7 +526,7 @@ export const isFlowAwaitingUserAction = (
   flow: FmsInstance,
   user: UserProfile
 ): boolean => {
-  if (flow.status === 'Completed' || flow.status === 'Cancelled') {
+  if (flow.status === 'Completed' || flow.status === 'Cancelled' || flow.status === 'Awaiting Fulfillment') {
     return false;
   }
 
@@ -496,10 +534,34 @@ export const isFlowAwaitingUserAction = (
   const curStage = flow.stages[curIndex];
   if (!curStage) return false;
 
+  if (curStage.assignee && (curStage.assignee.toLowerCase().includes('system') || curStage.assignee.toLowerCase().includes('child workflows'))) {
+    return false;
+  }
+
   // Direct Assignee check on the active stage execution (essential for custom workflow templates)
   if (curStage.assignee && user?.name) {
-    const userName = user.name.toLowerCase().trim();
-    const targetAssignee = curStage.assignee.toLowerCase().trim();
+    const userName = user.name.toLowerCase().trim().replace(/brahmanand/g, 'bramhanand');
+    const userRole = (user.role || '').toLowerCase().trim().replace(/brahmanand/g, 'bramhanand');
+    const targetAssignee = curStage.assignee.toLowerCase().trim().replace(/brahmanand/g, 'bramhanand');
+
+    if (
+      targetAssignee.includes('purchase_head') ||
+      targetAssignee.includes('purchase_manager') ||
+      targetAssignee.includes('purchase head') ||
+      targetAssignee.includes('purchase manager') ||
+      targetAssignee.includes('asst. manager purchase')
+    ) {
+      if (userRole.includes('purchase') || userName.includes('bramhanand') || userName.includes('patel')) {
+        return true;
+      }
+    }
+
+    if (targetAssignee.includes('store_manager') || targetAssignee.includes('store_head')) {
+      if (userRole.includes('store') || userName.includes('amanat')) {
+        return true;
+      }
+    }
+
     const userParts = userName.split(/[\s,._/-]+/).filter(Boolean);
     if (userParts.some(p => p.length >= 3 && targetAssignee.includes(p))) {
       return true;
@@ -532,8 +594,17 @@ export const isFlowAwaitingUserAction = (
     ? FMS_DPR_REPORTING_STAGES
     : FMS_STANDARD_PURCHASE_STAGES;
 
-  const curDef = stageDefs[curIndex];
-  if (!curDef) return false;
+  const curDef = stageDefs[curIndex] || {
+    stageId: curStage.stageId,
+    stageNumber: curIndex + 1,
+    name: curStage.stageName,
+    what: curStage.stageName,
+    whoRole: curStage.assignee,
+    whoDefaultAssignee: curStage.assignee,
+    howChannel: curStage.how,
+    slaHours: 4,
+    hasYesNoDecision: false,
+  };
 
   return isUserResponsibleForStage(curDef, curStage, user);
 };

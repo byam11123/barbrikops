@@ -95,7 +95,7 @@ export const EmbeddedL1ApprovalModal: React.FC<EmbeddedL1ApprovalModalProps> = (
         setAwardedMap(initialMap);
       }
     }
-  }, [csSheet, flow]);
+  }, [csSheet?.id, flow?.id, flow?.currentStageIndex, flow?.status, isOpen]);
 
   if (!isOpen) return null;
 
