@@ -369,7 +369,24 @@ class StorageAdapter {
           collection(db, getEnvCollectionName('fmsTemplates')),
           (snap) => {
             if (!snap.empty) {
-              const remoteTemplates = snap.docs.map((d) => d.data() as FmsTemplateDefinition);
+              const remoteTemplates: FmsTemplateDefinition[] = [];
+              snap.docs.forEach((d) => {
+                const tData = d.data() as FmsTemplateDefinition;
+                const isObsoleteCheckStock =
+                  d.id === 'tpl_store_check_stock' ||
+                  tData.templateKey === 'STORE_CHECK_STOCK' ||
+                  (tData.templateKey === 'CHECK_STOCK' && tData.stages?.length !== 2) ||
+                  (tData.id === 'tpl_check_stock' && tData.stages?.length !== 2) ||
+                  (tData.name && tData.name.toLowerCase().includes('stock check') && tData.templateKey !== 'CHECK_STOCK');
+
+                if (isObsoleteCheckStock) {
+                  try {
+                    deleteDoc(doc(db, getEnvCollectionName('fmsTemplates'), d.id));
+                  } catch (_) {}
+                  return;
+                }
+                remoteTemplates.push(tData);
+              });
               if (remoteTemplates.length > 0) {
                 localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(remoteTemplates));
                 this.notifyListeners();
@@ -651,7 +668,24 @@ class StorageAdapter {
       // 7. Custom FMS Templates
       const tplSnap = await getDocs(collection(db, getEnvCollectionName('fmsTemplates')));
       if (!tplSnap.empty) {
-        const remoteTemplates = tplSnap.docs.map((d) => d.data() as FmsTemplateDefinition);
+        const remoteTemplates: FmsTemplateDefinition[] = [];
+        for (const d of tplSnap.docs) {
+          const tData = d.data() as FmsTemplateDefinition;
+          // Delete remote obsolete duplicate templates from Firestore
+          if (
+            d.id === 'tpl_store_check_stock' ||
+            tData.templateKey === 'STORE_CHECK_STOCK' ||
+            (tData.templateKey === 'CHECK_STOCK' && tData.stages?.length !== 2) ||
+            (tData.id === 'tpl_check_stock' && tData.stages?.length !== 2) ||
+            (tData.name && tData.name.toLowerCase().includes('stock check') && tData.templateKey !== 'CHECK_STOCK')
+          ) {
+            try {
+              await deleteDoc(doc(db, getEnvCollectionName('fmsTemplates'), d.id));
+            } catch (_) {}
+            continue;
+          }
+          remoteTemplates.push(tData);
+        }
         if (remoteTemplates.length > 0) {
           localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(remoteTemplates));
         }
@@ -971,7 +1005,7 @@ class StorageAdapter {
       }
     }
 
-    // Enforce 5-stage architecture for INDENT_TO_PO / INDENT_PURCHASE
+    // Enforce 7-stage architecture for INDENT_TO_PO / INDENT_PURCHASE
     if (
       flow.flowType === 'INDENT_PURCHASE' || 
       flow.flowType === 'INDENT_TO_PO' || 
@@ -980,7 +1014,7 @@ class StorageAdapter {
       flow.indentNo?.endsWith('-PUR') ||
       flow.flowId?.includes('-PUR')
     ) {
-      if (updatedStages.length !== 5 || updatedStages.length > 5) {
+      if (updatedStages.length !== 7) {
         const newStages = FMS_STANDARD_PURCHASE_STAGES.map((s, idx) => {
           const old = updatedStages[idx];
           return {
@@ -1008,11 +1042,11 @@ class StorageAdapter {
           ...flow,
           poAssignTo: 'Shyam Rao Sureshe',
           stages: updatedStages,
-          totalStages: 5,
-          currentStageIndex: Math.min(flow.currentStageIndex, 4),
+          totalStages: 7,
+          currentStageIndex: Math.min(flow.currentStageIndex, 6),
         };
         changed = true;
-      } else if (updatedStages.length === 5) {
+      } else if (updatedStages.length === 7) {
         // Synchronize stage fields, logic, roles, assignees, and subWorkflowTrigger
         let stagesUpdated = false;
         const syncedStages = updatedStages.map((stg, idx) => {
@@ -1027,7 +1061,9 @@ class StorageAdapter {
             (idx === 1 && stg.assignee !== 'Shyam Rao Sureshe') || 
             (idx === 2 && stg.assignee !== 'Pranjal Agrawal') ||
             (idx === 3 && stg.assignee !== 'Shyam Rao Sureshe') ||
-            (idx === 4 && stg.assignee !== 'Rajendra / Vivek / Rajnikant') ||
+            (idx === 4 && stg.assignee !== 'Pranjal Agrawal') ||
+            (idx === 5 && stg.assignee !== 'Priyanka Agrawal') ||
+            (idx === 6 && stg.assignee !== 'Amanat Bharadwaj') ||
             !stg.assignee;
           const wrongRole = stg.whoRole !== ref.whoRole;
           const wrongName = stg.stageName !== ref.name;
@@ -1056,7 +1092,7 @@ class StorageAdapter {
             ...flow,
             poAssignTo: 'Shyam Rao Sureshe',
             stages: updatedStages,
-            totalStages: 5,
+            totalStages: 7,
           };
           changed = true;
         }
@@ -2131,17 +2167,49 @@ class StorageAdapter {
       const list: FmsTemplateDefinition[] = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(list)) return [];
 
+      const systemBlueprintKeySet = new Set(
+        SYSTEM_BUILTIN_TEMPLATES.map((sys) => sys.templateKey?.toUpperCase().trim()).filter(Boolean)
+      );
+      systemBlueprintKeySet.add('INDENT_PURCHASE');
+      systemBlueprintKeySet.add('STORE_CHECK_STOCK');
+
+      const systemBlueprintIdSet = new Set(
+        SYSTEM_BUILTIN_TEMPLATES.map((sys) => sys.id?.toLowerCase().trim()).filter(Boolean)
+      );
+      systemBlueprintIdSet.add('tpl_store_check_stock');
+
       const seenIds = new Set<string>();
       const deduplicated: FmsTemplateDefinition[] = [];
+
       for (const item of list) {
         if (!item || !item.id) continue;
+
+        const keyUpper = (item.templateKey || '').toUpperCase().trim();
+        const idLower = (item.id || '').toLowerCase().trim();
+        const isSystemBlueprintId = systemBlueprintIdSet.has(idLower) || SYSTEM_BUILTIN_TEMPLATES.some((sys) => sys.id.toLowerCase() === idLower);
+
+        // A ghost custom duplicate is a custom template (e.g. tpl_custom_...) whose key collides with a System Blueprint, but is not the canonical System Blueprint ID
+        const isGhostCustomDuplicate =
+          !isSystemBlueprintId &&
+          (systemBlueprintKeySet.has(keyUpper) ||
+            idLower.startsWith('builtin_') ||
+            SYSTEM_BUILTIN_TEMPLATES.some((sys) => sys.templateKey?.toUpperCase() === keyUpper));
+
+        const isObsoleteCheckStock =
+          (keyUpper === 'CHECK_STOCK' || keyUpper === 'STORE_CHECK_STOCK' || idLower === 'tpl_check_stock' || idLower === 'tpl_store_check_stock') &&
+          item.stages?.length !== 2;
+
+        if (isGhostCustomDuplicate || isObsoleteCheckStock) {
+          continue;
+        }
+
         if (!seenIds.has(item.id)) {
           seenIds.add(item.id);
           deduplicated.push(item);
         }
       }
 
-      if (deduplicated.length !== list.length) {
+      if (deduplicated.length !== list.length || JSON.stringify(deduplicated) !== raw) {
         localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(deduplicated));
       }
 
@@ -2164,78 +2232,75 @@ class StorageAdapter {
   public getAllMasterTemplates(): FmsTemplateDefinition[] {
     const deletedKeys = new Set(this.getDeletedTemplateKeys());
     const custom = this.getFmsTemplates().filter((t) => !deletedKeys.has(t.id) && !deletedKeys.has(t.templateKey));
-    const matchedCustomIds = new Set<string>();
     const combined: FmsTemplateDefinition[] = [];
 
-    // Add built-ins (override with custom if modified) unless explicitly deleted
+    const systemBlueprintKeySet = new Set(
+      SYSTEM_BUILTIN_TEMPLATES.map((sys) => sys.templateKey?.toUpperCase().trim()).filter(Boolean)
+    );
+    systemBlueprintKeySet.add('INDENT_PURCHASE');
+    systemBlueprintKeySet.add('STORE_CHECK_STOCK');
+
+    // Add System Blueprints (applying any saved overrides from Template Studio) unless explicitly deleted
     SYSTEM_BUILTIN_TEMPLATES.forEach((sys) => {
       if (deletedKeys.has(sys.id) || deletedKeys.has(sys.templateKey) || deletedKeys.has(`builtin_${sys.templateKey}`)) {
         return;
       }
 
-      const customOverride = custom.find(
+      const savedOverride = custom.find(
         (c) =>
+          c.id === sys.id ||
           (c.templateKey && (
             c.templateKey === sys.templateKey ||
-            (sys.templateKey === 'CHECK_STOCK' && (c.templateKey === 'STORE_CHECK_STOCK' || c.id === 'tpl_store_check_stock' || c.name.toLowerCase().includes('store check stock'))) ||
+            (sys.templateKey === 'CHECK_STOCK' && (c.templateKey === 'STORE_CHECK_STOCK' || c.id === 'tpl_store_check_stock')) ||
             ((sys.templateKey === 'INDENT_TO_PO' || sys.templateKey === 'INDENT_PURCHASE') && (c.templateKey === 'INDENT_TO_PO' || c.templateKey === 'INDENT_PURCHASE' || c.id === 'tpl_indent_purchase'))
-          )) ||
-          c.id === sys.id ||
-          c.id === `builtin_${sys.templateKey}`
+          ))
       );
 
-      if (customOverride) {
-        let tplStages = customOverride.stages;
-        if (sys.templateKey === 'CHECK_STOCK' && tplStages && tplStages.length > 2) {
-          tplStages = FMS_CHECK_STOCK_STAGES.map((s, idx) => ({
-            stageId: s.stageId,
-            stageName: s.name,
-            whoRole: s.whoRole,
-            whoDefaultAssignee: s.whoDefaultAssignee,
-            howChannel: s.howChannel,
-            slaHours: idx === 0 ? 0 : s.slaHours,
-            fields: s.fields,
-            hasYesNoDecision: s.hasYesNoDecision,
-            subWorkflowTrigger: (s as any).subWorkflowTrigger,
-            subWorkflowTriggers: (s as any).subWorkflowTriggers,
-          }));
-        } else if ((sys.templateKey === 'INDENT_PURCHASE' || sys.templateKey === 'INDENT_TO_PO') && tplStages && tplStages.length !== 5) {
-          tplStages = FMS_STANDARD_PURCHASE_STAGES.map((s, idx) => ({
-            stageId: s.stageId,
-            stageName: s.name,
-            whoRole: s.whoRole,
-            whoDefaultAssignee: s.whoDefaultAssignee,
-            howChannel: s.howChannel,
-            slaHours: idx === 0 ? 0 : s.slaHours,
-            fields: s.fields,
-            hasYesNoDecision: s.hasYesNoDecision,
-            logic: (s as any).logic,
-            subWorkflowTrigger: (s as any).subWorkflowTrigger,
-            subWorkflowTriggers: (s as any).subWorkflowTriggers,
-          }));
-        }
+      if (savedOverride) {
+        const finalStages = sys.templateKey === 'CHECK_STOCK'
+          ? sys.stages
+          : (savedOverride.stages && savedOverride.stages.length > 0) ? savedOverride.stages : sys.stages;
+
         combined.push({
-          ...customOverride,
-          stages: tplStages,
-          id: customOverride.id || sys.id,
+          ...sys,
+          ...savedOverride,
+          name: savedOverride.name || sys.name,
+          referenceLabel: savedOverride.referenceLabel || sys.referenceLabel,
+          stages: finalStages,
+          id: sys.id,
           templateKey: sys.templateKey,
+          isCustom: false,
         });
-        matchedCustomIds.add(customOverride.id);
       } else {
-        combined.push(sys);
+        combined.push({
+          ...sys,
+          isCustom: false,
+        });
       }
     });
 
-    // Add remaining custom templates (non-builtins)
+    // Add genuine custom templates (non-builtins, excluding duplicates)
     custom.forEach((tpl) => {
-      if (!matchedCustomIds.has(tpl.id) && !deletedKeys.has(tpl.id) && !deletedKeys.has(tpl.templateKey)) {
+      const keyUpper = (tpl.templateKey || '').toUpperCase().trim();
+      const idLower = (tpl.id || '').toLowerCase().trim();
+      const isSystemBlueprintId = SYSTEM_BUILTIN_TEMPLATES.some((sys) => sys.id.toLowerCase() === idLower || sys.templateKey.toUpperCase() === keyUpper);
+
+      if (
+        !isSystemBlueprintId &&
+        !systemBlueprintKeySet.has(keyUpper) &&
+        !deletedKeys.has(tpl.id) &&
+        !deletedKeys.has(tpl.templateKey)
+      ) {
         const alreadyInCombined = combined.some(
           (existing) =>
             existing.id === tpl.id ||
-            (tpl.templateKey && existing.templateKey === tpl.templateKey)
+            (tpl.templateKey && existing.templateKey?.toUpperCase() === keyUpper)
         );
         if (!alreadyInCombined) {
-          combined.push(tpl);
+          combined.push({
+            ...tpl,
+            isCustom: true,
+          });
         }
       }
     });

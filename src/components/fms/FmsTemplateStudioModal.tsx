@@ -42,7 +42,8 @@ import {
   FMS_BREAKDOWN_REPORTING_STAGES, 
   FMS_EQUIPMENT_PART_REPAIR_STAGES, 
   FMS_DPR_REPORTING_STAGES,
-  USERS 
+  USERS,
+  SYSTEM_BUILTIN_TEMPLATES
 } from '../../data/initialData';
 import { storageAdapter } from '../../services/storageAdapter';
 
@@ -590,7 +591,22 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
   onSaveTemplate,
   initialTemplateKey,
 }) => {
-  const customTemplates = storageAdapter.getFmsTemplates();
+  const customTemplates = storageAdapter.getFmsTemplates().filter((t) => {
+    if (
+      t.templateKey === 'CHECK_STOCK' ||
+      t.templateKey === 'STORE_CHECK_STOCK' ||
+      t.id === 'tpl_check_stock' ||
+      t.id === 'tpl_store_check_stock' ||
+      t.name?.toLowerCase().includes('stock check') ||
+      t.name?.toLowerCase().includes('check stock')
+    ) {
+      return false;
+    }
+    const isBuiltin = SYSTEM_BUILTIN_TEMPLATES.some(
+      (sys) => sys.id === t.id || sys.templateKey === t.templateKey
+    );
+    return !isBuiltin;
+  });
   const [selectedExistingKey, setSelectedExistingKey] = useState<string>('');
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [saveMode, setSaveMode] = useState<'UPDATE_EXISTING' | 'SAVE_AS_NEW'>('UPDATE_EXISTING');
@@ -1601,8 +1617,8 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
             >
               <option value="">-- Choose Existing FMS Workflow to Load &amp; Edit --</option>
               <optgroup label="Standard Built-In FMS Processes (12 Existing)">
-                <option value="CHECK_STOCK">Store Check Stock (5 stages)</option>
-                <option value="INDENT_PURCHASE">Purchase Indent to PO (12 stages)</option>
+                <option value="CHECK_STOCK">Store Check Stock (2 stages)</option>
+                <option value="INDENT_PURCHASE">Purchase Indent to PO (7 stages)</option>
                 <option value="PO_TO_PAYMENT">Accounts PO to Payment (15 stages)</option>
                 <option value="STORE_TO_SITE_DISPATCH">Store to Site Dispatch (9 stages)</option>
                 <option value="PURCHASE_TO_STORE_DISPATCH">Purchase to Store Dispatch (10 stages)</option>

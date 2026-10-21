@@ -46,7 +46,8 @@ import { downloadCsv } from '../../utils/csvExporter';
 import { downloadFmsHorizontalMatrixExcel, downloadFmsExcelTemplate } from '../../services/fmsExcelService';
 import { FmsMasterCatalogView } from './FmsMasterCatalogView';
 import { FmsStageMatrixTableView } from './FmsStageMatrixTableView';
-import { FmsInstance, FmsStageExecution, FmsStageDefinition, Priority, UserProfile, isUserSuperAdmin, isUserAdminOrSuperAdmin, getUserModulePermission } from '../../types';
+import { FmsInstance, FmsStageExecution, FmsStageDefinition, Priority, UserProfile, isUserSuperAdmin, isUserAdminOrSuperAdmin, getUserModulePermission, isFlowAccessibleToUser } from '../../types';
+
 import { 
   FMS_CHECK_STOCK_STAGES, 
   FMS_STANDARD_PURCHASE_STAGES, 
@@ -256,6 +257,9 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
   const customTemplates = storageAdapter.getFmsTemplates();
 
   const filteredFlows = flows.filter((f) => {
+    // User site & historical createdBy access control
+    if (!isFlowAccessibleToUser(f, currentUser)) return false;
+
     // 0. Closed vs Active View Tab
     if (viewModeTab === 'ARCHIVED') {
       if (!f.isClosed && f.status !== 'CLOSED') return false;

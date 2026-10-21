@@ -2612,17 +2612,66 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                     ? ''
                     : val ?? '';
 
+                  const fieldIdLower = field.id.toLowerCase();
+                  const fieldLabelLower = field.label.toLowerCase();
+
+                  const isManualDocumentField =
+                    fieldIdLower.includes('challan') ||
+                    fieldIdLower.includes('lr') ||
+                    fieldIdLower.includes('transporter') ||
+                    fieldIdLower.includes('invoice') ||
+                    fieldIdLower.includes('billno') ||
+                    fieldIdLower.includes('taxinvoice') ||
+                    fieldLabelLower.includes('challan') ||
+                    fieldLabelLower.includes('lr') ||
+                    fieldLabelLower.includes('transporter') ||
+                    fieldLabelLower.includes('vendor invoice') ||
+                    fieldLabelLower.includes('bill no');
+
+                  const isSystemGeneratedId =
+                    !isManualDocumentField &&
+                    (fieldIdLower.includes('ponumber') ||
+                      fieldIdLower.includes('poid') ||
+                      fieldIdLower.includes('csreference') ||
+                      fieldIdLower.includes('csid') ||
+                      fieldIdLower.includes('csnumber') ||
+                      fieldIdLower.includes('paymentvoucher') ||
+                      fieldIdLower.includes('voucherno') ||
+                      fieldIdLower.includes('requisitionnumber') ||
+                      fieldIdLower.includes('indentno') ||
+                      fieldIdLower.includes('trackingid') ||
+                      fieldIdLower.includes('mrnnumber') ||
+                      fieldIdLower.includes('autoref') ||
+                      fieldLabelLower.includes('auto-generated') ||
+                      fieldLabelLower.includes('po number') ||
+                      fieldLabelLower.includes('requisition number') ||
+                      fieldLabelLower.includes('cs reference') ||
+                      fieldLabelLower.includes('payment voucher') ||
+                      fieldLabelLower.includes('indent ref'));
+
                   return (
                     <div key={field.id} className="space-y-1">
-                      <label className="block text-xs font-semibold text-slate-700">
-                        {field.label} {field.required && <span className="text-rose-500">*</span>}
-                      </label>
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-semibold text-slate-700">
+                          {field.label} {field.required && <span className="text-rose-500">*</span>}
+                        </label>
+                        {isSystemGeneratedId && (
+                          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                            System Generated • Read Only
+                          </span>
+                        )}
+                      </div>
                       <input
                         type="text"
                         value={safeVal}
-                        onChange={(e) => handleFieldChange(field.id, e.target.value)}
+                        readOnly={isSystemGeneratedId}
+                        onChange={(e) => !isSystemGeneratedId && handleFieldChange(field.id, e.target.value)}
                         placeholder={field.placeholder || `Enter ${field.label}...`}
-                        className="w-full text-xs bg-white border border-slate-300 rounded-lg p-2 font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className={`w-full text-xs border rounded-lg p-2 font-medium ${
+                          isSystemGeneratedId
+                            ? 'bg-slate-100 text-slate-600 border-slate-300 font-semibold cursor-not-allowed select-all focus:outline-none'
+                            : 'bg-white border-slate-300 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500'
+                        }`}
                       />
                     </div>
                   );

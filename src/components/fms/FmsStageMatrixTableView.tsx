@@ -20,9 +20,10 @@ import {
   SlidersHorizontal,
   ArrowUpDown,
   CheckSquare,
-  Sparkles
+  Sparkles,
+  User
 } from 'lucide-react';
-import { FmsInstance, UserProfile, Priority, FmsStageDefinition, isUserSuperAdmin, isUserAdminOrSuperAdmin, getUserModulePermission } from '../../types';
+import { FmsInstance, UserProfile, Priority, FmsStageDefinition, isUserSuperAdmin, isUserAdminOrSuperAdmin, getUserModulePermission, isFlowAccessibleToUser } from '../../types';
 import { 
   FMS_CHECK_STOCK_STAGES, 
   FMS_STANDARD_PURCHASE_STAGES, 
@@ -226,7 +227,9 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
   // Filter flows for the active branch & search criteria
   const filteredFlows = useMemo(() => {
     return flows.filter(flow => {
-      // 0. Closed vs Active View Tab
+      // User site & historical createdBy access control
+      if (!isFlowAccessibleToUser(flow, currentUser)) return false;
+
       if (viewModeTab === 'ARCHIVED') {
         if (!flow.isClosed && flow.status !== 'CLOSED') return false;
       } else {
@@ -503,7 +506,7 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
             <thead className="sticky top-0 z-20 bg-slate-900 text-white select-none">
               {/* TIER 1: STAGE NAMES (WHAT) */}
               <tr className="border-b border-slate-800">
-                <th colSpan={6} className="py-2 px-3 bg-slate-950 text-white font-black uppercase tracking-wider border-r border-slate-800 text-[11px]">
+                <th colSpan={7} className="py-2 px-3 bg-slate-950 text-white font-black uppercase tracking-wider border-r border-slate-800 text-[11px]">
                   WHAT • REQUISITION METADATA
                 </th>
                 {activeStageDefinitions.map((stgDef, sIdx) => {
@@ -523,7 +526,7 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
 
               {/* TIER 2: ASSIGNEE (WHO) */}
               <tr className="border-b border-slate-800 text-[10px]">
-                <th colSpan={6} className="py-1 px-3 bg-slate-900 text-slate-300 font-extrabold uppercase border-r border-slate-800">
+                <th colSpan={7} className="py-1 px-3 bg-slate-900 text-slate-300 font-extrabold uppercase border-r border-slate-800">
                   WHO • RESPONSIBLE ASSIGNEE
                 </th>
                 {activeStageDefinitions.map((stgDef, sIdx) => {
@@ -543,7 +546,7 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
 
               {/* TIER 3: EXECUTION CHANNEL (HOW) */}
               <tr className="border-b border-slate-800 text-[10px]">
-                <th colSpan={6} className="py-1 px-3 bg-slate-900 text-slate-300 font-extrabold uppercase border-r border-slate-800">
+                <th colSpan={7} className="py-1 px-3 bg-slate-900 text-slate-300 font-extrabold uppercase border-r border-slate-800">
                   HOW • EXECUTION CHANNEL / TOOL
                 </th>
                 {activeStageDefinitions.map((stgDef, sIdx) => {
@@ -563,7 +566,7 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
 
               {/* TIER 4: PLANNED SLA (WHEN) */}
               <tr className="border-b border-slate-800 text-[10px]">
-                <th colSpan={6} className="py-1 px-3 bg-slate-900 text-slate-300 font-extrabold uppercase border-r border-slate-800">
+                <th colSpan={7} className="py-1 px-3 bg-slate-900 text-slate-300 font-extrabold uppercase border-r border-slate-800">
                   WHEN • PLANNED SLA / TARGET TIME
                 </th>
                 {activeStageDefinitions.map((stgDef, sIdx) => {
@@ -597,6 +600,7 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
                 </th>
                 <th className="py-2 px-2.5 border-r border-slate-200 whitespace-nowrap min-w-[90px]">Date</th>
                 <th className="py-2 px-2.5 border-r border-slate-200 whitespace-nowrap min-w-[100px]">Site</th>
+                <th className="py-2 px-2.5 border-r border-slate-200 whitespace-nowrap min-w-[110px]">Requested By</th>
                 <th className="py-2 px-2.5 border-r border-slate-200 whitespace-nowrap min-w-[80px]">Priority</th>
                 <th className="py-2 px-2.5 border-r-2 border-slate-300 whitespace-nowrap min-w-[90px]">Status</th>
 
@@ -698,6 +702,14 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
                       <td className="py-2.5 px-2.5 font-bold text-slate-800 border-r border-slate-200 whitespace-nowrap">
                         <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-bold">
                           {flow.siteName || 'MAIN'}
+                        </span>
+                      </td>
+
+                      {/* Requested By */}
+                      <td className="py-2.5 px-2.5 text-slate-700 border-r border-slate-200 whitespace-nowrap font-medium text-[11px]">
+                        <span className="flex items-center gap-1">
+                          <User className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span>{flow.createdBy || flow.dprPreparedBy || flow.submittedBy || 'Aman Kumar'}</span>
                         </span>
                       </td>
 

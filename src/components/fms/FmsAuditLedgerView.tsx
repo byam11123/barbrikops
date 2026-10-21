@@ -23,7 +23,7 @@ import {
   FolderOpen,
   Trash2
 } from 'lucide-react';
-import { FmsInstance, FmsStageExecution, UserProfile, isUserSuperAdmin, isUserAdminOrSuperAdmin, getUserModulePermission } from '../../types';
+import { FmsInstance, FmsStageExecution, UserProfile, isUserSuperAdmin, isUserAdminOrSuperAdmin, getUserModulePermission, isFlowAccessibleToUser } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { downloadCsv } from '../../utils/csvExporter';
 import { FilePreviewModal } from '../common/FilePreviewModal';
@@ -85,8 +85,8 @@ export const FmsAuditLedgerView: React.FC<FmsAuditLedgerViewProps> = ({
   // Filtered flows
   const filteredFlows = useMemo(() => {
     return flows.filter((f) => {
+      if (!isFlowAccessibleToUser(f, currentUser)) return false;
       if (selectedFlowType !== 'ALL' && f.flowType !== selectedFlowType) return false;
-      if (selectedStatus !== 'ALL' && f.status !== selectedStatus) return false;
 
       if (searchQuery.trim() !== '') {
         const q = searchQuery.toLowerCase();

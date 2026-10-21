@@ -29,6 +29,7 @@ export interface UserProfile {
   email: string;
   avatarUrl?: string;
   siteLocation?: string;
+  siteAccess?: string[]; // Array of allowed sites for multi-site or transferred users
   shiftHours?: string;
   status?: 'ACTIVE' | 'ON_LEAVE' | 'INACTIVE';
   approvalPin?: string;
@@ -292,6 +293,56 @@ export function hasModulePermission(
   if (action === 'edit') return perm.canEdit;
   if (action === 'delete') return perm.canDelete;
   return false;
+}
+
+export function isUserGlobalView(user?: UserProfile | null): boolean {
+  if (!user) return true;
+  return (
+    isUserAdminOrSuperAdmin(user) ||
+    isUserDirector(user) ||
+    isUserProcessCoordinator(user) ||
+    isUserEA(user)
+  );
+}
+
+export function getUserAllowedSites(user?: UserProfile | null): string[] {
+  if (!user) return ['ALL'];
+  const sites: string[] = [];
+  if (user.siteAccess && Array.isArray(user.siteAccess) && user.siteAccess.length > 0) {
+    sites.push(...user.siteAccess);
+  }
+  if (user.siteLocation) {
+    sites.push(user.siteLocation);
+  }
+  if (sites.length === 0) {
+    sites.push('Siladehi Site', 'Siladehi');
+  }
+  return Array.from(new Set(sites.map((s) => s.trim().toUpperCase())));
+}
+
+export function isFlowAccessibleToUser(flow: FmsInstance, user?: UserProfile | null): boolean {
+  if (!user || isUserGlobalView(user)) return true;
+
+  // Rule: flow.siteName IN (currentUser.siteAccess || [currentUser.siteLocation]) OR flow.createdBy === currentUser.name
+  const allowedSites = getUserAllowedSites(user);
+  const flowSiteUpper = (flow.siteName || '').trim().toUpperCase();
+
+  const matchesSite = allowedSites.some((s) => {
+    if (s === 'ALL') return true;
+    const cleanS = s.replace(/\s+SITE$/i, '').trim().toUpperCase();
+    const cleanFlowSite = flowSiteUpper.replace(/\s+SITE$/i, '').trim().toUpperCase();
+    return cleanS === cleanFlowSite || flowSiteUpper.includes(cleanS) || cleanS.includes(flowSiteUpper);
+  });
+
+  const flowCreatedBy = (flow.createdBy || flow.dprPreparedBy || flow.submittedBy || '').trim().toLowerCase();
+  const userName = (user.name || '').trim().toLowerCase();
+  const matchesCreatedBy = userName !== '' && (
+    flowCreatedBy.includes(userName) ||
+    userName.includes(flowCreatedBy) ||
+    flow.createdByUserId === user.userId
+  );
+
+  return matchesSite || matchesCreatedBy;
 }
 
 export interface NoticeBoardItem {
@@ -668,6 +719,9 @@ export interface FmsInstance {
   closureRemark?: string;
   createdAt: string;
   updatedAt: string;
+  createdBy?: string;
+  submittedBy?: string;
+  createdByUserId?: string;
   stages: FmsStageExecution[];
   remarks?: string;
   totalDelayHours: number;

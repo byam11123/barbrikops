@@ -3,7 +3,6 @@ import { X, GitBranch, AlertCircle, Plus, Check, CreditCard, ShoppingCart, Boxes
 import { FmsInstance, Priority, UserProfile, FmsTemplateDefinition, FmsStageTemplate, FmsLineItem, isUserSuperAdmin, isUserAdminOrSuperAdmin } from '../../types';
 import { generateCounterTrackingId, generateUniqueCounterTrackingId, getWorkflowIdTitle } from '../../utils/fmsUtils';
 import { 
-  FMS_SITE_TO_SITE_MATERIALS_STAGES,
   FMS_CHECK_STOCK_STAGES, 
   FMS_STANDARD_PURCHASE_STAGES, 
   FMS_PO_PAYMENT_STAGES,
@@ -15,7 +14,8 @@ import {
   FMS_HR_ATTENDANCE_PAYMENT_STAGES,
   FMS_BREAKDOWN_REPORTING_STAGES,
   FMS_EQUIPMENT_PART_REPAIR_STAGES,
-  FMS_DPR_REPORTING_STAGES 
+  FMS_DPR_REPORTING_STAGES,
+  SYSTEM_BUILTIN_TEMPLATES
 } from '../../data/initialData';
 import { FmsCreateInputSchema, storageAdapter } from '../../services/storageAdapter';
 import { addWorkingSlaHours, formatToStandardDateTime, DEFAULT_WORK_SHIFT_CONFIG } from '../../services/workShiftService';
@@ -38,17 +38,63 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
   onOpenTemplateStudio,
 }) => {
   const allMasterTemplates = storageAdapter.getAllMasterTemplates();
-  const customTemplates = storageAdapter.getFmsTemplates();
+  const allExistingFlows = storageAdapter.getFmsFlows();
+  // Separate templates into System Blueprints and truly Custom Templates
+  const systemBlueprints = allMasterTemplates.filter((t) => !t.isCustom);
+  const customTemplates = allMasterTemplates.filter((t) => t.isCustom);
   const [selectedCustomTemplateId, setSelectedCustomTemplateId] = useState<string | null>(null);
   const [customFormData, setCustomFormData] = useState<Record<string, any>>({});
-  const [flowType, setFlowType] = useState<'SITE_TO_SITE_MATERIALS' | 'CHECK_STOCK' | 'INDENT_PURCHASE' | 'PO_TO_PAYMENT' | 'STORE_TO_SITE_DISPATCH' | 'PURCHASE_TO_STORE_DISPATCH' | 'PAYMENT_TO_DISPATCH' | 'SITE_RECEIVE' | 'ACCOUNTS_INVOICE_COLLECTION' | 'HR_ATTENDANCE_PAYMENT' | 'BREAKDOWN_REPORTING' | 'EQUIPMENT_PART_REPAIR' | 'DPR_REPORTING'>('SITE_TO_SITE_MATERIALS');
-  const [indentNo, setIndentNo] = useState<string>('');
+  const [flowType, setFlowType] = useState<
+    | 'CHECK_STOCK'
+    | 'STORE_TO_SITE_DISPATCH'
+    | 'INDENT_PURCHASE'
+    | 'PO_TO_PAYMENT'
+    | 'PAYMENT_TO_DISPATCH'
+    | 'PURCHASE_TO_STORE_DISPATCH'
+    | 'SITE_RECEIVE'
+    | 'ACCOUNTS_INVOICE_COLLECTION'
+    | 'HR_ATTENDANCE_PAYMENT'
+    | 'BREAKDOWN_REPORTING'
+    | 'EQUIPMENT_PART_REPAIR'
+    | 'DPR_REPORTING'
+  >('CHECK_STOCK');
+  const [indentNo, setIndentNo] = useState<string>(() => {
+    const tpl = storageAdapter.getAllMasterTemplates().find((t) => t.templateKey === 'CHECK_STOCK');
+    return generateCounterTrackingId(tpl?.referenceLabel || 'BPL/STK/', 'CHECK_STOCK', storageAdapter.getFmsFlows());
+  });
   const [poNumber, setPoNumber] = useState<string>('');
   const [vendorName, setVendorName] = useState<string>('');
   const [poAmount, setPoAmount] = useState<string>('');
-  const [poAssignTo, setPoAssignTo] = useState<string>('MR. BRAMHANAND PATEL');
+  const [poAssignTo, setPoAssignTo] = useState<string>('');
   const [siteName, setSiteName] = useState<string>('SILADEHI');
   const [priority, setPriority] = useState<Priority>('Normal');
+
+  useEffect(() => {
+    if (isOpen && !selectedCustomTemplateId && flowType === 'CHECK_STOCK') {
+      const tpl = storageAdapter.getAllMasterTemplates().find((t) => t.templateKey === 'CHECK_STOCK' || t.id === 'tpl_check_stock');
+      const ref = tpl?.referenceLabel;
+      setIndentNo(generateCounterTrackingId(ref, 'CHECK_STOCK', storageAdapter.getFmsFlows()));
+
+      setCustomFormData((prev) => {
+        if (!Array.isArray(prev.requisitionItems) || prev.requisitionItems.length === 0) {
+          return {
+            ...prev,
+            requisitionItems: [
+              {
+                id: `row_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                item_description: '',
+                quantity: 1,
+                unit: 'Nos',
+                work_purpose: '',
+                remarks: '',
+              },
+            ],
+          };
+        }
+        return prev;
+      });
+    }
+  }, [isOpen, flowType, selectedCustomTemplateId]);
   const [totalLabourPresent, setTotalLabourPresent] = useState<string>('40');
   const [totalOtHours, setTotalOtHours] = useState<string>('0');
   const [attendanceDate, setAttendanceDate] = useState<string>('');
@@ -134,7 +180,6 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
     setQuickAddValue('');
   };
 
-  const allExistingFlows = storageAdapter.getFmsFlows();
   const isSuperAdmin = isUserSuperAdmin(currentUser);
   const isAdminOrSuperAdmin = isUserAdminOrSuperAdmin(currentUser);
 
@@ -167,17 +212,18 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
   };
 
   const getStagesForCurrentWorkflow = () => {
+    if (flowType === 'CHECK_STOCK') {
+      return FMS_CHECK_STOCK_STAGES.map((s) => s.name);
+    }
     if (selectedCustomTemplateId) {
       const tpl = allMasterTemplates.find((t) => t.id === selectedCustomTemplateId);
       return tpl ? tpl.stages.map((s) => s.stageName) : [];
     }
-    const customizedBuiltin = allMasterTemplates.find((t) => t.templateKey === flowType || (flowType === 'CHECK_STOCK' && t.templateKey === 'STORE_CHECK_STOCK'));
-    if (customizedBuiltin) {
+    const customizedBuiltin = allMasterTemplates.find((t) => t.templateKey === flowType);
+    if (customizedBuiltin && customizedBuiltin.stages && customizedBuiltin.stages.length > 0) {
       return customizedBuiltin.stages.map((s) => s.stageName);
     }
     switch (flowType) {
-      case 'CHECK_STOCK':
-        return FMS_CHECK_STOCK_STAGES.map((s) => s.name);
       case 'INDENT_PURCHASE':
         return FMS_STANDARD_PURCHASE_STAGES.map((s) => s.name);
       case 'PO_TO_PAYMENT':
@@ -206,6 +252,17 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
   };
 
   const getFullTemplateStagesForCurrentWorkflow = (): FmsStageTemplate[] => {
+    if (flowType === 'CHECK_STOCK') {
+      return FMS_CHECK_STOCK_STAGES.map((s) => ({
+        stageId: s.stageId,
+        stageName: s.name,
+        whoRole: s.whoRole,
+        whoDefaultAssignee: s.whoDefaultAssignee,
+        slaHours: s.slaHours !== undefined ? s.slaHours : 0,
+        fields: s.fields,
+        checkpoints: (s as any).checkpoints,
+      }));
+    }
     if (selectedCustomTemplateId) {
       const tpl = allMasterTemplates.find((t) => t.id === selectedCustomTemplateId);
       return tpl ? tpl.stages : [];
@@ -222,26 +279,6 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
     }
 
     switch (flowType) {
-      case 'SITE_TO_SITE_MATERIALS':
-        return FMS_SITE_TO_SITE_MATERIALS_STAGES.map((s) => ({
-          stageId: s.stageId,
-          stageName: s.name,
-          whoRole: s.whoRole,
-          whoDefaultAssignee: s.whoDefaultAssignee,
-          slaHours: s.slaHours !== undefined ? s.slaHours : 0,
-          fields: s.fields,
-          checkpoints: (s as any).checkpoints,
-        }));
-      case 'CHECK_STOCK':
-        return FMS_CHECK_STOCK_STAGES.map((s) => ({
-          stageId: s.stageId,
-          stageName: s.name,
-          whoRole: s.whoRole,
-          whoDefaultAssignee: s.whoDefaultAssignee,
-          slaHours: s.slaHours !== undefined ? s.slaHours : 0,
-          fields: s.fields,
-          checkpoints: (s as any).checkpoints,
-        }));
       case 'INDENT_PURCHASE':
         return FMS_STANDARD_PURCHASE_STAGES.map((s) => ({
           stageId: s.stageId,
@@ -364,6 +401,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
     setPoNumber('');
     setVendorName('');
     setPoAmount('');
+    setPoAssignTo('');
     setSiteName('SILADEHI');
     setPriority('Normal');
     setTotalLabourPresent('40');
@@ -559,53 +597,31 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
         status: 'PENDING_TRIAGE' as const,
       }));
 
-      const initialStages = customizedTpl
-        ? customizedTpl.stages.map((stg, idx) => {
-            const sla = stg.slaHours !== undefined ? stg.slaHours : 0;
-            const cumulativeSla = idx === 0 ? sla : (idx + 1) * sla;
-            const plannedTime = addWorkingSlaHours(now, cumulativeSla, workShiftConfig);
-            return {
-              stageId: stg.stageId,
-              stageName: stg.stageName,
-              assignee: stg.whoDefaultAssignee,
-              how: stg.howChannel || 'IN-APP FORM',
-              status: idx === 0 ? ('Done' as const) : idx === 1 ? ('In Progress' as const) : ('Pending' as const),
-              plannedDateTime: formatToStandardDateTime(plannedTime),
-              actualDateTime: idx === 0 ? formatToStandardDateTime(now) : undefined,
-              fields: stg.fields,
-              logic: stg.logic,
-              checkpoints: stg.checkpoints,
-              submittedData: idx === 0 ? {
-                requisitionNumber: indentNo.trim(),
-                site: siteName,
-                priority,
-                remarks,
-                requisitionItems: rawMultiItems,
-              } : undefined,
-            };
-          })
-        : FMS_CHECK_STOCK_STAGES.map((def, idx) => {
-            const sla = def.slaHours !== undefined ? def.slaHours : 0;
-            const cumulativeSla = idx === 0 ? sla : (idx + 1) * sla;
-            const plannedTime = addWorkingSlaHours(now, cumulativeSla, workShiftConfig);
-            return {
-              stageId: def.stageId,
-              stageName: def.name,
-              assignee: def.whoDefaultAssignee,
-              how: 'IN-APP FORM',
-              status: idx === 0 ? ('Done' as const) : idx === 1 ? ('In Progress' as const) : ('Pending' as const),
-              plannedDateTime: formatToStandardDateTime(plannedTime),
-              actualDateTime: idx === 0 ? formatToStandardDateTime(now) : undefined,
-              fields: def.fields,
-              submittedData: idx === 0 ? {
-                requisitionNumber: indentNo.trim(),
-                site: siteName,
-                priority,
-                remarks,
-                requisitionItems: rawMultiItems,
-              } : undefined,
-            };
-          });
+      const initialStages = FMS_CHECK_STOCK_STAGES.map((def, idx) => {
+        const sla = def.slaHours !== undefined ? def.slaHours : 0;
+        const cumulativeSla = idx === 0 ? sla : (idx + 1) * sla;
+        const plannedTime = addWorkingSlaHours(now, cumulativeSla, workShiftConfig);
+        return {
+          stageId: def.stageId,
+          stageName: def.name,
+          assignee: def.whoDefaultAssignee,
+          how: def.howChannel || 'IN-APP FORM',
+          status: idx === 0 ? ('Done' as const) : idx === 1 ? ('In Progress' as const) : ('Pending' as const),
+          plannedDateTime: formatToStandardDateTime(plannedTime),
+          actualDateTime: idx === 0 ? formatToStandardDateTime(now) : undefined,
+          fields: def.fields,
+          logic: def.logic,
+          subWorkflowTrigger: (def as any).subWorkflowTrigger,
+          subWorkflowTriggers: (def as any).subWorkflowTriggers,
+          submittedData: idx === 0 ? {
+            requisitionNumber: indentNo.trim(),
+            site: siteName,
+            priority,
+            remarks,
+            requisitionItems: rawMultiItems,
+          } : undefined,
+        };
+      });
 
       const newFlow: FmsInstance = {
         id: `fms-inst-stk-${Date.now()}`,
@@ -815,7 +831,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
         flowType: 'PAYMENT_TO_DISPATCH',
         poNumber: poNumber.trim(),
         vendorName: vendorName.trim(),
-        poAssignTo: poAssignTo.trim() || 'MR. VIVEK',
+        poAssignTo: poAssignTo.trim() || undefined,
         indentNo: indentNo.trim() || poNumber.trim(),
         indentDate: formattedDate,
         poDate: formattedDate,
@@ -911,7 +927,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
         poNumber: poNumber.trim(),
         vendorName: vendorName.trim(),
         poAmount: parseFloat(poAmount) || 0,
-        poAssignTo: poAssignTo.trim() || 'MR. BRAMHANAND PATEL',
+        poAssignTo: poAssignTo.trim() || undefined,
         indentNo: indentNo.trim() || poNumber.trim(),
         indentDate: formattedDate,
         poDate: formattedDate,
@@ -1225,7 +1241,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-2 sm:p-4">
-      <div className="bg-white rounded-2xl max-w-xl sm:max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden max-h-[92vh] sm:max-h-[88vh] flex flex-col">
+      <div className="bg-white rounded-2xl w-[94vw] max-w-5xl lg:max-w-6xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92vh] sm:max-h-[88vh] flex flex-col">
         {/* Header */}
         <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-white shrink-0">
           <div className="flex items-center gap-3">
@@ -1264,7 +1280,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
             </label>
 
             <select
-              value={selectedCustomTemplateId ? `CUSTOM_${selectedCustomTemplateId}` : flowType}
+              value={selectedCustomTemplateId ? `CUSTOM_${selectedCustomTemplateId}` : ((flowType as string) === 'INDENT_TO_PO' ? 'INDENT_PURCHASE' : flowType)}
               onChange={(e) => {
                 const val = e.target.value;
                 if (val.startsWith('CUSTOM_')) {
@@ -1273,31 +1289,56 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                 } else {
                   setSelectedCustomTemplateId(null);
                   setFlowType(val as any);
+                  const tpl = allMasterTemplates.find(
+                    (t) => t.templateKey === val || (val === 'INDENT_PURCHASE' && t.templateKey === 'INDENT_TO_PO') || t.id === val
+                  );
+                  if (tpl) {
+                    setIndentNo(generateCounterTrackingId(tpl.referenceLabel, val, allExistingFlows));
+                  }
                 }
               }}
               className="w-full text-xs px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white font-semibold text-slate-800 cursor-pointer shadow-xs"
             >
-              <optgroup label="Standard Department Workflows">
-                <option value="CHECK_STOCK">Store Check Stock (Store Inventory, 5 stages)</option>
-                <option value="STORE_TO_SITE_DISPATCH">Store to Site Dispatch (Stock to Site, 9 stages)</option>
-                <option value="INDENT_PURCHASE">Purchase Indent to PO (Purchase Dept, 7 stages)</option>
-                <option value="PO_TO_PAYMENT">Accounts PO to Payment (Accounts Dept, 15 stages)</option>
-                <option value="VENDOR_PAYMENT_TO_DISPATCH">Vendor Payment to Dispatch (Vendor QC, 7 stages)</option>
-                <option value="PURCHASE_TO_STORE_DISPATCH">Purchase to Store Dispatch (Store to Site, 10 stages)</option>
-                <option value="SITE_RECEIVE">Site Material Receive (MRN) (Site Inward, 10 stages)</option>
-                <option value="ACCOUNTS_INVOICE_COLLECTION">Accounts Invoice Collection (Accounts GST, 7 stages)</option>
-                <option value="HR_ATTENDANCE_PAYMENT">Labour Attendance &amp; Payment (HR Muster Roll, 11 stages)</option>
-                <option value="BREAKDOWN_REPORTING">Machine Breakdown (Plant/Vehicle Defect, 14 stages)</option>
-                <option value="EQUIPMENT_PART_REPAIR">Equipment Part Repair (Warranty &amp; Work Order, 18 stages)</option>
-                <option value="DPR_REPORTING">Daily Progress Report (DPR) (Consumption &amp; Progress, 6 stages)</option>
+              <optgroup label="System Blueprints">
+                {systemBlueprints.map((tpl) => {
+                  const stageCount = tpl.stages?.length || 0;
+                  const isDedicatedStandardFlow = [
+                    'CHECK_STOCK',
+                    'STORE_TO_SITE_DISPATCH',
+                    'PO_TO_PAYMENT',
+                    'PAYMENT_TO_DISPATCH',
+                    'PURCHASE_TO_STORE_DISPATCH',
+                    'SITE_RECEIVE',
+                    'ACCOUNTS_INVOICE_COLLECTION',
+                    'HR_ATTENDANCE_PAYMENT',
+                    'BREAKDOWN_REPORTING',
+                    'EQUIPMENT_PART_REPAIR',
+                    'DPR_REPORTING',
+                  ].includes(tpl.templateKey);
+
+                  const optionValue = tpl.templateKey === 'INDENT_TO_PO'
+                    ? 'INDENT_PURCHASE'
+                    : isDedicatedStandardFlow
+                    ? tpl.templateKey
+                    : `CUSTOM_${tpl.id}`;
+
+                  return (
+                    <option key={tpl.id || tpl.templateKey} value={optionValue}>
+                      {tpl.name} ({stageCount} stages)
+                    </option>
+                  );
+                })}
               </optgroup>
               {customTemplates.length > 0 && (
                 <optgroup label="Custom Workflow Templates">
-                  {customTemplates.map((tpl) => (
-                    <option key={tpl.id} value={`CUSTOM_${tpl.id}`}>
-                      {tpl.name} ({tpl.stages.length} stages)
-                    </option>
-                  ))}
+                  {customTemplates.map((tpl) => {
+                    const stageCount = tpl.stages?.length || 0;
+                    return (
+                      <option key={tpl.id} value={`CUSTOM_${tpl.id}`}>
+                        {tpl.name} ({stageCount} stages)
+                      </option>
+                    );
+                  })}
                 </optgroup>
               )}
             </select>
@@ -1507,26 +1548,28 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                                       </option>
                                     ))}
                                   </select>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const isSite = field.label.toLowerCase().includes('site');
-                                      const isVendor = field.label.toLowerCase().includes('vendor');
-                                      const isPriority = field.label.toLowerCase().includes('priority');
-                                      setQuickAddModal({
-                                        isOpen: true,
-                                        type: isSite ? 'SITE' : isVendor ? 'VENDOR' : isPriority ? 'PRIORITY' : 'CUSTOM_SELECT',
-                                        fieldId: field.id,
-                                        fieldLabel: field.label,
-                                        templateId: selectedCustomTemplateId || undefined,
-                                        stageId: tpl?.stages[0]?.stageId,
-                                      });
-                                    }}
-                                    className="p-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer"
-                                    title={`Add new ${field.label} option to Master Registry`}
-                                  >
-                                    <Plus className="w-3.5 h-3.5" />
-                                  </button>
+                                  {isAdminOrSuperAdmin && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const isSite = field.label.toLowerCase().includes('site');
+                                        const isVendor = field.label.toLowerCase().includes('vendor');
+                                        const isPriority = field.label.toLowerCase().includes('priority');
+                                        setQuickAddModal({
+                                          isOpen: true,
+                                          type: isSite ? 'SITE' : isVendor ? 'VENDOR' : isPriority ? 'PRIORITY' : 'CUSTOM_SELECT',
+                                          fieldId: field.id,
+                                          fieldLabel: field.label,
+                                          templateId: selectedCustomTemplateId || undefined,
+                                          stageId: tpl?.stages[0]?.stageId,
+                                        });
+                                      }}
+                                      className="p-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer"
+                                      title={`Add new ${field.label} option to Master Registry`}
+                                    >
+                                      <Plus className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
                                 </div>
                               ) : field.type === 'NUMBER' ? (
                                 <input
@@ -1595,7 +1638,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
               );
             })()
           ) : flowType === 'CHECK_STOCK' ? (
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Material Requisition Number / Indent Ref <span className="text-rose-500">*</span>
@@ -1603,34 +1646,96 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                 <input
                   type="text"
                   required
+                  readOnly={true}
                   placeholder="e.g. Indent no-477 or REQ-477"
                   value={indentNo}
-                  onChange={(e) => setIndentNo(e.target.value)}
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-slate-100 text-slate-500 font-semibold cursor-not-allowed select-all focus:outline-none"
                 />
                 <p className="text-[11px] text-slate-400 mt-1">
                   Store Manager (Amanat Bhardwaj) will verify physical stock and decide whether to dispatch from store or trigger Purchase Indent.
                 </p>
               </div>
 
+              {/* Site Name and Priority Selection */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Site Name <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      value={siteName}
+                      onChange={(e) => setSiteName(e.target.value)}
+                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white font-medium text-slate-800"
+                    >
+                      {sitesList.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                    {isAdminOrSuperAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => setQuickAddModal({ isOpen: true, type: 'SITE' })}
+                        className="p-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer"
+                        title="Add new Site to Registry"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Priority <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      value={priority}
+                      onChange={(e) => setPriority(e.target.value as Priority)}
+                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white font-medium text-slate-800"
+                    >
+                      {prioritiesList.map((p) => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Purpose / Remarks */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Purpose / Remarks
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Specify requisition purpose, activity details, or additional remarks..."
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white font-medium text-slate-800"
+                />
+              </div>
+
               {/* Multi-Item Requisition Grid */}
               {(() => {
-                const columns = [
-                  { key: 'item_description', label: 'Item Description', type: 'TEXT' as const },
-                  { key: 'quantity', label: 'Quantity', type: 'NUMBER' as const },
-                  { key: 'unit', label: 'Unit', type: 'TEXT' as const },
-                  { key: 'work_purpose', label: 'Work / Purpose Details', type: 'TEXT' as const },
-                  { key: 'remarks', label: 'Remarks', type: 'TEXT' as const },
-                ];
+                const createBlankRow = () => ({
+                  id: `row_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                  item_description: '',
+                  quantity: 1,
+                  unit: 'Nos',
+                  work_purpose: '',
+                  remarks: '',
+                });
+
                 const currentVal = customFormData.requisitionItems;
-                const rows: Record<string, any>[] = Array.isArray(currentVal) ? currentVal : [];
+                const rows: Record<string, any>[] =
+                  Array.isArray(currentVal) && currentVal.length > 0
+                    ? currentVal
+                    : [createBlankRow()];
 
                 const handleAddRow = () => {
-                  const newRow: Record<string, any> = { id: `row_${Date.now()}_${Math.random().toString(36).substr(2, 4)}` };
-                  columns.forEach((col) => {
-                    newRow[col.key] = col.type === 'NUMBER' ? 1 : '';
-                  });
-                  newRow.unit = 'Nos';
+                  const newRow = createBlankRow();
                   handleCustomFieldChange('requisitionItems', [...rows, newRow]);
                 };
 
@@ -1641,7 +1746,10 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                 };
 
                 const handleDeleteRow = (rowIdx: number) => {
-                  const updatedRows = rows.filter((_, idx) => idx !== rowIdx);
+                  let updatedRows = rows.filter((_, idx) => idx !== rowIdx);
+                  if (updatedRows.length === 0) {
+                    updatedRows = [createBlankRow()];
+                  }
                   handleCustomFieldChange('requisitionItems', updatedRows);
                 };
 
@@ -1671,59 +1779,81 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                       <table className="w-full text-xs text-left">
                         <thead className="bg-slate-100 text-slate-800 font-bold border-b border-slate-200">
                           <tr>
-                            <th className="py-2 px-2 w-8 text-center">#</th>
-                            {columns.map((col) => (
-                              <th key={col.key} className="py-2 px-2 min-w-[100px]">
-                                {col.label}
-                              </th>
-                            ))}
-                            <th className="py-2 px-1 w-8 text-center"></th>
+                            <th className="py-2.5 px-2 w-12 text-center shrink-0">#</th>
+                            <th className="py-2.5 px-2.5 min-w-[250px]">Item Description</th>
+                            <th className="py-2.5 px-2 w-24 text-center shrink-0">Quantity</th>
+                            <th className="py-2.5 px-2 w-28 text-center shrink-0">Unit</th>
+                            <th className="py-2.5 px-2.5 min-w-[200px]">Work / Purpose Details</th>
+                            <th className="py-2.5 px-2.5 min-w-[150px]">Remarks</th>
+                            <th className="py-2.5 px-1 w-10 text-center shrink-0"></th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {rows.length === 0 ? (
-                            <tr>
-                              <td colSpan={columns.length + 2} className="py-4 text-center text-slate-400 italic text-[11px]">
-                                No item rows added yet. Click &quot;Add Item Row&quot; above to add item entries.
+                          {rows.map((row, rIdx) => (
+                            <tr key={row.id || rIdx} className="hover:bg-emerald-50/30">
+                              <td className="py-2 px-2 text-center font-mono text-slate-400 text-[11px] w-12 shrink-0">
+                                {rIdx + 1}
+                              </td>
+                              <td className="py-1.5 px-2 min-w-[250px]">
+                                <input
+                                  type="text"
+                                  value={row.item_description !== undefined ? row.item_description : ''}
+                                  onChange={(e) => handleRowChange(rIdx, 'item_description', e.target.value)}
+                                  placeholder="e.g. TMT Steel Bar 12mm FE550"
+                                  className="w-full text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-emerald-500 rounded-md px-2.5 py-1.5 font-semibold text-slate-800 focus:outline-none"
+                                />
+                              </td>
+                              <td className="py-1.5 px-1.5 w-24 shrink-0">
+                                <input
+                                  type="number"
+                                  step="any"
+                                  value={row.quantity !== undefined ? row.quantity : 1}
+                                  onChange={(e) =>
+                                    handleRowChange(rIdx, 'quantity', parseFloat(e.target.value) || 0)
+                                  }
+                                  placeholder="Qty"
+                                  className="w-full text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-emerald-500 rounded-md px-2 py-1.5 font-semibold text-slate-800 text-center focus:outline-none"
+                                />
+                              </td>
+                              <td className="py-1.5 px-1.5 w-28 shrink-0">
+                                <input
+                                  type="text"
+                                  value={row.unit !== undefined ? row.unit : 'Nos'}
+                                  onChange={(e) => handleRowChange(rIdx, 'unit', e.target.value)}
+                                  placeholder="Unit"
+                                  className="w-full text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-emerald-500 rounded-md px-2 py-1.5 font-semibold text-slate-800 text-center focus:outline-none"
+                                />
+                              </td>
+                              <td className="py-1.5 px-2 min-w-[200px]">
+                                <input
+                                  type="text"
+                                  value={row.work_purpose !== undefined ? row.work_purpose : ''}
+                                  onChange={(e) => handleRowChange(rIdx, 'work_purpose', e.target.value)}
+                                  placeholder="e.g. Siladehi Pier Cap RCC"
+                                  className="w-full text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-emerald-500 rounded-md px-2.5 py-1.5 font-semibold text-slate-800 focus:outline-none"
+                                />
+                              </td>
+                              <td className="py-1.5 px-2 min-w-[150px]">
+                                <input
+                                  type="text"
+                                  value={row.remarks !== undefined ? row.remarks : ''}
+                                  onChange={(e) => handleRowChange(rIdx, 'remarks', e.target.value)}
+                                  placeholder="Remarks / Note"
+                                  className="w-full text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-emerald-500 rounded-md px-2.5 py-1.5 font-semibold text-slate-800 focus:outline-none"
+                                />
+                              </td>
+                              <td className="py-1.5 px-1 text-center w-10 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteRow(rIdx)}
+                                  className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                                  title="Delete row"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               </td>
                             </tr>
-                          ) : (
-                            rows.map((row, rIdx) => (
-                              <tr key={row.id || rIdx} className="hover:bg-emerald-50/30">
-                                <td className="py-2 px-2 text-center font-mono text-slate-400 text-[11px]">
-                                  {rIdx + 1}
-                                </td>
-                                {columns.map((col) => (
-                                  <td key={col.key} className="py-1.5 px-1.5">
-                                    <input
-                                      type={col.type === 'NUMBER' ? 'number' : 'text'}
-                                      step={col.type === 'NUMBER' ? 'any' : undefined}
-                                      value={row[col.key] !== undefined ? row[col.key] : ''}
-                                      onChange={(e) =>
-                                        handleRowChange(
-                                          rIdx,
-                                          col.key,
-                                          col.type === 'NUMBER' ? parseFloat(e.target.value) || 0 : e.target.value
-                                        )
-                                      }
-                                      placeholder={col.label}
-                                      className="w-full text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-emerald-500 rounded-md px-2 py-1 font-semibold text-slate-800 focus:outline-none"
-                                    />
-                                  </td>
-                                ))}
-                                <td className="py-1.5 px-1 text-center">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteRow(rIdx)}
-                                    className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
-                                    title="Delete row"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </td>
-                              </tr>
-                            ))
-                          )}
+                          ))}
                         </tbody>
                       </table>
                     </div>
@@ -1740,10 +1870,10 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                 <input
                   type="text"
                   required
+                  readOnly={true}
                   placeholder="e.g. 654 or REQ-477"
                   value={indentNo}
-                  onChange={(e) => setIndentNo(e.target.value)}
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-slate-100 text-slate-500 font-semibold cursor-not-allowed select-all focus:outline-none"
                 />
               </div>
               <p className="text-[11px] text-slate-400">
@@ -1758,10 +1888,10 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
               <input
                 type="text"
                 required
+                readOnly={true}
                 placeholder="e.g. 753 or 781"
                 value={indentNo}
-                onChange={(e) => setIndentNo(e.target.value)}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-slate-100 text-slate-500 font-semibold cursor-not-allowed select-all focus:outline-none"
               />
               <p className="text-[11px] text-slate-400 mt-1">
                 Syncs with Indent Purchase Sheet 1 (Stages 1 to 12).
@@ -1777,10 +1907,10 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                   <input
                     type="text"
                     required
+                    readOnly={true}
                     placeholder="e.g. 752 or 22"
                     value={indentNo}
-                    onChange={(e) => setIndentNo(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-slate-100 text-slate-500 font-semibold cursor-not-allowed select-all focus:outline-none"
                   />
                 </div>
                 <div>
@@ -1822,10 +1952,10 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                   <input
                     type="text"
                     required
+                    readOnly={true}
                     placeholder="e.g. MRN-2026-088 or Indent 752"
                     value={indentNo}
-                    onChange={(e) => setIndentNo(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-slate-100 text-slate-500 font-semibold cursor-not-allowed select-all focus:outline-none"
                   />
                 </div>
                 <div>
@@ -1879,10 +2009,10 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                   </label>
                   <input
                     type="text"
+                    readOnly={true}
                     placeholder="e.g. 752 or 22"
                     value={indentNo}
-                    onChange={(e) => setIndentNo(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-slate-100 text-slate-500 font-semibold cursor-not-allowed select-all focus:outline-none"
                   />
                 </div>
               </div>
@@ -1940,10 +2070,10 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                   </label>
                   <input
                     type="text"
+                    readOnly={true}
                     placeholder="e.g. 449 or 752"
                     value={indentNo}
-                    onChange={(e) => setIndentNo(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-slate-100 text-slate-500 font-semibold cursor-not-allowed select-all focus:outline-none"
                   />
                 </div>
               </div>
@@ -1982,7 +2112,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. MR. BRAMHANAND PATEL / BYAMKESH KAIWARTYA"
+                  placeholder="e.g. Accounts Manager / Purchase Officer"
                   value={poAssignTo}
                   onChange={(e) => setPoAssignTo(e.target.value)}
                   className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
@@ -2165,7 +2295,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                 Covers 6 DPR stages: Receive DPR, Prepare Planned Actual Sheet, Prepare Consumption Report, Report Mechanical Issues, Report Hindrances to PM, and Update Weekly Review Sheet.
               </p>
             </div>
-          ) : (
+          ) : flowType === 'PO_TO_PAYMENT' ? (
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -2187,10 +2317,10 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                   </label>
                   <input
                     type="text"
+                    readOnly={true}
                     placeholder="e.g. 752 or 22"
                     value={indentNo}
-                    onChange={(e) => setIndentNo(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-slate-100 text-slate-500 font-semibold cursor-not-allowed select-all focus:outline-none"
                   />
                 </div>
               </div>
@@ -2229,17 +2359,20 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. MANISH KOSHLE"
+                  placeholder="e.g. Assigned Purchase Officer"
                   value={poAssignTo}
                   onChange={(e) => setPoAssignTo(e.target.value)}
                   className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none"
                 />
               </div>
             </div>
-          )}
+          ) : null}
 
           {/* Only show generic Site, Priority, Remarks if NO custom template is selected OR custom template does not provide them */}
           {(() => {
+            if (flowType === 'CHECK_STOCK') {
+              return null; // All Requisition fields (Indent Ref, Site Name, Priority, Purpose/Remarks, Items Table) are self-contained in CHECK_STOCK
+            }
             const currentTpl = selectedCustomTemplateId ? allMasterTemplates.find((t) => t.id === selectedCustomTemplateId) : null;
             const s1Fields = currentTpl?.stages[0]?.fields || [];
             const hasSiteField = s1Fields.some((f) => f.label.toLowerCase().includes('site') || f.id.toLowerCase().includes('site'));
@@ -2271,20 +2404,22 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                               </option>
                             ))}
                           </select>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setQuickAddModal({
-                                isOpen: true,
-                                type: 'SITE',
-                                fieldLabel: 'Site Name',
-                              })
-                            }
-                            className="p-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer"
-                            title="Add new Site to Master Registry"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
+                          {isAdminOrSuperAdmin && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setQuickAddModal({
+                                  isOpen: true,
+                                  type: 'SITE',
+                                  fieldLabel: 'Site Name',
+                                })
+                              }
+                              className="p-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer"
+                              title="Add new Site to Master Registry"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}
@@ -2306,20 +2441,6 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                               </option>
                             ))}
                           </select>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setQuickAddModal({
-                                isOpen: true,
-                                type: 'PRIORITY',
-                                fieldLabel: 'Priority',
-                              })
-                            }
-                            className="p-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer"
-                            title="Add new Priority Level to Master Registry"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
                         </div>
                       </div>
                     )}
