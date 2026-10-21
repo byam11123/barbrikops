@@ -491,16 +491,24 @@ export const ComparativeDirectoryView: React.FC<ComparativeDirectoryViewProps> =
                         {isApproved ? (
                           <div className="space-y-0.5">
                             <div className="font-bold text-slate-900 text-[11px] truncate max-w-[130px]">
-                              {statement.approvalDetails?.approverName || statement.approvedBy || 'Pranjal Agrawal'}
+                              Pranjal Agrawal
                             </div>
                             <div className="text-[9px] font-mono text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded inline-block">
-                              Verified Seal
+                              Signatory Verified
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-medium">
+                              Prep: {statement.preparedBy || 'Shyam Rao Sureshe'}
                             </div>
                           </div>
                         ) : (
-                          <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-semibold inline-block border border-amber-200/60">
-                            Awaiting Pranjal Agrawal
-                          </span>
+                          <div className="space-y-0.5">
+                            <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-semibold inline-block border border-amber-200/60">
+                              Awaiting Pranjal Agrawal
+                            </span>
+                            <div className="text-[10px] text-slate-500 font-medium">
+                              Prep: {statement.preparedBy || 'Shyam Rao Sureshe'}
+                            </div>
+                          </div>
                         )}
                       </td>
 
@@ -654,8 +662,11 @@ export const ComparativeDirectoryView: React.FC<ComparativeDirectoryViewProps> =
                 {selectedCsForDrawer.approvalDetails ? (
                   <div className="text-[11px] space-y-1 pt-1 border-t border-emerald-200/60">
                     <div>
-                      Signatory: <strong className="text-slate-900">{selectedCsForDrawer.approvalDetails.approverName}</strong>{' '}
-                      <span className="text-slate-500 font-normal">({selectedCsForDrawer.approvalDetails.approverDesignation})</span>
+                      Signatory: <strong className="text-slate-900">Pranjal Agrawal</strong>{' '}
+                      <span className="text-slate-500 font-normal">({selectedCsForDrawer.approvalDetails.approverDesignation || 'Finance Approver / Director'})</span>
+                    </div>
+                    <div>
+                      Prepared By: <strong className="text-slate-800">{selectedCsForDrawer.preparedBy || 'Shyam Rao Sureshe'}</strong>
                     </div>
                     <div className="text-[10px] text-slate-500 font-mono">
                       Timestamp: {selectedCsForDrawer.approvalDetails.approvalDate} &bull; Token: {selectedCsForDrawer.approvalDetails.signatureStamp}
@@ -667,8 +678,13 @@ export const ComparativeDirectoryView: React.FC<ComparativeDirectoryViewProps> =
                     )}
                   </div>
                 ) : (
-                  <div className="text-[11px] text-amber-800 pt-1">
-                    This comparative sheet has not yet been authorized. Click &ldquo;Open in Full Editor&rdquo; to review quotes and digitally sign.
+                  <div className="text-[11px] text-amber-800 pt-1 space-y-1">
+                    <div>
+                      Prepared By: <strong className="text-slate-800">{selectedCsForDrawer.preparedBy || 'Shyam Rao Sureshe'}</strong>
+                    </div>
+                    <div>
+                      This comparative sheet has not yet been authorized. Click &ldquo;Open in Full Editor&rdquo; to review quotes and digitally sign.
+                    </div>
                   </div>
                 )}
               </div>

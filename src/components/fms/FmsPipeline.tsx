@@ -739,13 +739,6 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
         }
       }
 
-      if (currentStage.stageId === 'STG-06' && decision === 'No') {
-        if (updatedStages[6]) {
-          updatedStages[6].status = 'Skipped';
-          updatedStages[6].notes = 'Skipped: Single OEM quotation sufficient';
-          nextIndex = 7;
-        }
-      }
 
       if (currentStage.stageId === 'STG-10' && decision === 'No') {
         if (updatedStages[10]) {

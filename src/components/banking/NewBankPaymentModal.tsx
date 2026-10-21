@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
   Landmark, 
@@ -13,7 +13,8 @@ import {
   CheckCircle2, 
   AlertCircle, 
   Plus, 
-  FileCheck2 
+  FileCheck2,
+  ExternalLink
 } from 'lucide-react';
 import { 
   BankPaymentRecord, 
@@ -31,6 +32,10 @@ interface NewBankPaymentModalProps {
   onClose: () => void;
   currentUser: UserProfile;
   onSubmit: (record: BankPaymentRecord) => void;
+  initialVendorName?: string;
+  initialPoNumber?: string;
+  initialPoDocumentUrl?: string;
+  initialAmount?: number;
 }
 
 export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
@@ -38,11 +43,19 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
   onClose,
   currentUser,
   onSubmit,
+  initialVendorName = '',
+  initialPoNumber = '',
+  initialPoDocumentUrl = '',
+  initialAmount,
 }) => {
   const isAuthorized = isUserAuthorizedForVendorBanking(currentUser);
   const masterSites = storageAdapter.getMasterSites();
 
-  const [vendorName, setVendorName] = useState('');
+  // File Input Refs
+  const chequeFileInputRef = useRef<HTMLInputElement>(null);
+  const poFileInputRef = useRef<HTMLInputElement>(null);
+
+  const [vendorName, setVendorName] = useState(initialVendorName);
   const [selectedVendor, setSelectedVendor] = useState<VendorProfileRecord | null>(null);
   const [beneficiaryName, setBeneficiaryName] = useState('');
   const [isMismatch, setIsMismatch] = useState(false);
@@ -50,13 +63,14 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
   const [purpose, setPurpose] = useState('');
   const [site, setSite] = useState(masterSites[0] || 'Siladehi Site');
   const [modeOfPayment, setModeOfPayment] = useState<'ACCOUNT' | 'UPI'>('ACCOUNT');
-  const [amount, setAmount] = useState<string>('');
+  const [amount, setAmount] = useState<string>(initialAmount ? String(initialAmount) : '');
   const [plannedDate, setPlannedDate] = useState<string>(() => {
     const today = new Date();
     return `${today.getDate().toString().padStart(2, '0')}/${(today.getMonth() + 1).toString().padStart(2, '0')}/${today.getFullYear()}`;
   });
   const [remark, setRemark] = useState('');
-  const [billNoPo, setBillNoPo] = useState('');
+  const [billNoPo, setBillNoPo] = useState(initialPoNumber);
+  const [poUpload, setPoUpload] = useState(initialPoDocumentUrl);
 
   // Bank & Cheque Details
   const [bankName, setBankName] = useState('');
@@ -78,6 +92,50 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
 
   // Modal to register vendor if not found
   const [isRegisterVendorModalOpen, setIsRegisterVendorModalOpen] = useState(false);
+
+  // Sync state when modal opens or initial props change
+  useEffect(() => {
+    if (isOpen) {
+      const vName = initialVendorName || '';
+      setVendorName(vName);
+      setBillNoPo(initialPoNumber || '');
+      setPoUpload(initialPoDocumentUrl || '');
+      setAmount(initialAmount ? String(initialAmount) : '');
+
+      if (vName.trim().length >= 2) {
+        const vMatches = storageAdapter.searchVendorsWithBanking(vName);
+        if (vMatches.length > 0) {
+          const exactMatch = vMatches.find(
+            (m) =>
+              m.vendor.tradeName.toLowerCase() === vName.toLowerCase() ||
+              m.vendor.legalName?.toLowerCase() === vName.toLowerCase()
+          ) || vMatches[0];
+          handleSelectVendorProfileMatch(exactMatch);
+        } else {
+          const lMatches = storageAdapter.matchVendorBeneficiary(vName);
+          if (lMatches.length > 0) {
+            handleSelectLegacyMatch(lMatches[0]);
+          }
+        }
+      }
+    }
+  }, [isOpen, initialVendorName, initialPoNumber, initialPoDocumentUrl, initialAmount]);
+
+  const handleChequeFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const fileUrl = URL.createObjectURL(file);
+      setCancelledChequeUrl(file.name || fileUrl);
+    }
+  };
+
+  const handlePoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const fileUrl = URL.createObjectURL(file);
+      setPoUpload(file.name || fileUrl);
+    }
+  };
 
   // Dynamic Search & Auto-Detection
   useEffect(() => {
@@ -193,16 +251,16 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
         setError('Please specify payee relationship context for name mismatch');
         return;
       }
-      if (isAccountMissing && !accountNo.trim()) {
+      if (!accountNo.trim()) {
         setError('Bank Account Number is required for Bank Transfer mode');
         return;
       }
-      if (isAccountMissing && !ifscCode.trim()) {
+      if (!ifscCode.trim()) {
         setError('Bank IFSC Code is required for Bank Transfer mode');
         return;
       }
-      if (beneficiaryStatus === 'NEEDS_ADDITION' && !cancelledChequeUrl.trim()) {
-        setError('Mandatory: Cancelled Cheque proof is strictly required for new beneficiary additions before submission.');
+      if ((!selectedVendor || beneficiaryStatus === 'NEEDS_ADDITION') && !cancelledChequeUrl.trim()) {
+        setError('Mandatory: Cancelled Cheque proof is strictly required for new vendor bank verification.');
         return;
       }
     }
@@ -221,7 +279,8 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
       remark: remark.trim() || undefined,
       plannedDate,
       billNoPo: billNoPo.trim() || undefined,
-      beneficiaryMasterStatus: modeOfPayment === 'UPI' ? 'NOT_APPLICABLE_UPI' : beneficiaryStatus,
+      poUpload: poUpload.trim() || undefined,
+      beneficiaryMasterStatus: modeOfPayment === 'UPI' ? 'NOT_APPLICABLE_UPI' : selectedVendor ? beneficiaryStatus : 'NEEDS_ADDITION',
       bankName: modeOfPayment === 'ACCOUNT' ? (bankName.trim() || 'State Bank of India') : undefined,
       accountNoMasked: modeOfPayment === 'ACCOUNT' ? (accountNo.trim() || '••••••••3352') : undefined,
       ifscCode: modeOfPayment === 'ACCOUNT' ? (ifscCode.trim() || 'SBIN0001292') : undefined,
@@ -620,63 +679,114 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
                   </div>
                 </div>
 
-                {/* Cancelled Cheque Upload for Beneficiary Entry */}
-                <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-[11px] font-bold text-slate-700">
-                      Cancelled Cheque Document Proof {beneficiaryStatus === 'NEEDS_ADDITION' && <span className="text-rose-500">*</span>}
-                    </label>
-                    <span className="text-[10px] text-emerald-700 font-semibold">
-                      Required for Beneficiary Master Sanction
-                    </span>
+                {/* Cancelled Cheque / Beneficiary Verification View */}
+                {selectedVendor && beneficiaryStatus === 'VERIFIED' ? (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 text-emerald-900 font-semibold">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>Verified Active Beneficiary – No Cheque Upload Required</span>
+                    </div>
+                    {cancelledChequeUrl ? (
+                      <a
+                        href={cancelledChequeUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-bold text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>View Cheque Proof</span>
+                        <ExternalLink className="w-3 h-3 ml-0.5" />
+                      </a>
+                    ) : (
+                      <span className="text-[11px] text-emerald-700 font-medium">Pre-verified in Master</span>
+                    )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      required={beneficiaryStatus === 'NEEDS_ADDITION'}
-                      placeholder="Document proof URL or image reference"
-                      value={cancelledChequeUrl}
-                      onChange={(e) => setCancelledChequeUrl(e.target.value)}
-                      className="flex-1 text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg font-mono text-slate-800"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setCancelledChequeUrl('https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600')}
-                      className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold rounded-lg flex items-center gap-1 cursor-pointer"
-                    >
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>Sample</span>
-                    </button>
+                ) : (
+                  <div className="space-y-2">
+                    {!selectedVendor && (
+                      <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2 text-amber-900 font-bold">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>NEW VENDOR - PENDING ACCOUNTS VERIFICATION</span>
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-200 text-amber-900 rounded font-mono">
+                          CHEQUE REQUIRED
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[11px] font-bold text-slate-700">
+                          Cancelled Cheque Document Proof <span className="text-rose-500">*</span>
+                        </label>
+                        <span className="text-[10px] text-amber-700 font-semibold">
+                          Mandatory for New Vendor Accounts Verification
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="file"
+                          ref={chequeFileInputRef}
+                          accept="image/*,application/pdf"
+                          className="hidden"
+                          onChange={handleChequeFileUpload}
+                        />
+                        <input
+                          type="text"
+                          required={!selectedVendor || beneficiaryStatus === 'NEEDS_ADDITION'}
+                          placeholder="Upload cancelled cheque or paste URL..."
+                          value={cancelledChequeUrl}
+                          onChange={(e) => setCancelledChequeUrl(e.target.value)}
+                          className="flex-1 text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg font-mono text-slate-800"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => chequeFileInputRef.current?.click()}
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload Proof</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Beneficiary Master Verification Toggle */}
                 <div className="flex items-center justify-between pt-2 border-t border-slate-200">
                   <span className="text-xs font-bold text-slate-700">Beneficiary Master Status:</span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setBeneficiaryStatus('VERIFIED')}
-                      className={`px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer ${
-                        beneficiaryStatus === 'VERIFIED'
-                          ? 'bg-emerald-600 text-white shadow-2xs'
-                          : 'bg-slate-100 text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      Verified Active Account
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setBeneficiaryStatus('NEEDS_ADDITION')}
-                      className={`px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer ${
-                        beneficiaryStatus === 'NEEDS_ADDITION'
-                          ? 'bg-amber-600 text-white shadow-2xs'
-                          : 'bg-slate-100 text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      Queue Beneficiary Addition
-                    </button>
-                  </div>
+                  {!selectedVendor ? (
+                    <span className="px-2.5 py-1 text-xs rounded-lg font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Pending Accounts Verification (New Vendor)</span>
+                    </span>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setBeneficiaryStatus('VERIFIED')}
+                        className={`px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer ${
+                          beneficiaryStatus === 'VERIFIED'
+                            ? 'bg-emerald-600 text-white shadow-2xs'
+                            : 'bg-slate-100 text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Verified Active Account
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBeneficiaryStatus('NEEDS_ADDITION')}
+                        className={`px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer ${
+                          beneficiaryStatus === 'NEEDS_ADDITION'
+                            ? 'bg-amber-600 text-white shadow-2xs'
+                            : 'bg-slate-100 text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Queue Beneficiary Addition
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -762,6 +872,42 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
               </div>
             </div>
 
+            {/* ERP Purchase Order (PO) PDF Document Attachment */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-slate-800">
+                  ERP Purchase Order (PO) Copy / PDF
+                </label>
+                <span className="text-[10px] text-slate-500 font-medium">
+                  Auto-links to Stage 4 & PO_TO_PAYMENT workflow
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  ref={poFileInputRef}
+                  accept="application/pdf,image/*"
+                  className="hidden"
+                  onChange={handlePoFileUpload}
+                />
+                <input
+                  type="text"
+                  placeholder="Upload PO PDF file or paste document URL..."
+                  value={poUpload}
+                  onChange={(e) => setPoUpload(e.target.value)}
+                  className="flex-1 text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => poFileInputRef.current?.click()}
+                  className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Attach ERP PO</span>
+                </button>
+              </div>
+            </div>
+
             {/* Action buttons */}
             <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-3">
               <button
@@ -776,7 +922,11 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
                 className="px-5 py-2 bg-indigo-700 hover:bg-indigo-800 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer"
               >
                 <Check className="w-4 h-4" />
-                <span>Submit Payment Requisition</span>
+                <span>
+                  {!selectedVendor || beneficiaryStatus === 'NEEDS_ADDITION'
+                    ? 'Submit to Accounts for Verification'
+                    : 'Submit Payment Requisition'}
+                </span>
               </button>
             </div>
           </form>

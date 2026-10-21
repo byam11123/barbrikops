@@ -749,9 +749,17 @@ export default function App() {
     // Checkpoint branching rules:
     // 1. Custom configured conditional jump commands from Template Studio:
     if (currentStage.logic?.gatewayType === 'CONDITIONAL_JUMP') {
-      const dec = decision || (currentStage.submittedData?.status === 'APPROVED' ? 'Yes' : currentStage.submittedData?.status === 'REJECTED' ? 'No' : undefined);
-      if (dec === 'Yes' && typeof currentStage.logic.yesTargetStageIndex === 'number') {
-        const target = currentStage.logic.yesTargetStageIndex;
+      const fieldId = (currentStage.logic as any).conditionFieldId;
+      const dec = decision || (fieldId && currentStage.submittedData?.[fieldId]) || (currentStage.submittedData?.isAdvancePaymentRequired as string) || (currentStage.submittedData?.status === 'APPROVED' ? 'Yes' : currentStage.submittedData?.status === 'REJECTED' ? 'No' : undefined);
+      const yesTarget = typeof currentStage.logic.yesTargetStageIndex === 'number'
+        ? currentStage.logic.yesTargetStageIndex
+        : (currentStage.logic as any).thenTargetStageIndex;
+      const noTarget = typeof currentStage.logic.noTargetStageIndex === 'number'
+        ? currentStage.logic.noTargetStageIndex
+        : (currentStage.logic as any).elseTargetStageIndex;
+
+      if (dec === 'Yes' && typeof yesTarget === 'number') {
+        const target = yesTarget;
         if (target > currentIndex + 1) {
           for (let i = currentIndex + 1; i < target && i < updatedStages.length; i++) {
             if (updatedStages[i]) {
@@ -761,8 +769,8 @@ export default function App() {
           }
         }
         nextIndex = target;
-      } else if (dec === 'No' && typeof currentStage.logic.noTargetStageIndex === 'number') {
-        const target = currentStage.logic.noTargetStageIndex;
+      } else if (dec === 'No' && typeof noTarget === 'number') {
+        const target = noTarget;
         if (target > currentIndex + 1) {
           for (let i = currentIndex + 1; i < target && i < updatedStages.length; i++) {
             if (updatedStages[i]) {
@@ -912,13 +920,6 @@ export default function App() {
         }
       }
 
-      if (currentStage.stageId === 'STG-06' && decision === 'No') {
-        if (updatedStages[6]) {
-          updatedStages[6].status = 'Skipped';
-          updatedStages[6].notes = 'Skipped: Single OEM quotation sufficient';
-          nextIndex = 7;
-        }
-      }
 
       if (currentStage.stageId === 'STG-10' && decision === 'No') {
         if (updatedStages[10]) {
@@ -1021,21 +1022,8 @@ export default function App() {
           else if (targetType === 'PAYMENT_TO_DISPATCH') childStages = FMS_PAYMENT_TO_DISPATCH_STAGES;
           else if (targetType === 'SITE_RECEIVE') childStages = FMS_SITE_RECEIVE_STAGES;
 
-          // Resolve Dynamic Assignee Rule
-          let resolvedChildAssignee = trigger.targetAssignee;
-          if (!resolvedChildAssignee) {
-            if (trigger.targetRole === 'PURCHASE_MANAGER' || trigger.targetRole === 'PURCHASE_HEAD' || targetType === 'INDENT_PURCHASE' || targetType === 'PURCHASE') {
-              resolvedChildAssignee = 'Brahmanand Patel';
-            } else if (trigger.targetRole === 'STORE_MANAGER' || trigger.targetRole === 'STORE_DISPATCH' || targetType === 'STORE_TO_SITE_DISPATCH') {
-              resolvedChildAssignee = 'Amanat Bharadwaj';
-            } else if (trigger.targetRole === 'FINANCE_ACCOUNTS' || targetType === 'PO_TO_PAYMENT') {
-              resolvedChildAssignee = 'MANISH KOSHLE';
-            } else if (trigger.targetAssigneeRule === 'INHERIT_PARENT') {
-              resolvedChildAssignee = currentStage.assignee || flow.poAssignTo || currentUser.name;
-            } else {
-              resolvedChildAssignee = childStages[0]?.whoDefaultAssignee || 'Operations';
-            }
-          }
+          // Stage 0 assignee MUST strictly be childStages[0].whoDefaultAssignee (never flow.poAssignTo or currentUser.name)
+          const resolvedChildAssignee = childStages[0]?.whoDefaultAssignee || 'Operations';
 
           const newChildFlow: FmsInstance = {
             id: `fms-inst-${targetType.toLowerCase()}-${flow.indentNo}-${Date.now().toString().slice(-4)}`,
@@ -1066,7 +1054,9 @@ export default function App() {
             stages: childStages.map((s, sIdx) => ({
               stageId: s.stageId,
               stageName: s.name,
-              assignee: sIdx === 0 ? resolvedChildAssignee : s.whoDefaultAssignee,
+              assignee: sIdx === 0 ? (childStages[0]?.whoDefaultAssignee || s.whoDefaultAssignee) : s.whoDefaultAssignee,
+              whoRole: s.whoRole,
+              whoDefaultAssignee: s.whoDefaultAssignee,
               how: s.howChannel,
               status: sIdx === 0 ? 'In Progress' : 'Pending',
               plannedDateTime: sIdx === 0 ? formattedNow : undefined,
@@ -1202,6 +1192,8 @@ export default function App() {
             id: `fms-inst-ind-${flow.indentNo}-${Date.now().toString().slice(-4)}`,
             flowId: `FLOW-IND-${flow.indentNo}`,
             flowType: 'INDENT_PURCHASE',
+            templateKey: 'INDENT_TO_PO',
+            customTemplateId: undefined,
             parentFlowId: flow.id,
             parentFlowType: flow.flowType,
             parentFlowIndentNo: flow.indentNo,
@@ -1210,7 +1202,7 @@ export default function App() {
             indentDate: flow.indentDate || formattedNow,
             siteName: flow.siteName,
             priority: flow.priority,
-            poAssignTo: 'Brahmanand Patel',
+            poAssignTo: 'Shyam Rao Sureshe',
             currentStageId: 'STG-02',
             currentStageIndex: 1,
             totalStages: FMS_STANDARD_PURCHASE_STAGES.length,
@@ -1223,21 +1215,26 @@ export default function App() {
             stages: FMS_STANDARD_PURCHASE_STAGES.map((s, sIdx) => ({
               stageId: s.stageId,
               stageName: s.name,
-              assignee: sIdx <= 1 ? 'Brahmanand Patel' : s.whoDefaultAssignee,
+              assignee: s.whoDefaultAssignee,
+              whoRole: s.whoRole,
+              whoDefaultAssignee: s.whoDefaultAssignee,
               how: s.howChannel,
               status: sIdx === 0 ? 'Done' : sIdx === 1 ? 'In Progress' : 'Pending',
               plannedDateTime: sIdx <= 1 ? formattedNow : undefined,
               actualDateTime: sIdx === 0 ? formattedNow : undefined,
               notes: sIdx === 0 ? `Material requisition triaged at store and forwarded to Purchase from Stock Check #${flow.indentNo}` : undefined,
+              fields: s.fields,
+              logic: (s as any).logic,
+              subWorkflowTrigger: (s as any).subWorkflowTrigger,
             })),
           };
           updatedFlowsList = [newPurchaseFlow, ...updatedFlowsList];
 
-          // Emit high-priority notification to Brahmanand Patel
+          // Emit high-priority notification to Shyam Rao Sureshe
           storageAdapter.addNotification({
-            userId: 'USR-002', // Brahmanand Patel
+            userId: 'USR-004', // Shyam Rao Sureshe
             title: `Action Required: Purchase Indent #${purchaseIndentNo}`,
-            message: `Purchase requisition triaged from Stock Check #${flow.indentNo} (${purchaseItems.length} items). Assigned to Brahmanand Patel for Stage 2: DEGRADED MATERIAL CHECK.`,
+            message: `Purchase requisition triaged from Stock Check #${flow.indentNo} (${purchaseItems.length} items). Assigned to Shyam Rao Sureshe for Stage 2: GET QUOTATION & GENERATE CS.`,
             type: 'FMS_ACTION_REQUIRED',
             linkTab: 'fms',
             linkEntityId: newPurchaseFlow.id,
@@ -1441,7 +1438,7 @@ export default function App() {
           linkedFlowId: flow.flowId,
           poNumber: resolvedPoNumber,
           vendorName: resolvedVendor,
-          poAssignTo: 'MANISH KOSHLE',
+          poAssignTo: FMS_PO_PAYMENT_STAGES[0]?.whoDefaultAssignee || 'Priyanka Agrawal',
           indentNo: flow.indentNo,
           indentDate: flow.indentDate || formattedNow,
           poDate: formattedNow,
@@ -1460,7 +1457,7 @@ export default function App() {
           stages: FMS_PO_PAYMENT_STAGES.map((s, sIdx) => ({
             stageId: s.stageId,
             stageName: s.name,
-            assignee: s.whoDefaultAssignee,
+            assignee: sIdx === 0 ? (FMS_PO_PAYMENT_STAGES[0]?.whoDefaultAssignee || 'Priyanka Agrawal') : s.whoDefaultAssignee,
             how: s.howChannel,
             status: sIdx === 0 ? 'In Progress' : 'Pending',
             plannedDateTime: sIdx === 0 ? formattedNow : undefined,
@@ -1508,6 +1505,73 @@ export default function App() {
         };
         updatedFlowsList = [newPsdFlow, ...updatedFlowsList];
         showToast(`Payment completed! Purchase to Store to Dispatch Flow created for Indent #${flow.indentNo}.`);
+      }
+    }
+
+    // 4. When Store Manager completes GRN / Material Receipt (PURCHASE_TO_STORE_DISPATCH, SITE_RECEIVE, or INDENT_TO_PO Stage 5):
+    // If no PO_TO_PAYMENT workflow exists yet (Credit PO path), automatically spawn PO_TO_PAYMENT for Accounts!
+    const isGrnCompletion =
+      (flow.flowType === 'PURCHASE_TO_STORE_DISPATCH' && (currentStage.stageId === 'STG-PSD-01' || currentStage.stageName.toLowerCase().includes('grn') || currentStage.stageName.toLowerCase().includes('receive'))) ||
+      (flow.flowType === 'SITE_RECEIVE') ||
+      (flow.flowType === 'INDENT_TO_PO' && (currentStage.stageId === 'STG-05' || currentStage.stageName.toLowerCase().includes('dispatch') || currentStage.stageName.toLowerCase().includes('collection')));
+
+    if (isGrnCompletion) {
+      const existingPayFlow = updatedFlowsList.find(
+        (f) => f.flowType === 'PO_TO_PAYMENT' && (f.linkedFlowId === flow.flowId || f.indentNo === flow.indentNo)
+      );
+
+      if (!existingPayFlow) {
+        const customizedTpl = storageAdapter.getAllMasterTemplates().find((t) => t.templateKey === 'PO_TO_PAYMENT' || t.id === 'builtin_PO_TO_PAYMENT');
+        const initialPayStages = customizedTpl
+          ? customizedTpl.stages.map((stg, idx) => ({
+              stageId: stg.stageId,
+              stageName: stg.stageName || (stg as any).name || `Stage ${idx + 1}`,
+              whoRole: stg.whoRole,
+              whoDefaultAssignee: stg.whoDefaultAssignee,
+              assignee: stg.whoDefaultAssignee || 'Priyanka Agrawal',
+              how: (stg as any).howChannel || 'IN-APP',
+              status: idx === 0 ? ('In Progress' as const) : ('Pending' as const),
+              plannedDateTime: formattedNow,
+              fields: stg.fields,
+            }))
+          : FMS_PO_PAYMENT_STAGES.map((stg, idx) => ({
+              stageId: stg.stageId,
+              stageName: stg.name,
+              whoRole: stg.whoRole,
+              whoDefaultAssignee: stg.whoDefaultAssignee,
+              assignee: stg.whoDefaultAssignee || 'Priyanka Agrawal',
+              how: stg.howChannel || 'IN-APP',
+              status: idx === 0 ? ('In Progress' as const) : ('Pending' as const),
+              plannedDateTime: formattedNow,
+              fields: stg.fields,
+            }));
+
+        const poList = (flow as any).poList || ((flow as any).submittedData)?.poList || [];
+        const poNum = flow.poNumber || (Array.isArray(poList) && poList[0]?.poNumber) || `BPL/PO/${flow.indentNo}`;
+        const newPayFlow: FmsInstance = {
+          id: `fms-inst-pay-${flow.indentNo}-${Date.now()}`,
+          flowId: `FLOW-PAY-${poNum.replace(/[^a-zA-Z0-9]/g, '-')}`,
+          flowType: 'PO_TO_PAYMENT',
+          linkedFlowId: flow.flowId,
+          poNumber: poNum,
+          vendorName: flow.vendorName || (Array.isArray(poList) && poList[0]?.vendorName) || 'Awarded Vendor',
+          poAmount: flow.poAmount || 0,
+          poAssignTo: 'Priyanka Agrawal',
+          indentNo: flow.indentNo,
+          siteName: flow.siteName,
+          createdAt: formattedNow,
+          updatedAt: formattedNow,
+          currentStageIndex: 0,
+          currentStageId: initialPayStages[0]?.stageId || 'STG-PAY-01',
+          totalStages: initialPayStages.length,
+          stages: initialPayStages,
+          status: 'IN_PROGRESS',
+          priority: 'Urgent',
+          totalDelayHours: 0,
+        };
+
+        updatedFlowsList = [newPayFlow, ...updatedFlowsList];
+        showToast(`GRN Material Receipt Completed! Credit Payment Requisition spawned in Accounts Inbox for Indent #${flow.indentNo}.`);
       }
     }
 

@@ -971,6 +971,98 @@ class StorageAdapter {
       }
     }
 
+    // Enforce 5-stage architecture for INDENT_TO_PO / INDENT_PURCHASE
+    if (
+      flow.flowType === 'INDENT_PURCHASE' || 
+      flow.flowType === 'INDENT_TO_PO' || 
+      flow.templateKey === 'INDENT_TO_PO' || 
+      flow.templateKey === 'INDENT_PURCHASE' ||
+      flow.indentNo?.endsWith('-PUR') ||
+      flow.flowId?.includes('-PUR')
+    ) {
+      if (updatedStages.length !== 5 || updatedStages.length > 5) {
+        const newStages = FMS_STANDARD_PURCHASE_STAGES.map((s, idx) => {
+          const old = updatedStages[idx];
+          return {
+            stageId: s.stageId,
+            stageName: s.name,
+            whoRole: s.whoRole,
+            whoDefaultAssignee: s.whoDefaultAssignee,
+            assignee: s.whoDefaultAssignee,
+            how: s.howChannel,
+            status: old ? old.status : (idx === 0 ? 'Done' : idx === 1 ? 'In Progress' : 'Pending'),
+            plannedDateTime: old?.plannedDateTime,
+            actualDateTime: old?.actualDateTime,
+            timeDelayHours: old?.timeDelayHours || 0,
+            decisionValue: old?.decisionValue,
+            notes: old?.notes,
+            fields: s.fields,
+            submittedData: old?.submittedData,
+            logic: (s as any).logic,
+            subWorkflowTrigger: (s as any).subWorkflowTrigger,
+          };
+        });
+
+        updatedStages = newStages as any;
+        flow = {
+          ...flow,
+          poAssignTo: 'Shyam Rao Sureshe',
+          stages: updatedStages,
+          totalStages: 5,
+          currentStageIndex: Math.min(flow.currentStageIndex, 4),
+        };
+        changed = true;
+      } else if (updatedStages.length === 5) {
+        // Synchronize stage fields, logic, roles, assignees, and subWorkflowTrigger
+        let stagesUpdated = false;
+        const syncedStages = updatedStages.map((stg, idx) => {
+          const ref = FMS_STANDARD_PURCHASE_STAGES[idx];
+          if (!ref) return stg;
+          const hasEmbed = stg.fields?.some((f) => f.type === 'CS_MODULE_EMBED' || f.type === 'CS_L1_APPROVAL_EMBED' || f.type === 'SPLIT_PO_GENERATOR');
+          const refHasEmbed = ref.fields?.some((f) => f.type === 'CS_MODULE_EMBED' || f.type === 'CS_L1_APPROVAL_EMBED' || f.type === 'SPLIT_PO_GENERATOR');
+          const lacksLogic = !stg.logic && Boolean((ref as any).logic);
+          const lacksTrigger = !stg.subWorkflowTrigger && Boolean((ref as any).subWorkflowTrigger);
+
+          const wrongAssignee = 
+            (idx === 1 && stg.assignee !== 'Shyam Rao Sureshe') || 
+            (idx === 2 && stg.assignee !== 'Pranjal Agrawal') ||
+            (idx === 3 && stg.assignee !== 'Shyam Rao Sureshe') ||
+            (idx === 4 && stg.assignee !== 'Rajendra / Vivek / Rajnikant') ||
+            !stg.assignee;
+          const wrongRole = stg.whoRole !== ref.whoRole;
+          const wrongName = stg.stageName !== ref.name;
+
+          if ((refHasEmbed && !hasEmbed) || lacksLogic || lacksTrigger || !stg.fields || stg.fields.length === 0 || wrongAssignee || wrongRole || wrongName || !stg.whoDefaultAssignee) {
+            stagesUpdated = true;
+            return {
+              ...stg,
+              stageId: ref.stageId,
+              stageName: ref.name,
+              whoRole: ref.whoRole,
+              whoDefaultAssignee: ref.whoDefaultAssignee,
+              assignee: wrongAssignee ? ref.whoDefaultAssignee : stg.assignee,
+              how: ref.howChannel,
+              fields: ref.fields,
+              logic: (ref as any).logic || stg.logic,
+              subWorkflowTrigger: (ref as any).subWorkflowTrigger || stg.subWorkflowTrigger,
+            };
+          }
+          return stg;
+        });
+
+        if (stagesUpdated || flow.poAssignTo !== 'Shyam Rao Sureshe') {
+          updatedStages = syncedStages as any;
+          flow = {
+            ...flow,
+            poAssignTo: 'Shyam Rao Sureshe',
+            stages: updatedStages,
+            totalStages: 5,
+          };
+          changed = true;
+        }
+      }
+    }
+
     // Never allow currentStageIndex to exceed max available stage index
     if (updatedStages.length > 0 && flow.currentStageIndex >= updatedStages.length) {
       flow = {
@@ -1259,11 +1351,13 @@ class StorageAdapter {
         indentNo: purchIndentNo,
         requisitionNumber: purchIndentNo,
         flowType: 'INDENT_PURCHASE',
+        templateKey: 'INDENT_TO_PO',
+        customTemplateId: undefined,
         title: `[PURCHASE REQUISITION TRACK] ${parentFlow.title || 'Market Requisition'}`,
         status: 'In Progress',
         isClosed: false,
         lineItems: purchaseItems,
-        poAssignTo: 'Brahmanand Patel',
+        poAssignTo: 'Shyam Rao Sureshe',
         currentStageIndex: 1,
         currentStageId: 'STG-02',
         createdAt: nowStr,
@@ -1271,13 +1365,18 @@ class StorageAdapter {
         stages: FMS_STANDARD_PURCHASE_STAGES.map((stg, idx) => ({
           stageId: stg.stageId,
           stageName: stg.name,
-          assignee: idx <= 1 ? 'Brahmanand Patel' : (stg.whoDefaultAssignee || 'Brahmanand Patel'),
+          assignee: stg.whoDefaultAssignee,
+          whoRole: stg.whoRole,
+          whoDefaultAssignee: stg.whoDefaultAssignee,
           how: stg.howChannel || 'In-App Form',
           status: idx === 0 ? ('Done' as const) : idx === 1 ? ('In Progress' as const) : ('Pending' as const),
           stageStartedAt: idx <= 1 ? nowIso : undefined,
           actualTimestamp: idx === 0 ? nowIso : undefined,
           notes: idx === 0 ? `Received & triaged at store from Indent #${baseIndentNo}; forwarded to Purchase Department` : undefined,
           plannedTimestamp: idx === 1 ? new Date(Date.now() + (stg.slaHours || 24) * 3600 * 1000).toISOString() : undefined,
+          fields: stg.fields,
+          logic: (stg as any).logic,
+          subWorkflowTrigger: (stg as any).subWorkflowTrigger,
         })),
         instanceDataPool: {
           ...(parentFlow.instanceDataPool || {}),
@@ -1288,11 +1387,11 @@ class StorageAdapter {
         },
       };
 
-      // Emit high-priority action notification to Brahmanand Patel
+      // Emit high-priority action notification to Shyam Rao Sureshe
       this.addNotification({
-        userId: 'USR-002', // Brahmanand Patel
+        userId: 'USR-004', // Shyam Rao Sureshe
         title: `Action Required: Purchase Indent #${purchIndentNo}`,
-        message: `Material requisition triaged and forwarded from Central Store (${purchaseItems.length} items). Assigned to Brahmanand Patel for Degraded Material Check.`,
+        message: `Material requisition triaged and forwarded from Central Store (${purchaseItems.length} items). Assigned to Shyam Rao Sureshe for Stage 2: GET QUOTATION & GENERATE CS.`,
         type: 'FMS_ACTION_REQUIRED',
         linkTab: 'fms',
         linkEntityId: purchId,
@@ -2078,7 +2177,8 @@ class StorageAdapter {
         (c) =>
           (c.templateKey && (
             c.templateKey === sys.templateKey ||
-            (sys.templateKey === 'CHECK_STOCK' && (c.templateKey === 'STORE_CHECK_STOCK' || c.id === 'tpl_store_check_stock' || c.name.toLowerCase().includes('store check stock')))
+            (sys.templateKey === 'CHECK_STOCK' && (c.templateKey === 'STORE_CHECK_STOCK' || c.id === 'tpl_store_check_stock' || c.name.toLowerCase().includes('store check stock'))) ||
+            ((sys.templateKey === 'INDENT_TO_PO' || sys.templateKey === 'INDENT_PURCHASE') && (c.templateKey === 'INDENT_TO_PO' || c.templateKey === 'INDENT_PURCHASE' || c.id === 'tpl_indent_purchase'))
           )) ||
           c.id === sys.id ||
           c.id === `builtin_${sys.templateKey}`
@@ -2099,7 +2199,7 @@ class StorageAdapter {
             subWorkflowTrigger: (s as any).subWorkflowTrigger,
             subWorkflowTriggers: (s as any).subWorkflowTriggers,
           }));
-        } else if ((sys.templateKey === 'INDENT_PURCHASE' || sys.templateKey === 'INDENT_TO_PO') && tplStages && tplStages.length > 7) {
+        } else if ((sys.templateKey === 'INDENT_PURCHASE' || sys.templateKey === 'INDENT_TO_PO') && tplStages && tplStages.length !== 5) {
           tplStages = FMS_STANDARD_PURCHASE_STAGES.map((s, idx) => ({
             stageId: s.stageId,
             stageName: s.name,
@@ -2505,7 +2605,31 @@ class StorageAdapter {
         localStorage.setItem(STORAGE_KEYS.CS_SHEETS, JSON.stringify(INITIAL_COMPARATIVE_STATEMENTS));
         return INITIAL_COMPARATIVE_STATEMENTS;
       }
-      return JSON.parse(data);
+      const parsed: ComparativeStatement[] = JSON.parse(data);
+      return parsed.map((s) => {
+        let sCopy = { ...s };
+        const approver = sCopy.approvalDetails?.approverName || sCopy.approvedBy || '';
+        if (
+          approver.toLowerCase().includes('brahmanand') ||
+          approver.toLowerCase().includes('shyam')
+        ) {
+          sCopy.preparedBy = sCopy.preparedBy || approver;
+          if (sCopy.approvalDetails) {
+            sCopy.approvalDetails = {
+              ...sCopy.approvalDetails,
+              approverName: 'Pranjal Agrawal',
+              approverDesignation: 'Finance Approver / Director',
+            };
+          }
+          if (sCopy.approvedBy) {
+            sCopy.approvedBy = 'Pranjal Agrawal';
+          }
+        }
+        if (!sCopy.preparedBy) {
+          sCopy.preparedBy = 'Shyam Rao Sureshe';
+        }
+        return sCopy;
+      });
     } catch (e) {
       return INITIAL_COMPARATIVE_STATEMENTS;
     }
@@ -2524,9 +2648,17 @@ class StorageAdapter {
     const statementWithMeta: ComparativeStatement = {
       ...statement,
       companyName: 'Barbrik Project Ltd.',
+      preparedBy: statement.preparedBy || 'Shyam Rao Sureshe',
       updatedAt: timestamp,
       createdAt: statement.createdAt || timestamp,
     };
+    if (statementWithMeta.approvalDetails) {
+      statementWithMeta.approvalDetails.approverName = 'Pranjal Agrawal';
+      statementWithMeta.approvalDetails.approverDesignation = statementWithMeta.approvalDetails.approverDesignation || 'Finance Approver / Director';
+    }
+    if (statementWithMeta.approvedBy && (statementWithMeta.approvedBy.toLowerCase().includes('brahmanand') || statementWithMeta.approvedBy.toLowerCase().includes('shyam'))) {
+      statementWithMeta.approvedBy = 'Pranjal Agrawal';
+    }
 
     if (existingIdx >= 0) {
       updated[existingIdx] = statementWithMeta;
@@ -2956,6 +3088,45 @@ class StorageAdapter {
         action: 'STATUS_CHANGE',
         entityId: (updatedRecord as BankPaymentRecord).sheetNo,
         details: `${approved ? 'Approved' : 'Rejected'} Bank Payment Request #${(updatedRecord as BankPaymentRecord).sheetNo}. ${rejectionReason ? `Reason: ${rejectionReason}` : ''}`
+      });
+    }
+
+    return updatedRecord;
+  }
+
+  public verifyBankPaymentBeneficiary(
+    idOrSheetNo: string,
+    verified: boolean,
+    currentUser: UserProfile,
+    reEnteredDetails?: { reEnteredAccountNo: string; reEnteredIfscCode: string }
+  ): BankPaymentRecord | null {
+    const list = this.getBankPayments();
+    let updatedRecord: BankPaymentRecord | null = null;
+
+    const updated = list.map((p) => {
+      if (p.id === idOrSheetNo || p.sheetNo === idOrSheetNo) {
+        updatedRecord = {
+          ...p,
+          verifiedByAccountant: verified,
+          accountantVerificationTimestamp: new Date().toLocaleString('en-GB'),
+          reEnteredAccountNo: reEnteredDetails?.reEnteredAccountNo,
+          reEnteredIfscCode: reEnteredDetails?.reEnteredIfscCode,
+          beneficiaryMasterStatus: verified ? 'VERIFIED' : p.beneficiaryMasterStatus,
+        };
+        return updatedRecord;
+      }
+      return p;
+    });
+
+    if (updatedRecord) {
+      this.saveBankPayments(updated);
+      this.logAudit({
+        userId: currentUser.userId,
+        userName: currentUser.name,
+        module: 'BANKING',
+        action: 'UPDATE',
+        entityId: (updatedRecord as BankPaymentRecord).sheetNo,
+        details: `Accountant Double-Entry Verification ${verified ? 'PASSED' : 'FAILED'} for #${(updatedRecord as BankPaymentRecord).sheetNo}`,
       });
     }
 

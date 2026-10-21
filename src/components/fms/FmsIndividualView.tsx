@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   ArrowLeft,
   Calendar,
@@ -35,6 +35,7 @@ import { StoreTriageModal } from './StoreTriageModal';
 import { EmbeddedL1ApprovalModal } from './EmbeddedL1ApprovalModal';
 import { FmsItemTable } from './FmsItemTable';
 import { storageAdapter } from '../../services/storageAdapter';
+import { isUserResponsibleForStage, getStageDefinitionsForFlowType } from '../../services/stageAssignment';
 
 interface FmsIndividualViewProps {
   flow: FmsInstance;
@@ -64,6 +65,9 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
 
   const isSuperAdmin = isUserSuperAdmin(currentUser);
   const isAdmin = isUserAdminOrSuperAdmin(currentUser);
+
+  const allTemplates = useMemo(() => storageAdapter.getAllMasterTemplates(), []);
+  const masterTemplate = useMemo(() => allTemplates.find(t => t.templateKey === activeFlow.flowType || t.id === activeFlow.customTemplateId), [allTemplates, activeFlow.flowType, activeFlow.customTemplateId]);
 
   // Formatting helpers
   const formatDateTime = (isoString?: string) => {
@@ -443,6 +447,8 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                 {activeFlow.stages.map((stage, idx) => {
                   const isActive = idx === activeFlow.currentStageIndex;
                   const isDone = stage.status === 'Done' || stage.status === 'Completed' || stage.status === 'Skipped';
+                  const stageDef = masterTemplate?.stages[idx] || getStageDefinitionsForFlowType(activeFlow.flowType)[idx];
+                  const canExecute = isUserResponsibleForStage(stageDef, stage, currentUser);
 
                   return (
                     <tr
@@ -587,7 +593,7 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                         )}
                       </td>
                       <td className="py-3.5 px-3 text-center">
-                        {idx === 1 || stage.stageId === 'STG-STK-02' ? (
+                        {((activeFlow.flowType === 'CHECK_STOCK' || activeFlow.templateKey === 'CHECK_STOCK') && !activeFlow.indentNo?.endsWith('-PUR') && !activeFlow.flowId?.includes('-PUR') && (idx === 1 || stage.stageId === 'STG-STK-02')) ? (
                           <button
                             type="button"
                             onClick={() => setIsStoreTriageOpen(true)}
@@ -601,13 +607,23 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                             <span>{isActive ? 'Execute Stage' : 'View Details'}</span>
                           </button>
                         ) : isActive && onOpenStageAction ? (
-                          <button
-                            type="button"
-                            onClick={() => onOpenStageAction(activeFlow, idx)}
-                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-[11px] shadow-xs transition-all flex items-center gap-1 mx-auto cursor-pointer"
-                          >
-                            <span>Execute Stage</span>
-                          </button>
+                          canExecute ? (
+                            <button
+                              type="button"
+                              onClick={() => onOpenStageAction(activeFlow, idx)}
+                              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-[11px] shadow-xs transition-all flex items-center gap-1 mx-auto cursor-pointer"
+                            >
+                              <span>Execute Stage</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled
+                              className="px-3 py-1.5 bg-slate-100 text-slate-400 rounded-lg font-medium text-[11px] border border-slate-200 cursor-not-allowed mx-auto"
+                            >
+                              <span>View Details</span>
+                            </button>
+                          )
                         ) : isDone && onOpenStageAction ? (
                           <button
                             type="button"
@@ -640,7 +656,7 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                 Individual items listed on physical indent slip with triage allocation
               </p>
             </div>
-            {activeFlow.currentStageIndex === 1 && (
+            {activeFlow.currentStageIndex === 1 && (activeFlow.flowType === 'CHECK_STOCK' || activeFlow.templateKey === 'CHECK_STOCK') && !activeFlow.indentNo?.endsWith('-PUR') && (
               <button
                 onClick={() => setIsStoreTriageOpen(true)}
                 className="px-3.5 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs"

@@ -682,7 +682,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
         priority,
         currentStageId: initialStages[1]?.stageId || 'STG-02',
         currentStageIndex: 1,
-        totalStages: 12,
+        totalStages: initialStages.length,
         status: 'In Progress',
         createdAt: now.toLocaleString('en-GB'),
         updatedAt: now.toLocaleString('en-GB'),
@@ -1280,7 +1280,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
               <optgroup label="Standard Department Workflows">
                 <option value="CHECK_STOCK">Store Check Stock (Store Inventory, 5 stages)</option>
                 <option value="STORE_TO_SITE_DISPATCH">Store to Site Dispatch (Stock to Site, 9 stages)</option>
-                <option value="INDENT_PURCHASE">Purchase Indent to PO (Purchase Dept, 12 stages)</option>
+                <option value="INDENT_PURCHASE">Purchase Indent to PO (Purchase Dept, 7 stages)</option>
                 <option value="PO_TO_PAYMENT">Accounts PO to Payment (Accounts Dept, 15 stages)</option>
                 <option value="VENDOR_PAYMENT_TO_DISPATCH">Vendor Payment to Dispatch (Vendor QC, 7 stages)</option>
                 <option value="PURCHASE_TO_STORE_DISPATCH">Purchase to Store Dispatch (Store to Site, 10 stages)</option>

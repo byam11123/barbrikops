@@ -419,7 +419,7 @@ export interface FmsStageFieldColumnConfig {
 export interface FmsStageFieldConfig {
   id: string;
   label: string;
-  type: 'TEXT' | 'NUMBER' | 'SELECT' | 'APPROVAL' | 'STATUS_DONE' | 'URL' | 'TEXTAREA' | 'DATE' | 'FILE' | 'CHECKBOX' | 'MULTI_ITEM_TABLE' | 'CS_MODULE_EMBED' | 'CS_L1_APPROVAL_EMBED' | 'SPLIT_PO_GENERATOR';
+  type: 'TEXT' | 'NUMBER' | 'SELECT' | 'APPROVAL' | 'STATUS_DONE' | 'URL' | 'TEXTAREA' | 'DATE' | 'FILE' | 'CHECKBOX' | 'MULTI_ITEM_TABLE' | 'CS_MODULE_EMBED' | 'CS_L1_APPROVAL_EMBED' | 'SPLIT_PO_GENERATOR' | 'ACCOUNTS_DOUBLE_ENTRY_VERIFICATION';
   options?: string[];
   required?: boolean;
   defaultValue?: string;
@@ -487,7 +487,7 @@ export interface FmsStageFieldColumnConfig {
 export interface FmsStageFieldConfig {
   id: string;
   label: string;
-  type: 'TEXT' | 'NUMBER' | 'SELECT' | 'APPROVAL' | 'STATUS_DONE' | 'URL' | 'TEXTAREA' | 'DATE' | 'FILE' | 'CHECKBOX' | 'MULTI_ITEM_TABLE' | 'CS_MODULE_EMBED' | 'CS_L1_APPROVAL_EMBED' | 'SPLIT_PO_GENERATOR';
+  type: 'TEXT' | 'NUMBER' | 'SELECT' | 'APPROVAL' | 'STATUS_DONE' | 'URL' | 'TEXTAREA' | 'DATE' | 'FILE' | 'CHECKBOX' | 'MULTI_ITEM_TABLE' | 'CS_MODULE_EMBED' | 'CS_L1_APPROVAL_EMBED' | 'SPLIT_PO_GENERATOR' | 'ACCOUNTS_DOUBLE_ENTRY_VERIFICATION';
   options?: string[];
   required?: boolean;
   defaultValue?: string;
@@ -568,6 +568,8 @@ export interface FmsOverrideLog {
 export interface FmsStageExecution {
   stageId: string;
   stageName: string;
+  whoRole?: string;
+  whoDefaultAssignee?: string;
   assignee: string;
   how: string;
   plannedDateTime?: string;
@@ -648,6 +650,7 @@ export interface FmsInstance {
   id: string;
   flowId: string;
   title?: string;
+  templateKey?: string;
   flowType: 'CHECK_STOCK' | 'INDENT_PURCHASE' | 'PO_TO_PAYMENT' | 'PURCHASE_TO_STORE_DISPATCH' | 'STORE_TO_SITE_DISPATCH' | 'PAYMENT_TO_DISPATCH' | 'SITE_RECEIVE' | 'ACCOUNTS_INVOICE_COLLECTION' | 'HR_ATTENDANCE_PAYMENT' | 'BREAKDOWN_REPORTING' | 'EQUIPMENT_PART_REPAIR' | 'DPR_REPORTING' | 'SUBCONTRACTOR_BILLING' | 'FUEL_ISSUE' | 'LEAVE_SUBMISSION' | 'PAYROLL' | string;
   customTemplateId?: string;
   requisitionNumber?: string;
@@ -913,7 +916,8 @@ export interface ComparativeStatement {
   statementDate: string; // e.g. "13/10/2026"
   items: CsItem[];
   vendors: CsVendorQuote[];
-  status: 'Draft' | 'Approved' | 'PO Created';
+  status: 'Draft' | 'Pending Approval' | 'Approved' | 'PO Created';
+  preparedBy?: string; // e.g. "Shyam Rao Sureshe" / "Brahmanand Patel"
   approvedBy?: string;
   approvalDate?: string;
   notes?: string;
@@ -951,7 +955,7 @@ export interface BankPaymentRecord {
   billNoPo?: string;                 // Bill / PO Reference No
   emailAddress?: string;
 
-  // Beneficiary Master Link
+  // Beneficiary Master Link & Accounts Double-Entry Verification
   beneficiaryMasterStatus: 'VERIFIED' | 'NEEDS_ADDITION' | 'NOT_APPLICABLE_UPI';
   bankName?: string;
   accountNo?: string;
@@ -959,6 +963,10 @@ export interface BankPaymentRecord {
   ifscCode?: string;
   cancelledChequeUrl?: string;
   linkedBeneficiarySheetNo?: string;
+  verifiedByAccountant?: boolean;
+  accountantVerificationTimestamp?: string;
+  reEnteredAccountNo?: string;
+  reEnteredIfscCode?: string;
 
   // Stage 2: Payment Approval (DIRECTOR ONLY)
   approvalStatus: PaymentApprovalStatus;
@@ -994,6 +1002,12 @@ export interface BeneficiaryRecord {
   cancelledChequeUrl: string;        // Proof attachment
   remark?: string;
   requestedBy?: string;
+
+  // Accounts Double-Entry Verification
+  verifiedByAccountant?: boolean;
+  accountantVerificationTimestamp?: string;
+  reEnteredAccountNo?: string;
+  reEnteredIfscCode?: string;
 
   // Approval Status
   approvalStatus: PaymentApprovalStatus;

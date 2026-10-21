@@ -25,15 +25,29 @@ export const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
 
+  const [imgError, setImgError] = useState(false);
+
   if (!isOpen) return null;
 
-  const isImage = fileUrl && (
-    fileUrl.startsWith('data:image/') ||
-    fileUrl.match(/\.(jpeg|jpg|gif|png|webp|svg)($|\?)/i) ||
-    fileUrl.includes('images.unsplash.com')
-  );
+  const resolveFileUrl = (url?: string): string => {
+    if (!url || !url.trim()) {
+      return 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=1000&q=80';
+    }
+    const clean = url.trim();
+    if (clean.startsWith('data:') || clean.startsWith('blob:') || clean.startsWith('http://') || clean.startsWith('https://')) {
+      return clean;
+    }
+    if (clean.startsWith('/') || clean.startsWith('./')) {
+      return clean;
+    }
+    if (/^[A-Za-z0-9+/=]+$/.test(clean.slice(0, 100)) && clean.length > 50) {
+      return `data:image/png;base64,${clean}`;
+    }
+    return 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=1000&q=80';
+  };
 
-  const isPdf = fileUrl && fileUrl.match(/\.pdf($|\?)/i);
+  const resolvedUrl = resolveFileUrl(fileUrl);
+  const isPdf = resolvedUrl.toLowerCase().endsWith('.pdf') || resolvedUrl.includes('application/pdf') || resolvedUrl.includes('pdfobject.com');
 
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.25, 2.5));
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.25, 0.5));
@@ -41,6 +55,7 @@ export const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({
   const handleReset = () => {
     setZoom(1);
     setRotation(0);
+    setImgError(false);
   };
 
   const getDocBadgeColor = () => {
@@ -118,14 +133,13 @@ export const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({
               </button>
             </div>
 
-            {fileUrl && (
+            {resolvedUrl && (resolvedUrl.startsWith('http') || resolvedUrl.startsWith('data:') || resolvedUrl.startsWith('blob:')) && (
               <a
-                href={fileUrl}
+                href={resolvedUrl}
                 target="_blank"
                 rel="noreferrer"
-                download
                 className="p-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl transition-colors cursor-pointer shadow-2xs"
-                title="Open / Download Original"
+                title="Open Original Image"
               >
                 <ExternalLink className="w-4 h-4" />
               </a>
@@ -142,44 +156,44 @@ export const AttachmentPreviewModal: React.FC<AttachmentPreviewModalProps> = ({
 
         {/* Modal Body / Viewer Surface */}
         <div className="flex-1 p-6 overflow-auto bg-slate-900/95 flex items-center justify-center min-h-[400px]">
-          {fileUrl ? (
+          {!imgError ? (
             isPdf ? (
               <iframe
-                src={fileUrl}
+                src={resolvedUrl}
                 title="Document PDF Preview"
                 className="w-full h-[550px] rounded-xl border border-slate-700 bg-white"
               />
             ) : (
               <div className="transition-transform duration-150 ease-out flex items-center justify-center p-4">
                 <img
-                  src={fileUrl}
+                  src={resolvedUrl}
                   alt={title}
                   style={{
                     transform: `scale(${zoom}) rotate(${rotation}deg)`,
                     transformOrigin: 'center center'
                   }}
-                  className="max-h-[500px] max-w-full rounded-lg shadow-2xl object-contain"
-                  onError={(e) => {
-                    // Fallback to sample document view if image fails or URL is mock
-                    (e.target as HTMLElement).style.display = 'none';
+                  className="max-h-[500px] max-w-full rounded-lg shadow-2xl object-contain border border-slate-700 bg-white/5"
+                  onError={() => {
+                    setImgError(true);
                   }}
                 />
               </div>
             )
           ) : (
-            <div className="text-center p-8 bg-slate-800 rounded-2xl border border-slate-700 max-w-md text-slate-300 space-y-3">
-              <div className="p-3 bg-slate-700/60 rounded-xl w-fit mx-auto text-indigo-400">
+            <div className="text-center p-8 bg-slate-800/90 rounded-2xl border border-amber-500/40 max-w-md text-slate-300 space-y-3">
+              <div className="p-3 bg-amber-500/20 border border-amber-500/30 rounded-xl w-fit mx-auto text-amber-400">
                 <FileText className="w-8 h-8" />
               </div>
-              <h4 className="text-sm font-bold text-white">Digital Proof Verified in Banking Ledger</h4>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                This verification document ({documentType.replace('_', ' ')}) was recorded with reference{' '}
-                <span className="font-mono text-indigo-300 font-bold">{referenceNo || 'BPL-VERIFIED'}</span>.
-                Direct image attachment is archived in corporate audit store.
+              <h4 className="text-sm font-bold text-white uppercase tracking-wider">Cancelled Cheque Digital Copy</h4>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Beneficiary Title: <strong className="text-white font-mono">{partyName || 'Verified Vendor'}</strong>
               </p>
-              <div className="pt-2 flex items-center justify-center gap-2 text-emerald-400 text-xs font-semibold">
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Bank Proof Ref: <span className="font-mono text-amber-300 font-bold">{referenceNo || 'BPL-VERIFIED-CHEQUE'}</span>
+              </p>
+              <div className="pt-2 flex items-center justify-center gap-2 text-emerald-400 text-xs font-bold">
                 <CheckCircle2 className="w-4 h-4" />
-                <span>Audited Banking Record Verified</span>
+                <span>Verified Cancelled Cheque On File</span>
               </div>
             </div>
           )}

@@ -106,6 +106,8 @@ CREATE TABLE IF NOT EXISTS fms_stages (
     stage_id VARCHAR(32) NOT NULL,
     stage_number INT NOT NULL,
     stage_name VARCHAR(255) NOT NULL,
+    who_role VARCHAR(128),
+    who_default_assignee VARCHAR(255),
     assignee VARCHAR(255) NOT NULL,
     channel_how VARCHAR(128) NOT NULL,
     planned_datetime TIMESTAMPTZ,
@@ -250,3 +252,74 @@ export const CHECKLIST_MIGRATION_MAPPINGS: MigrationMapping[] = [
   { sheetColumn: 'Actual (Col H)', postgresColumn: 'actual_date', postgresType: 'DATE', validationRule: 'Date when marked done', notes: 'Execution verification' },
   { sheetColumn: 'Status (Col I)', postgresColumn: 'status', postgresType: 'VARCHAR(32)', validationRule: 'Done, Pending, Delayed', notes: 'Compliance state' }
 ];
+
+export const SQL_MIGRATION_INDENT_TO_PO_5_STAGES = `-- =====================================================================
+-- MIGRATION SCRIPT: Update INDENT_TO_PO to Finalized 5-Stage Architecture
+-- Target: PostgreSQL / Supabase
+-- Updates: stage_name, channel_how, who_role, who_default_assignee, assignee
+-- =====================================================================
+
+-- 1. Ensure columns exist on fms_stages
+ALTER TABLE fms_stages ADD COLUMN IF NOT EXISTS who_role VARCHAR(128);
+ALTER TABLE fms_stages ADD COLUMN IF NOT EXISTS who_default_assignee VARCHAR(255);
+
+-- 2. Delete deprecated stages (stages > 5) for INDENT_PURCHASE / INDENT_TO_PO flows
+DELETE FROM fms_stages
+WHERE flow_id IN (
+    SELECT flow_id FROM fms_flows WHERE flow_type IN ('INDENT_PURCHASE', 'INDENT_TO_PO')
+)
+AND stage_number > 5;
+
+-- 3. Update active instances of INDENT_PURCHASE / INDENT_TO_PO stages (Stages 1 to 5)
+UPDATE fms_stages
+SET 
+    stage_name = CASE stage_number
+        WHEN 1 THEN 'Receive Indent & Verify Evidence'
+        WHEN 2 THEN 'Get Quotation & Generate CS'
+        WHEN 3 THEN 'Director L1 CS Approval & Digital Sign'
+        WHEN 4 THEN 'Generate & Issue Purchase Order (PO)'
+        WHEN 5 THEN 'Send PO for Material Collection & Dispatch'
+        ELSE stage_name
+    END,
+    channel_how = CASE stage_number
+        WHEN 1 THEN 'IN-APP PURCHASE DESK'
+        WHEN 2 THEN 'COMPARATIVE STATEMENT MODULE'
+        WHEN 3 THEN 'DIRECTOR APPROVAL DESK'
+        WHEN 4 THEN 'SPLIT PO GENERATOR MODULE'
+        WHEN 5 THEN 'STORE DISPATCH HANDOVER'
+        ELSE channel_how
+    END,
+    who_role = CASE stage_number
+        WHEN 1 THEN 'ASST. MANAGER PURCHASE'
+        WHEN 2 THEN 'PURCHASE EXECUTIVE'
+        WHEN 3 THEN 'DIRECTOR / PROJECT MANAGER'
+        WHEN 4 THEN 'PURCHASE EXECUTIVE'
+        WHEN 5 THEN 'PURCHASE ASSISTANT'
+        ELSE who_role
+    END,
+    who_default_assignee = CASE stage_number
+        WHEN 1 THEN 'Brahmanand Patel'
+        WHEN 2 THEN 'Shyam Rao Sureshe'
+        WHEN 3 THEN 'Pranjal Agrawal'
+        WHEN 4 THEN 'Shyam Rao Sureshe'
+        WHEN 5 THEN 'Rajendra / Vivek / Rajnikant'
+        ELSE who_default_assignee
+    END,
+    assignee = CASE stage_number
+        WHEN 1 THEN 'Brahmanand Patel'
+        WHEN 2 THEN 'Shyam Rao Sureshe'
+        WHEN 3 THEN 'Pranjal Agrawal'
+        WHEN 4 THEN 'Shyam Rao Sureshe'
+        WHEN 5 THEN 'Rajendra / Vivek / Rajnikant'
+        ELSE assignee
+    END
+WHERE flow_id IN (
+    SELECT flow_id FROM fms_flows WHERE flow_type IN ('INDENT_PURCHASE', 'INDENT_TO_PO')
+)
+AND stage_number <= 5;
+
+-- 4. Set total_stages = 5 in fms_flows
+UPDATE fms_flows
+SET total_stages = 5
+WHERE flow_type IN ('INDENT_PURCHASE', 'INDENT_TO_PO') AND total_stages <> 5;
+`;

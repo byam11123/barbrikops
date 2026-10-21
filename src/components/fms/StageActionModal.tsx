@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   X, 
   CheckCircle2, 
@@ -30,8 +30,9 @@ import {
   Sparkles,
   Split
 } from 'lucide-react';
-import { FmsInstance, FmsLineItem, FmsStageExecution, FmsStageFieldConfig, UserProfile, FmsStageTemplate, ComparativeStatement, isUserSuperAdmin, isUserAdminOrSuperAdmin } from '../../types';
+import { FmsInstance, FmsLineItem, FmsStageExecution, FmsStageFieldConfig, UserProfile, FmsStageTemplate, ComparativeStatement, BankPaymentRecord, isUserSuperAdmin, isUserAdminOrSuperAdmin } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
+import { FMS_STANDARD_PURCHASE_STAGES, FMS_PO_PAYMENT_STAGES } from '../../data/initialData';
 import { FileUploadField } from '../common/FileUploadField';
 import { FilePreviewModal } from '../common/FilePreviewModal';
 import { FmsStagePreviewAccordion } from './FmsStagePreviewAccordion';
@@ -39,7 +40,9 @@ import { EmbeddedCsCreatorModal } from './EmbeddedCsCreatorModal';
 import { EmbeddedL1ApprovalModal } from './EmbeddedL1ApprovalModal';
 import { FmsStageOverrideModal } from './FmsStageOverrideModal';
 import { FmsItemTable } from './FmsItemTable';
-import { FileSpreadsheet, Award, ShieldAlert } from 'lucide-react';
+import { NewBankPaymentModal } from '../banking/NewBankPaymentModal';
+import { AccountsDoubleEntryVerificationPanel } from '../banking/AccountsDoubleEntryVerificationPanel';
+import { FileSpreadsheet, Award, ShieldAlert, Building2, Landmark, Upload, Truck } from 'lucide-react';
 
 interface StageActionModalProps {
   isOpen: boolean;
@@ -70,7 +73,124 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
   const [isCsModalOpen, setIsCsModalOpen] = useState(false);
   const [isL1ModalOpen, setIsL1ModalOpen] = useState(false);
   const [isOverrideModalOpen, setIsOverrideModalOpen] = useState(false);
+  const [isStage4PaymentModalOpen, setIsStage4PaymentModalOpen] = useState(false);
+  const [selectedStage4VendorGroup, setSelectedStage4VendorGroup] = useState<{ vendorId: string; vendorName: string; totalAmount: number; suggestedPoNo: string } | null>(null);
   const [linkedCsSheet, setLinkedCsSheet] = useState<ComparativeStatement | null>(null);
+  const [initiatedStage4VendorIds, setInitiatedStage4VendorIds] = useState<string[]>([]);
+  const [isDoubleEntryVerified, setIsDoubleEntryVerified] = useState(false);
+
+  const handleStage4PaymentSubmit = (paymentRecord: BankPaymentRecord) => {
+    if (!flow) return;
+
+    if (selectedStage4VendorGroup) {
+      setInitiatedStage4VendorIds((prev) => Array.from(new Set([...prev, selectedStage4VendorGroup.vendorId])));
+    }
+
+    // 1. Create linked PO_TO_PAYMENT workflow
+    const allMasterTemplates = storageAdapter.getAllMasterTemplates();
+    const customizedTpl = allMasterTemplates.find((t) => t.templateKey === 'PO_TO_PAYMENT' || t.id === 'builtin_PO_TO_PAYMENT');
+    const now = new Date();
+    const initialStages = customizedTpl
+      ? customizedTpl.stages.map((stg, idx) => {
+          const sla = stg.slaHours !== undefined ? stg.slaHours : 0;
+          const plannedTime = new Date(now.getTime() + (idx === 0 ? sla : (idx + 1) * sla) * 3600000);
+          return {
+            stageId: stg.stageId,
+            stageName: stg.stageName || (stg as any).name || `Stage ${idx + 1}`,
+            whoRole: stg.whoRole,
+            whoDefaultAssignee: stg.whoDefaultAssignee,
+            assignee: stg.whoDefaultAssignee,
+            how: (stg as any).howChannel || 'IN-APP',
+            status: idx === 0 ? ('In Progress' as const) : ('Pending' as const),
+            plannedDateTime: plannedTime.toLocaleString('en-GB'),
+            actualDateTime: idx === 0 ? now.toLocaleString('en-GB') : undefined,
+            slaHours: sla,
+            fields: stg.fields,
+          };
+        })
+      : FMS_PO_PAYMENT_STAGES.map((stg, idx) => {
+          const sla = stg.slaHours !== undefined ? stg.slaHours : 0;
+          const plannedTime = new Date(now.getTime() + (idx === 0 ? sla : (idx + 1) * sla) * 3600000);
+          return {
+            stageId: stg.stageId,
+            stageName: stg.name,
+            whoRole: stg.whoRole,
+            whoDefaultAssignee: stg.whoDefaultAssignee,
+            assignee: stg.whoDefaultAssignee,
+            how: stg.howChannel || 'IN-APP',
+            status: idx === 0 ? ('In Progress' as const) : ('Pending' as const),
+            plannedDateTime: plannedTime.toLocaleString('en-GB'),
+            actualDateTime: idx === 0 ? now.toLocaleString('en-GB') : undefined,
+            slaHours: sla,
+            fields: stg.fields,
+          };
+        });
+
+    const poNum = paymentRecord.billNoPo || selectedStage4VendorGroup?.suggestedPoNo || `BPL/PO/${flow.indentNo}`;
+    const flowId = `FLOW-PAY-${poNum.replace(/[^a-zA-Z0-9]/g, '-')}`;
+
+    const stage0Assignee = initialStages[0]?.whoDefaultAssignee || 'Priyanka Agrawal';
+
+    const newPayFlow: FmsInstance = {
+      id: `fms-inst-pay-${Date.now()}`,
+      flowId,
+      flowType: 'PO_TO_PAYMENT',
+      poNumber: poNum,
+      vendorName: paymentRecord.vendorName,
+      poAmount: paymentRecord.amountToBePaid,
+      poAssignTo: stage0Assignee,
+      indentNo: flow.indentNo || poNum,
+      siteName: paymentRecord.site || flow.siteName,
+      createdAt: now.toLocaleString('en-GB'),
+      updatedAt: now.toLocaleString('en-GB'),
+      currentStageIndex: 0,
+      currentStageId: initialStages[0]?.stageId || 'STG-PAY-01',
+      totalStages: initialStages.length,
+      stages: initialStages.map((stg, sIdx) => ({
+        ...stg,
+        assignee: sIdx === 0 ? (initialStages[0]?.whoDefaultAssignee || 'Priyanka Agrawal') : stg.whoDefaultAssignee,
+        whoRole: stg.whoRole,
+        whoDefaultAssignee: stg.whoDefaultAssignee,
+      })),
+      status: 'IN_PROGRESS',
+      priority: 'Urgent',
+      totalDelayHours: 0,
+      linkedFlowId: flow.flowId,
+    };
+
+    const existingFlows = storageAdapter.getFmsFlows();
+    storageAdapter.saveFmsFlows([newPayFlow, ...existingFlows]);
+
+    // 2. Extract erpPoDocument and poNumber into poList
+    const poDocUrl = paymentRecord.poUpload || paymentRecord.cancelledChequeUrl || 'https://pdfobject.com/pdf/sample.pdf';
+
+    const newPoItem = {
+      poNumber: poNum,
+      poDocumentUrl: poDocUrl,
+      vendorName: paymentRecord.vendorName,
+      amount: paymentRecord.amountToBePaid,
+      paymentRecordId: paymentRecord.id,
+      submittedAt: new Date().toISOString()
+    };
+
+    const existingPoList = Array.isArray(formData.poList) ? formData.poList : [];
+    const poList = [...existingPoList.filter((p: any) => p.poNumber !== poNum), newPoItem];
+
+    const updatedSubmitted = {
+      ...formData,
+      poList,
+      poNumber: poNum,
+      erpPoDocument: poDocUrl,
+      poDocumentPdf: poDocUrl,
+      bankPaymentRecordId: paymentRecord.id,
+      linkedPaymentFlowId: newPayFlow.flowId,
+      completedAt: new Date().toISOString()
+    };
+
+    setFormData(updatedSubmitted);
+    setIsStage4PaymentModalOpen(false);
+    setSelectedStage4VendorGroup(null);
+  };
 
   // Quick add option state for select fields
   const [quickAddSelectModal, setQuickAddSelectModal] = useState<{
@@ -136,6 +256,14 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
 
     // Default intelligent presets for standard baseline flows (like PO to Payment from user's sheet)
     if (flow.flowType === 'PO_TO_PAYMENT') {
+      if (stage.stageId === 'STG-PAY-01' || stageIndex === 0 || stage.stageId === 'STG-PAY-04') {
+        return [
+          { id: 'decision', label: 'IS PAYMENT TO BE DONE FROM ACCOUNT?', type: 'SELECT', options: ['Yes', 'No'], required: true, defaultValue: 'Yes' },
+          { id: 'accountsDoubleEntryVerification', label: 'Accounts Beneficiary Double-Entry Verification', type: 'ACCOUNTS_DOUBLE_ENTRY_VERIFICATION' },
+          { id: 'remarks', label: 'Accounts Verification Remarks', type: 'TEXTAREA' }
+        ];
+      }
+
       if (stage.stageId === 'STG-PAY-07' || stageIndex === 6) {
         return [
           { id: 'sheetNo', label: 'Sheet No. / Voucher No.', type: 'TEXT', defaultValue: flow.requisitionNumber || flow.indentNo || `SHT-${Date.now().toString().slice(-4)}` },
@@ -197,46 +325,18 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
       }
     }
 
-    // Indent to PO Purchase Workflow Presets (Construction Operations)
-    if (flow.flowType === 'INDENT_PURCHASE') {
-      if (stage.stageId === 'STG-IND-02' || stage.stageName.includes('AVAILABLE IN STORE')) {
-        return [
-          { id: 'availabilityDecision', label: 'Store Availability Status', type: 'SELECT', options: ['PARTIAL', 'ALL', 'NONE'], required: true, defaultValue: 'PARTIAL' },
-          { id: 'availableQty', label: 'Available In-Store Qty / Items', type: 'TEXT', defaultValue: '5 items available for immediate site dispatch' },
-          { id: 'purchaseQty', label: 'Items Requiring Purchase Quotations', type: 'TEXT', defaultValue: '5 items sent to Purchase Dept' },
-          { id: 'storeKeeperRemarks', label: 'Store Keeper Notes / Bin Location', type: 'TEXTAREA', placeholder: 'Verify physical stock at central warehouse...' }
-        ];
-      }
-
-      if (stage.stageId === 'STG-IND-03' || stage.stageId === 'STG-05' || stage.stageName.includes('VENDOR QUOTATIONS')) {
-        return [
-          { id: 'quotationRfqReference', label: 'Quotation RFQ Reference', type: 'TEXT', defaultValue: `RFQ-BPL-${flow.indentNo}-2026` },
-          { id: 'comparativeSheetAction', label: 'Comparative Statement (CS)', type: 'SELECT', options: ['AUTO_CREATE_AND_OPEN_CS', 'LINK_MANUAL_QUOTES'], required: true, defaultValue: 'AUTO_CREATE_AND_OPEN_CS' },
-          { id: 'targetVendors', label: 'Invited Vendors for Rates', type: 'TEXT', defaultValue: 'M/S Mahavir Traders, Chhattisgarh Spares, OEM Ex-Stock' },
-          { id: 'remarks', label: 'Quotation Solicitation Notes', type: 'TEXTAREA', placeholder: 'Specify critical brand specs, warranty, delivery timeline...' }
-        ];
-      }
-
-      if (stage.stageId === 'STG-08' || stage.stageName.includes('L1 APPROVAL') || stage.stageName.includes('DIRECTOR')) {
-        return [
-          { id: 'approvalStatus', label: 'Director CS & L1 Approval', type: 'APPROVAL', options: ['APPROVED', 'REJECTED'], required: true, defaultValue: 'APPROVED' },
-          { id: 'directorSignature', label: 'Authorizing Signatory', type: 'TEXT', required: true, defaultValue: 'Director Pranjal Agrawal' },
-          { id: 'splitPoRule', label: 'Purchase Order Generation Mode', type: 'SELECT', options: ['SPLIT_PO_PER_AWARDED_VENDOR', 'SINGLE_L1_VENDOR'], required: true, defaultValue: 'SPLIT_PO_PER_AWARDED_VENDOR' },
-          { id: 'approvalRemarks', label: 'Director Approval Remarks & Terms', type: 'TEXTAREA', defaultValue: 'Approved with item-wise split PO allocation. Freight strictly OURS.' }
-        ];
-      }
-
-      if (stage.stageId === 'STG-IND-05' || stage.stageId === 'STG-11' || stageIndex === 10) {
-        return [
-          { id: 'poNumber', label: 'Purchase Order No. (PO)', type: 'TEXT', required: true, defaultValue: flow.poNumber || `RAO/PO/${flow.indentNo}-001` },
-          { id: 'vendorName', label: 'Authorized Vendor Name', type: 'TEXT', required: true, defaultValue: flow.vendorName || 'M/S MAHAVIR TRADERS & SPARES' },
-          { id: 'amountToBePaid', label: 'Advance Payment Amount (₹)', type: 'NUMBER', required: true, defaultValue: String(flow.poAmount || 50000) },
-          { id: 'modeOfPayment', label: 'Payment Mode', type: 'SELECT', options: ['ACCOUNT', 'UPI', 'RTGS/NEFT', 'CHEQUE'], required: true, defaultValue: 'ACCOUNT' },
-          { id: 'urgency', label: 'Payment Urgency / SLA', type: 'SELECT', options: ['Normal', 'Urgent', 'Emergency'], required: true, defaultValue: 'Urgent' },
-          { id: 'purposeOfPayment', label: 'Payment Purpose', type: 'TEXT', required: true, defaultValue: `Advance payment for Indent #${flow.indentNo} (${flow.siteName})` },
-          { id: 'poUploadLink', label: 'Signed PO Copy / Mandated Bill URL (Mandatory for UPI)', type: 'URL', placeholder: 'https://drive.google.com/...' },
-          { id: 'paymentRemarks', label: 'Handover Instructions to Accounts', type: 'TEXTAREA', placeholder: 'Specify payment deadline, vendor contact, or settlement terms...' }
-        ];
+    // Indent to PO Purchase Workflow Presets (5-Stage Architecture)
+    if (
+      flow.flowType === 'INDENT_PURCHASE' || 
+      flow.flowType === 'INDENT_TO_PO' || 
+      flow.templateKey === 'INDENT_TO_PO' || 
+      flow.templateKey === 'INDENT_PURCHASE' ||
+      flow.indentNo?.endsWith('-PUR') ||
+      flow.flowId?.includes('-PUR')
+    ) {
+      const stageDef = FMS_STANDARD_PURCHASE_STAGES[stageIndex] || FMS_STANDARD_PURCHASE_STAGES.find((s: any) => s.stageId === stage.stageId);
+      if (stageDef?.fields && stageDef.fields.length > 0) {
+        return stageDef.fields;
       }
     }
 
@@ -250,6 +350,45 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
   };
 
   const fields = getStageFields();
+
+  // Check if Stage 4 requires payment initiation for all awarded vendor cards
+  const isStage4 = fields.some((f) => f.type === 'SPLIT_PO_GENERATOR');
+  const activeCsForStage4 = isStage4
+    ? linkedCsSheet || storageAdapter.getComparativeStatements().find((c) => c.indentNo === flow?.indentNo)
+    : null;
+
+  const stage4VendorCardIds = useMemo(() => {
+    if (!activeCsForStage4 || !activeCsForStage4.awardedVendorMap) return [];
+    const ids: string[] = [];
+    activeCsForStage4.vendors.forEach((vendor) => {
+      const hasAwardedItems = activeCsForStage4.items.some(
+        (item) => activeCsForStage4.awardedVendorMap?.[item.id] === vendor.vendorId
+      );
+      if (hasAwardedItems) ids.push(vendor.vendorId);
+    });
+    return ids;
+  }, [activeCsForStage4]);
+
+  const isVendorInitiated = useCallback((vendorId: string, vendorName: string) => {
+    if (initiatedStage4VendorIds.includes(vendorId)) return true;
+    if (Array.isArray(formData.poList) && formData.poList.some((p: any) => p.vendorName === vendorName)) return true;
+    if (stage?.submittedData?.poList && Array.isArray(stage.submittedData.poList) && stage.submittedData.poList.some((p: any) => p.vendorName === vendorName)) return true;
+    const existingPayments = storageAdapter.getBankPayments();
+    if (existingPayments.some((bp) => (bp.sheetNo === flow?.indentNo || (bp as any).linkedFlowId === flow?.flowId) && bp.vendorName === vendorName)) return true;
+    return false;
+  }, [initiatedStage4VendorIds, formData.poList, stage?.submittedData?.poList, flow?.indentNo, flow?.flowId]);
+
+  const isStage4PendingPayment =
+    isStage4 &&
+    stage4VendorCardIds.length > 0 &&
+    !stage4VendorCardIds.every((vId) => {
+      const grp = activeCsForStage4?.vendors.find((v) => v.vendorId === vId);
+      const csRawTerms = (grp?.paymentTerms || '').toLowerCase();
+      const derivedCsTerms: 'ADVANCE' | 'CREDIT' = (csRawTerms.includes('credit') || csRawTerms.includes('net') || csRawTerms.includes('days credit')) ? 'CREDIT' : 'ADVANCE';
+      const terms = formData.vendorPaymentTerms?.[vId] || derivedCsTerms;
+      if (terms === 'CREDIT') return true; // Credit POs pass Stage 4 without advance payment initiation
+      return isVendorInitiated(vId, grp?.vendorName || '');
+    });
 
   // Derive verification checkpoint checklist for this stage
   const getStageCheckpoints = (): string[] => {
@@ -335,8 +474,28 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
   const [checkedCheckpoints, setCheckedCheckpoints] = useState<string[]>([]);
   const [previewFile, setPreviewFile] = useState<{ url: string; name: string } | null>(null);
 
+  const hasCsModuleEmbed = useMemo(() => fields.some((f) => f.type === 'CS_MODULE_EMBED'), [fields]);
+
+  // If this stage is the CS quotation stage, automatically launch the CS workspace on execute
+  useEffect(() => {
+    if (isOpen && hasCsModuleEmbed) {
+      setIsCsModalOpen(true);
+    }
+  }, [isOpen, hasCsModuleEmbed]);
+
   const isStage2CheckStock = Boolean(
-    flow && stage && flow.flowType === 'CHECK_STOCK' && (stageIndex === 1 || stage.stageId === 'STG-STK-02' || stage.stageName.includes('CHECK STOCK'))
+    flow &&
+    stage &&
+    !hasCsModuleEmbed &&
+    !fields.some((f) => f.type === 'CS_MODULE_EMBED') &&
+    flow.flowType !== 'INDENT_PURCHASE' &&
+    flow.flowType !== 'INDENT_TO_PO' &&
+    flow.templateKey !== 'INDENT_TO_PO' &&
+    flow.templateKey !== 'INDENT_PURCHASE' &&
+    !flow.indentNo?.endsWith('-PUR') &&
+    !flow.flowId?.includes('-PUR') &&
+    (flow.flowType === 'CHECK_STOCK' || flow.templateKey === 'CHECK_STOCK') &&
+    (stageIndex === 1 || stage.stageId === 'STG-STK-02' || stage.stageName.includes('CHECK STOCK'))
   );
 
   const [triageItems, setTriageItems] = useState<FmsLineItem[]>([]);
@@ -487,6 +646,13 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
 
     // Validate required fields
     for (const f of fields) {
+      if (f.type === 'SPLIT_PO_GENERATOR') {
+        if (isStage4PendingPayment) {
+          setError('Please upload ERP PO & initiate payment for all awarded vendors before completing this stage.');
+          return;
+        }
+        continue;
+      }
       if (f.required) {
         const val = formData[f.id];
         if (val === undefined || val === null || String(val).trim() === '') {
@@ -661,6 +827,74 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
       .trim();
   };
 
+  // Dedicated routing for CS_MODULE_EMBED: renders EmbeddedCsCreatorModal directly
+  if (
+    fields.some((f) => f.type === 'CS_MODULE_EMBED') ||
+    ((flow.templateKey === 'INDENT_TO_PO' ||
+      flow.flowType === 'INDENT_TO_PO' ||
+      flow.flowType === 'INDENT_PURCHASE' ||
+      flow.indentNo?.endsWith('-PUR') ||
+      flow.flowId?.includes('-PUR')) &&
+      (stageIndex === 1 || stage.stageId === 'STG-02'))
+  ) {
+    return (
+      <EmbeddedCsCreatorModal
+        isOpen={isOpen}
+        flow={flow}
+        stageIndex={stageIndex}
+        currentUser={currentUser}
+        onClose={onClose}
+        onSaveAndLink={(cs) => {
+          setLinkedCsSheet(cs);
+          const payload = {
+            ...formData,
+            csSheetId: cs.id,
+            csIndentNo: cs.indentNo,
+            status: 'COMPLETED',
+            vendorsEvaluated: cs.vendors.map((v) => v.vendorName).join(', '),
+            itemsCount: cs.items.length,
+          };
+          onSubmitStage(flow, stageIndex, payload);
+          onClose();
+        }}
+      />
+    );
+  }
+
+  // Dedicated routing for CS_L1_APPROVAL_EMBED: renders EmbeddedL1ApprovalModal directly
+  if (
+    fields.some((f) => f.type === 'CS_L1_APPROVAL_EMBED') ||
+    ((flow.templateKey === 'INDENT_TO_PO' ||
+      flow.flowType === 'INDENT_TO_PO' ||
+      flow.flowType === 'INDENT_PURCHASE' ||
+      flow.indentNo?.endsWith('-PUR') ||
+      flow.flowId?.includes('-PUR')) &&
+      (stageIndex === 2 || stage.stageId === 'STG-03'))
+  ) {
+    const activeCs = linkedCsSheet || storageAdapter.getComparativeStatements().find((c) => c.indentNo === flow.indentNo);
+    return (
+      <EmbeddedL1ApprovalModal
+        isOpen={isOpen}
+        flow={flow}
+        stageIndex={stageIndex}
+        csSheet={activeCs || null}
+        currentUser={currentUser}
+        onClose={onClose}
+        onApproveL1={(updatedCs, remarks) => {
+          const payload = {
+            ...formData,
+            status: 'APPROVED',
+            approvalRemarks: remarks,
+            csSheetId: updatedCs.id,
+            csNumber: updatedCs.indentNo,
+          };
+          onSubmitStage(flow, stageIndex, payload, 'Yes');
+          onClose();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
@@ -706,10 +940,59 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-5 text-xs">
 
+          {/* Stage 5 Logistics Summary: Dispatch Readiness Card */}
+          {(stage.stageId === 'STG-05' || (stageIndex === 4 && (flow.flowType === 'INDENT_PURCHASE' || flow.flowType === 'INDENT_TO_PO'))) && (
+            <div className="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl shadow-md border border-indigo-500/40 space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-500/30 border border-indigo-400/40 text-amber-300 flex items-center justify-center font-bold">
+                    <Truck className="w-5 h-5 text-amber-300" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-black text-sm text-white">Dispatch Readiness &amp; Logistics Summary</h4>
+                      <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded text-[10px] font-bold">
+                        PO Issued &amp; Ready
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-indigo-200 mt-0.5">
+                      Vendor: <strong className="text-amber-300">{flow.vendorName || (Array.isArray(formData.poList) && formData.poList[0]?.vendorName) || 'Awarded Vendor'}</strong> • PO Ref: <strong className="text-white font-mono">{flow.poNumber || `BPL/PO/${flow.indentNo}`}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const docUrl = (Array.isArray(formData.poList) && formData.poList[0]?.poDocumentUrl) || formData.erpPoDocument || 'https://pdfobject.com/pdf/sample.pdf';
+                    setPreviewFile({ url: docUrl, name: `ERP_PO_${flow.poNumber || flow.indentNo}.pdf` });
+                  }}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>View ERP PO PDF</span>
+                </button>
+              </div>
+
+              {/* Items to Collect */}
+              {Array.isArray(flow.lineItems) && flow.lineItems.length > 0 && (
+                <div className="pt-2 border-t border-slate-800 text-xs space-y-1">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Items to Collect ({flow.lineItems.length} Items):</span>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {flow.lineItems.map((it, idx) => (
+                      <span key={idx} className="px-2 py-0.5 bg-slate-800 border border-slate-700 text-slate-200 rounded-md text-[11px] font-medium">
+                        {it.itemDescription || (it as any).itemName || `Item #${idx+1}`} ({it.requestedQty || it.qty || 1} {it.unit || 'Nos'})
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Embedded Sub-Task Banner: CS Sheet Builder */}
-          {(stage.stageName.toLowerCase().includes('cs') ||
+          {((stage.stageName.toLowerCase().includes('cs') && !stage.stageName.toLowerCase().includes('dispatch')) ||
             stage.stageName.toLowerCase().includes('quotation') ||
-            stage.stageId === 'STG-05' ||
             stage.stageId === 'STG-IND-03') && (
             <div className="p-4 bg-gradient-to-r from-indigo-900 via-indigo-950 to-slate-900 text-white rounded-2xl shadow-md border border-indigo-700/50 space-y-3">
               <div className="flex items-center justify-between">
@@ -1509,7 +1792,7 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
             )}
 
             {/* PURCHASER / ASSIGNEE LINE ITEM REVIEW & QUANTITY REVISION */}
-            {purchaserItems.length > 0 && !isStage2CheckStock && (
+            {purchaserItems.length > 0 && !isStage2CheckStock && stageIndex !== 4 && stage.stageId !== 'STG-05' && (
               <div className="p-3.5 bg-indigo-50/60 border border-indigo-200 rounded-xl space-y-3">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div>
@@ -1943,6 +2226,344 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                     );
                   }
 
+                  if (field.type === 'CS_MODULE_EMBED') {
+                    const activeCs = linkedCsSheet || storageAdapter.getComparativeStatements().find((c) => c.indentNo === flow.indentNo);
+                    const inheritedItemsCount = flow.lineItems?.length || (Array.isArray(flow.instanceDataPool?.requisitionItems) ? flow.instanceDataPool.requisitionItems.length : 0) || (Array.isArray(flow.stages?.[0]?.submittedData?.purchaseItems) ? flow.stages[0]?.submittedData.purchaseItems.length : 0);
+
+                    return (
+                      <div key={field.id} className="sm:col-span-2 p-4 bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-950 text-white rounded-2xl shadow-md border border-indigo-500/40 space-y-3">
+                        <div className="flex items-center justify-between flex-wrap gap-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-10 h-10 rounded-xl bg-indigo-500/30 border border-indigo-400/40 text-amber-300 flex items-center justify-center font-bold">
+                              <FileSpreadsheet className="w-5 h-5 text-amber-300" />
+                            </div>
+                            <div>
+                              <h4 className="font-black text-sm text-white flex items-center gap-2">
+                                <span>{field.label || 'Comparative Statement (CS) Module'}</span>
+                                {field.required && <span className="text-amber-400 text-xs">*</span>}
+                              </h4>
+                              <p className="text-[11px] text-indigo-200">
+                                {activeCs
+                                  ? `CS Attached (#${activeCs.indentNo}) • ${activeCs.items.length} items • ${activeCs.vendors.length} vendors evaluated`
+                                  : `${inheritedItemsCount > 0 ? `${inheritedItemsCount} items inherited from Indent` : 'Enter vendor rates & calculate landed L1 cost'} for Indent #${flow.indentNo}`}
+                              </p>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setIsCsModalOpen(true)}
+                            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <FileSpreadsheet className="w-4 h-4 text-slate-950" />
+                            <span>{activeCs ? 'View / Edit CS Sheet' : 'Create / Open CS Sheet'}</span>
+                          </button>
+                        </div>
+
+                        {activeCs && (
+                          <div className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700/80 text-xs flex items-center justify-between flex-wrap gap-2">
+                            <span className="text-slate-300 font-medium">
+                              CS Record Ref: <strong className="text-amber-300 font-mono">#{activeCs.indentNo}</strong> • Status:{' '}
+                              <strong className={(activeCs.status === 'Approved' || activeCs.status === 'PO Created' || Boolean(activeCs.approvalDetails)) ? 'text-emerald-400' : 'text-amber-400'}>
+                                {(activeCs.status === 'Approved' || activeCs.status === 'PO Created' || Boolean(activeCs.approvalDetails)) ? 'Locked & Digitally Signed' : 'Draft / Rate Entry In Progress'}
+                              </strong>
+                            </span>
+                            <span className="text-slate-400 text-[11px]">
+                              Vendors: {activeCs.vendors.map((v) => v.vendorName).join(', ')}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  if (field.type === 'ACCOUNTS_DOUBLE_ENTRY_VERIFICATION') {
+                    const linkedPayment = storageAdapter.getBankPayments().find(
+                      (bp) => bp.sheetNo === flow.indentNo || bp.billNoPo === flow.poNumber || bp.vendorName === flow.vendorName || bp.id === flow.linkedFlowId
+                    );
+
+                    const origAccount =
+                      linkedPayment?.accountNo ||
+                      (linkedPayment?.accountNoMasked ? linkedPayment.accountNoMasked.replace(/•/g, '3') : undefined) ||
+                      (flow.instanceDataPool?.accountNo as string) ||
+                      (flow.stages?.[0]?.submittedData?.accountNo as string) ||
+                      '50100293812834';
+
+                    const origIfsc =
+                      linkedPayment?.ifscCode ||
+                      (flow.instanceDataPool?.ifscCode as string) ||
+                      (flow.stages?.[0]?.submittedData?.ifscCode as string) ||
+                      'HDFC0000412';
+
+                    const chequeUrl =
+                      linkedPayment?.cancelledChequeUrl ||
+                      (flow.instanceDataPool?.cancelledChequeUrl as string) ||
+                      (flow.stages?.[0]?.submittedData?.cancelledChequeUrl as string);
+
+                    return (
+                      <div key={field.id} className="sm:col-span-2">
+                        <AccountsDoubleEntryVerificationPanel
+                          beneficiaryName={linkedPayment?.beneficiaryName || flow.vendorName || ''}
+                          vendorName={flow.vendorName || ''}
+                          originalAccountNo={origAccount}
+                          originalIfscCode={origIfsc}
+                          bankName={linkedPayment?.bankName || 'HDFC Bank'}
+                          cancelledChequeUrl={chequeUrl}
+                          isAlreadyVerified={Boolean(linkedPayment?.verifiedByAccountant || formData.verifiedByAccountant)}
+                          verificationTimestamp={linkedPayment?.accountantVerificationTimestamp}
+                          onVerificationStatusChange={(isValid, details) => {
+                            setIsDoubleEntryVerified(isValid);
+                            handleFieldChange('verifiedByAccountant', isValid);
+                            handleFieldChange('reEnteredAccountNo', details.reEnteredAccountNo);
+                            handleFieldChange('reEnteredIfscCode', details.reEnteredIfscCode);
+                            if (linkedPayment && isValid) {
+                              storageAdapter.verifyBankPaymentBeneficiary(linkedPayment.id, true, currentUser, details);
+                            }
+                          }}
+                        />
+                      </div>
+                    );
+                  }
+
+                  if (field.type === 'CS_L1_APPROVAL_EMBED') {
+                    const activeCs = linkedCsSheet || storageAdapter.getComparativeStatements().find((c) => c.indentNo === flow.indentNo);
+                    const isApproved = Boolean(activeCs && (activeCs.status === 'Approved' || activeCs.status === 'PO Created' || Boolean(activeCs.approvalDetails))) || formData.status === 'APPROVED' || val === 'APPROVED';
+
+                    return (
+                      <div key={field.id} className="sm:col-span-2 p-4 bg-gradient-to-r from-amber-950 via-slate-900 to-slate-950 text-white rounded-2xl shadow-md border border-amber-500/40 space-y-3">
+                        <div className="flex items-center justify-between flex-wrap gap-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-10 h-10 rounded-xl bg-amber-500/30 border border-amber-400/40 text-amber-400 flex items-center justify-center font-bold">
+                              <Award className="w-5 h-5 text-amber-400" />
+                            </div>
+                            <div>
+                              <h4 className="font-black text-sm text-white flex items-center gap-2">
+                                <span>{field.label || 'Director L1 Award Allocation & Digital Sign-off'}</span>
+                                {field.required && <span className="text-amber-400 text-xs">*</span>}
+                              </h4>
+                              <p className="text-[11px] text-amber-200">
+                                {isApproved
+                                  ? 'CS Award allocated & digitally signed by Director'
+                                  : 'Review Comparative Statement rates, finalize awarded vendors, and digitally sign to lock'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setIsL1ModalOpen(true)}
+                            className="px-4 py-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-950 font-black rounded-xl text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Award className="w-4 h-4 text-slate-950" />
+                            <span>{isApproved ? 'Re-inspect L1 CS Approval' : 'Review & Approve L1 CS'}</span>
+                          </button>
+                        </div>
+
+                        {isApproved && (
+                          <div className="p-2.5 bg-emerald-950/60 rounded-xl border border-emerald-500/30 text-xs text-emerald-300 flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                            <span>Digitally signed &amp; locked by Director Pranjal Agrawal. Awarded items mapped for Split PO Generation.</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  if (field.type === 'SPLIT_PO_GENERATOR') {
+                    const activeCs = linkedCsSheet || storageAdapter.getComparativeStatements().find((c) => c.indentNo === flow.indentNo);
+
+                    // Compute awarded vendor PO groups
+                    const awardedVendorGroups: Array<{
+                      vendorId: string;
+                      vendorName: string;
+                      items: Array<{ itemName: string; qty: number; unit: string; rate: number; amount: number }>;
+                      totalAmount: number;
+                      suggestedPoNo: string;
+                      csPaymentTerms: string;
+                      derivedDefaultTerms: 'ADVANCE' | 'CREDIT';
+                    }> = [];
+
+                    if (activeCs && activeCs.awardedVendorMap) {
+                      activeCs.vendors.forEach((vendor) => {
+                        const awardedItems: Array<{ itemName: string; qty: number; unit: string; rate: number; amount: number }> = [];
+                        let total = 0;
+                        activeCs.items.forEach((item) => {
+                          if (activeCs.awardedVendorMap?.[item.id] === vendor.vendorId) {
+                            const rateInfo = vendor.itemRates[item.id];
+                            const landedRate = rateInfo?.landedRate || 0;
+                            const amt = landedRate * item.qty;
+                            awardedItems.push({
+                              itemName: item.itemName,
+                              qty: item.qty,
+                              unit: item.unit,
+                              rate: landedRate,
+                              amount: amt,
+                            });
+                            total += amt;
+                          }
+                        });
+
+                        if (awardedItems.length > 0) {
+                          const vendorShort = vendor.vendorName.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
+                          const rawTerms = (vendor.paymentTerms || '').trim();
+                          const lower = rawTerms.toLowerCase();
+                          const derivedTerms: 'ADVANCE' | 'CREDIT' = (lower.includes('credit') || lower.includes('net') || lower.includes('days credit')) ? 'CREDIT' : 'ADVANCE';
+
+                          awardedVendorGroups.push({
+                            vendorId: vendor.vendorId,
+                            vendorName: vendor.vendorName,
+                            items: awardedItems,
+                            totalAmount: total,
+                            suggestedPoNo: `BPL/PO/${flow.indentNo}/${vendorShort}`,
+                            csPaymentTerms: rawTerms,
+                            derivedDefaultTerms: derivedTerms,
+                          });
+                        }
+                      });
+                    }
+
+                    return (
+                      <div key={field.id} className="sm:col-span-2 p-4 bg-slate-900 border border-indigo-500/40 rounded-2xl text-white space-y-4">
+                        <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-800">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-400">
+                              <Building2 className="w-4 h-4 text-indigo-400" />
+                            </div>
+                            <div>
+                              <h4 className="font-bold text-xs text-white uppercase tracking-wider">{field.label || 'Awarded Vendor PO Generation'}</h4>
+                              <p className="text-[11px] text-slate-400">Auto-split Purchase Orders generated from locked CS statement</p>
+                            </div>
+                          </div>
+                          {awardedVendorGroups.length > 0 && (
+                            <span className="px-2.5 py-1 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-lg text-[11px] font-bold">
+                              {awardedVendorGroups.length} Split PO{awardedVendorGroups.length > 1 ? 's' : ''} Ready
+                            </span>
+                          )}
+                        </div>
+
+                        {awardedVendorGroups.length > 0 ? (
+                          <div className="space-y-3">
+                            {awardedVendorGroups.map((grp, gIdx) => (
+                              <div key={grp.vendorId} className="p-3 bg-slate-800/80 border border-slate-700 rounded-xl space-y-2">
+                                <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-black flex items-center justify-center">
+                                      {gIdx + 1}
+                                    </span>
+                                    <span className="font-black text-amber-300">{grp.vendorName}</span>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-[11px] text-slate-400 font-mono">PO Ref: <strong className="text-white">{grp.suggestedPoNo}</strong></span>
+                                    <span className="font-black font-mono text-emerald-400">₹{grp.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                  </div>
+                                </div>
+
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-left text-[11px]">
+                                    <thead>
+                                      <tr className="text-slate-400 border-b border-slate-700/60">
+                                        <th className="py-1 px-1.5 font-medium">Item Description</th>
+                                        <th className="py-1 px-1.5 font-medium text-center">Qty</th>
+                                        <th className="py-1 px-1.5 font-medium text-right">Landed Rate</th>
+                                        <th className="py-1 px-1.5 font-medium text-right">Amount (₹)</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-800">
+                                      {grp.items.map((it, itIdx) => (
+                                        <tr key={itIdx} className="text-slate-300">
+                                          <td className="py-1 px-1.5 font-medium text-white">{it.itemName}</td>
+                                          <td className="py-1 px-1.5 text-center font-mono">{it.qty} {it.unit}</td>
+                                          <td className="py-1 px-1.5 text-right font-mono">₹{it.rate.toLocaleString('en-IN')}</td>
+                                          <td className="py-1 px-1.5 text-right font-mono font-bold text-slate-200">₹{it.amount.toLocaleString('en-IN')}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                <div className="pt-2 border-t border-slate-700/60 flex items-center justify-between flex-wrap gap-2">
+                                  <div className="flex items-center gap-3 flex-wrap">
+                                    <span className="text-[11px] text-slate-400 font-medium">Split PO for: <strong className="text-white">{grp.vendorName}</strong></span>
+                                    
+                                    {/* Mandatory Payment Terms Dropdown */}
+                                    <div className="flex items-center gap-1.5">
+                                      <label className="text-[11px] font-bold text-slate-300">Payment Terms <span className="text-amber-400">*</span>:</label>
+                                      <select
+                                        value={formData.vendorPaymentTerms?.[grp.vendorId] || 'ADVANCE'}
+                                        onChange={(e) => {
+                                          const val = e.target.value as 'ADVANCE' | 'CREDIT';
+                                          const prevTerms = formData.vendorPaymentTerms || {};
+                                          handleFieldChange('vendorPaymentTerms', { ...prevTerms, [grp.vendorId]: val });
+                                        }}
+                                        className="px-2 py-1 bg-slate-900 border border-slate-700 text-amber-300 text-xs font-bold rounded-lg focus:ring-2 focus:ring-amber-400 outline-none cursor-pointer"
+                                      >
+                                        <option value="ADVANCE">ADVANCE (Initiate Upfront Payment)</option>
+                                        <option value="CREDIT">CREDIT (Payment Triggered on GRN Clearance)</option>
+                                      </select>
+                                    </div>
+
+                                    {(formData.vendorPaymentTerms?.[grp.vendorId] || 'ADVANCE') === 'ADVANCE' && isVendorInitiated(grp.vendorId, grp.vendorName) && (
+                                      <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded text-[10px] font-bold flex items-center gap-1">
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                        <span>Payment Initiated</span>
+                                      </span>
+                                    )}
+
+                                    {(formData.vendorPaymentTerms?.[grp.vendorId] || 'ADVANCE') === 'CREDIT' && (
+                                      <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 rounded text-[10px] font-bold flex items-center gap-1">
+                                        <Clock className="w-3 h-3 text-indigo-400" />
+                                        <span>Credit Terms • Payment on GRN Completion</span>
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {(formData.vendorPaymentTerms?.[grp.vendorId] || 'ADVANCE') === 'ADVANCE' ? (
+                                    <button
+                                      type="button"
+                                      disabled={isVendorInitiated(grp.vendorId, grp.vendorName)}
+                                      onClick={() => {
+                                        if (isVendorInitiated(grp.vendorId, grp.vendorName)) return;
+                                        setSelectedStage4VendorGroup(grp);
+                                        setIsStage4PaymentModalOpen(true);
+                                      }}
+                                      className={
+                                        isVendorInitiated(grp.vendorId, grp.vendorName)
+                                          ? "px-3 py-1.5 bg-slate-800 text-slate-400 border border-slate-700 font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-not-allowed opacity-75"
+                                          : "px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                                      }
+                                    >
+                                      {isVendorInitiated(grp.vendorId, grp.vendorName) ? (
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                      ) : (
+                                        <Upload className="w-3.5 h-3.5" />
+                                      )}
+                                      <span>
+                                        {isVendorInitiated(grp.vendorId, grp.vendorName)
+                                          ? 'Payment Requested (Pending)'
+                                          : `Upload ERP PO & Initiate Payment (${grp.vendorName.split(' ')[0]})`}
+                                      </span>
+                                    </button>
+                                  ) : (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1">
+                                        <CheckCircle2 className="w-3.5 h-3.5" />
+                                        <span>Credit PO Ready for Issue</span>
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="p-3.5 bg-slate-800/40 border border-dashed border-slate-700 rounded-xl text-center space-y-1">
+                            <p className="text-xs text-slate-300 font-medium">Split PO Groups Pending</p>
+                            <p className="text-[11px] text-slate-400">Awarded vendor POs will populate automatically based on the Director's locked L1 allocation from Stage 3.</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
                   // Extract items if val is array, JSON array, or object with items
                   let parsedItems: any[] | null = null;
                   if (Array.isArray(val)) {
@@ -2107,9 +2728,28 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
           <button
             type="submit"
             form="stage-action-form"
-            disabled={flow.isClosed || flow.status === 'CLOSED' || stage.status === 'Done' || stage.status === 'Skipped'}
+            disabled={
+              flow.isClosed ||
+              flow.status === 'CLOSED' ||
+              stage.status === 'Done' ||
+              stage.status === 'Skipped' ||
+              isStage4PendingPayment ||
+              (fields.some((f) => f.type === 'ACCOUNTS_DOUBLE_ENTRY_VERIFICATION') && !isDoubleEntryVerified)
+            }
+            title={
+              isStage4PendingPayment
+                ? `Please initiate payment for all awarded vendor cards before submitting stage (${initiatedStage4VendorIds.length}/${stage4VendorCardIds.length} initiated)`
+                : fields.some((f) => f.type === 'ACCOUNTS_DOUBLE_ENTRY_VERIFICATION') && !isDoubleEntryVerified
+                ? 'Account Number and IFSC Code must match the original request exactly to verify'
+                : undefined
+            }
             className={`px-5 py-2 font-bold rounded-lg text-xs shadow-sm transition-all flex items-center gap-1.5 ${
-              flow.isClosed || flow.status === 'CLOSED' || stage.status === 'Done' || stage.status === 'Skipped'
+              flow.isClosed ||
+              flow.status === 'CLOSED' ||
+              stage.status === 'Done' ||
+              stage.status === 'Skipped' ||
+              isStage4PendingPayment ||
+              (fields.some((f) => f.type === 'ACCOUNTS_DOUBLE_ENTRY_VERIFICATION') && !isDoubleEntryVerified)
                 ? 'bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300'
                 : 'bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white cursor-pointer'
             }`}
@@ -2120,6 +2760,8 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                 ? 'Stage Completed (Read-Only)'
                 : flow.isClosed || flow.status === 'CLOSED'
                 ? 'Workflow Closed (Locked)'
+                : fields.some((f) => f.type === 'ACCOUNTS_DOUBLE_ENTRY_VERIFICATION')
+                ? 'Verify Beneficiary & Send to Director'
                 : 'Submit & Advance Stage'}
             </span>
           </button>
@@ -2221,6 +2863,20 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
               handleFieldChange('csSheetId', cs.id);
               handleFieldChange('csIndentNo', cs.indentNo);
               setIsCsModalOpen(false);
+              const payload = {
+                ...formData,
+                csSheetId: cs.id,
+                csIndentNo: cs.indentNo,
+                totalL1Value: cs.vendors[0]
+                  ? Object.values(cs.vendors[0].itemRates || {}).reduce((s, r: any) => s + (r.amount || 0), 0)
+                  : 0,
+                selectedVendors: cs.vendors.map((v) => v.vendorName).join(', '),
+                csStatus: cs.status || 'Pending Approval',
+                actionStatus: 'COMPLETED',
+                remarks: `Comparative Statement #${cs.indentNo} finalized & linked by ${currentUser.name}. ${cs.items.length} items evaluated.`,
+              };
+              onSubmitStage(flow, stageIndex, payload, 'Yes');
+              onClose();
             }}
           />
         )}
@@ -2260,6 +2916,31 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
               setIsOverrideModalOpen(false);
               onClose();
             }}
+          />
+        )}
+
+        {/* Stage 4 Unified Bank Payment Requisition Modal */}
+        {isStage4PaymentModalOpen && flow && (
+          <NewBankPaymentModal
+            isOpen={isStage4PaymentModalOpen}
+            onClose={() => {
+              setIsStage4PaymentModalOpen(false);
+              setSelectedStage4VendorGroup(null);
+            }}
+            currentUser={currentUser}
+            initialVendorName={
+              selectedStage4VendorGroup?.vendorName ||
+              (linkedCsSheet?.vendors?.length ? linkedCsSheet.vendors[0].vendorName : '') ||
+              flow.vendorName ||
+              ''
+            }
+            initialPoNumber={
+              selectedStage4VendorGroup?.suggestedPoNo || `BPL/PO/${flow.indentNo}`
+            }
+            initialAmount={
+              selectedStage4VendorGroup?.totalAmount || flow.poAmount || undefined
+            }
+            onSubmit={(paymentRecord) => handleStage4PaymentSubmit(paymentRecord)}
           />
         )}
       </div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Landmark, Plus, Search, Filter, AlertTriangle, CheckCircle2, Clock, 
-  ExternalLink, ShieldCheck, Eye, RefreshCw, Download, FileText, Check, X, XCircle
+  ExternalLink, ShieldCheck, ShieldAlert, Eye, RefreshCw, Download, FileText, Check, X, XCircle
 } from 'lucide-react';
 import { BankPaymentRecord, UserProfile, isUserDirector } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
@@ -617,8 +617,8 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                     {visibleColumns.includes('actions') && (
                       <td className="p-3.5 pr-5 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5">
-                          {/* Step 1: Pending Approval -> Approve / Reject */}
-                          {p.approvalStatus === 'PENDING' && (
+                          {/* Director Role: Approve / Reject Pending Payments */}
+                          {isDirector && p.approvalStatus === 'PENDING' && (
                             <>
                               <button
                                 type="button"
@@ -628,7 +628,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                                   refreshData();
                                 }}
                                 className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                                title="Approve Request"
+                                title="Director Approve Request"
                               >
                                 <Check className="w-3.5 h-3.5" />
                                 <span>Approve</span>
@@ -641,7 +641,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                                   refreshData();
                                 }}
                                 className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                                title="Reject Request"
+                                title="Director Reject Request"
                               >
                                 <X className="w-3.5 h-3.5" />
                                 <span>Reject</span>
@@ -649,83 +649,37 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                             </>
                           )}
 
-                          {/* Step 2: Approved, Awaiting Bank Entry -> Done / Cancelled */}
-                          {p.approvalStatus === 'APPROVED' && p.paymentEntry === 'PENDING' && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  storageAdapter.updateBankPaymentStatus(p.id, 'paymentEntry', 'DONE', currentUser);
-                                  refreshData();
-                                }}
-                                className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                                title="Bank Entry Done"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                                <span>Done</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  storageAdapter.updateBankPaymentStatus(p.id, 'paymentEntry', 'CANCELLED', currentUser);
-                                  refreshData();
-                                }}
-                                className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                                title="Cancel Bank Entry"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                                <span>Cancelled</span>
-                              </button>
-                            </>
-                          )}
-
-                          {/* Step 3: Bank Entry Done, Awaiting Payment Status -> Done / Cancelled */}
-                          {p.paymentEntry === 'DONE' && p.paymentStatus === 'PENDING' && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  storageAdapter.updateBankPaymentStatus(p.id, 'paymentStatus', 'DONE', currentUser);
-                                  refreshData();
-                                }}
-                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                                title="Payment Settlement Done"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                                <span>Done</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  storageAdapter.updateBankPaymentStatus(p.id, 'paymentStatus', 'CANCELLED', currentUser);
-                                  refreshData();
-                                }}
-                                className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                                title="Cancel Payment Settlement"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                                <span>Cancelled</span>
-                              </button>
-                            </>
-                          )}
-
-                          {/* Terminal State or Resolved -> View Only */}
-                          {(p.approvalStatus === 'REJECTED' ||
-                            p.paymentEntry === 'CANCELLED' ||
-                            p.paymentStatus === 'CANCELLED' ||
-                            (p.approvalStatus === 'APPROVED' && p.paymentEntry === 'DONE' && p.paymentStatus === 'DONE')) && (
+                          {/* Accounts Role: Verify Beneficiary */}
+                          {isAccounts && p.beneficiaryMasterStatus === 'NEEDS_ADDITION' && (
                             <button
                               type="button"
-                              onClick={() => handleRowClick(p)}
-                              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs transition-colors cursor-pointer flex items-center gap-1"
-                              title="View Record Details"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedPayment(p);
+                                setIsDrawerOpen(true);
+                              }}
+                              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                              title="Verify New Beneficiary"
                             >
-                              <Eye className="w-3.5 h-3.5 text-slate-600" />
-                              <span>View</span>
+                              <ShieldAlert className="w-3.5 h-3.5" />
+                              <span>Verify Beneficiary</span>
+                            </button>
+                          )}
+
+                          {/* Accounts Role: Record UTR for Approved Pending Payments */}
+                          {isAccounts && p.approvalStatus === 'APPROVED' && p.paymentStatus === 'PENDING' && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedPayment(p);
+                                setIsDrawerOpen(true);
+                              }}
+                              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                              title="Record UTR / Bank Settlement"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Record UTR</span>
                             </button>
                           )}
                         </div>

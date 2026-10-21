@@ -3,6 +3,7 @@ import { X, Landmark, Check, AlertTriangle, ShieldCheck, FileText, Clock, Upload
 import { BankPaymentRecord, UserProfile, isUserDirector } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { AttachmentPreviewModal } from './AttachmentPreviewModal';
+import { AccountsDoubleEntryVerificationPanel } from './AccountsDoubleEntryVerificationPanel';
 
 interface PaymentDetailDrawerProps {
   payment: BankPaymentRecord | null;
@@ -57,6 +58,11 @@ export const PaymentDetailDrawer: React.FC<PaymentDetailDrawerProps> = ({
 }) => {
   const [rejectionReason, setRejectionReason] = useState('');
   const [showRejectInput, setShowRejectInput] = useState(false);
+  const [doubleEntryValid, setDoubleEntryValid] = useState(false);
+  const [reEnteredData, setReEnteredData] = useState<{ reEnteredAccountNo: string; reEnteredIfscCode: string }>({
+    reEnteredAccountNo: '',
+    reEnteredIfscCode: '',
+  });
 
   // Stage 3 Portal Entry Form State
   const [entryProofUrl, setEntryProofUrl] = useState('');
@@ -285,6 +291,48 @@ export const PaymentDetailDrawer: React.FC<PaymentDetailDrawerProps> = ({
               </div>
             </div>
           </div>
+
+          {/* ACCOUNTS STAFF Action Controls for Beneficiary Verification */}
+          {payment.modeOfPayment === 'ACCOUNT' && (payment.beneficiaryMasterStatus === 'NEEDS_ADDITION' || isAccounts) && (
+            <div className="space-y-3">
+              <AccountsDoubleEntryVerificationPanel
+                beneficiaryName={payment.beneficiaryName}
+                vendorName={payment.vendorName}
+                originalAccountNo={payment.accountNo || (payment.accountNoMasked ? payment.accountNoMasked.replace(/•/g, '3') : '50100293812834')}
+                originalIfscCode={payment.ifscCode || 'HDFC0000412'}
+                bankName={payment.bankName || 'HDFC Bank'}
+                cancelledChequeUrl={payment.cancelledChequeUrl}
+                isAlreadyVerified={Boolean(payment.verifiedByAccountant)}
+                verificationTimestamp={payment.accountantVerificationTimestamp}
+                onVerificationStatusChange={(isValid, details) => {
+                  setDoubleEntryValid(isValid);
+                  setReEnteredData(details);
+                }}
+              />
+
+              {!payment.verifiedByAccountant && isAccounts && (
+                <button
+                  type="button"
+                  disabled={!doubleEntryValid}
+                  onClick={() => {
+                    storageAdapter.verifyBankPaymentBeneficiary(payment.id, true, currentUser, reEnteredData);
+                    setMessage('Beneficiary verified successfully via double-entry matching! Sent to Director for approval.');
+                    onUpdate();
+                    setTimeout(() => setMessage(null), 3000);
+                  }}
+                  className={`w-full py-2.5 font-bold rounded-xl text-xs transition-all shadow-xs flex items-center justify-center gap-1.5 ${
+                    doubleEntryValid
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
+                      : 'bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300'
+                  }`}
+                  title={!doubleEntryValid ? 'Account Number and IFSC Code must match the original request exactly to verify' : undefined}
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Verify Beneficiary &amp; Send to Director</span>
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Dynamic Role Action Controls */}
 

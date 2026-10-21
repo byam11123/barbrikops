@@ -133,23 +133,29 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
   React.useEffect(() => {
     let targetDept = selectedDepartment;
     if (selectedWorkflowKey && selectedWorkflowKey !== 'ALL') {
-      const mappedDept = getDepartmentForWorkflow(selectedWorkflowKey, customTemplates, flows);
+      const templates = storageAdapter.getFmsTemplates();
+      const mappedDept = getDepartmentForWorkflow(selectedWorkflowKey, templates, flows);
       if (mappedDept) targetDept = mappedDept;
     }
 
     if (targetDept) {
-      setCollapsedDepts((prev) => ({
+      setCollapsedDepts((prev) => (prev[targetDept] === false ? prev : {
         ...prev,
         [targetDept]: false
       }));
 
-      setCollapsedSubSections((prev) => ({
-        ...prev,
-        [`${targetDept}-fms`]: false,
-        [`nav-fms-${targetDept}`]: false
-      }));
+      setCollapsedSubSections((prev) => {
+        if (prev[`${targetDept}-fms`] === false && prev[`nav-fms-${targetDept}`] === false) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [`${targetDept}-fms`]: false,
+          [`nav-fms-${targetDept}`]: false
+        };
+      });
     }
-  }, [selectedWorkflowKey, selectedDepartment, customTemplates, flows]);
+  }, [selectedWorkflowKey, selectedDepartment]);
 
   const toggleDept = (deptKey: string) => {
     setCollapsedDepts((prev) => ({ ...prev, [deptKey]: prev[deptKey] === false ? true : false }));

@@ -495,7 +495,17 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   };
 
   const isMineFmsStage = (stageDef: any, stageExec?: any) => {
-    if (pcDeskActive || isAdminOrSuperAdmin) return true; // Super Admin & Administrative User (2nd Owner) see ALL active stages
+    if (pcDeskActive && workspaceMode === 'PC_DESK') return true;
+    if (!currentUser) return false;
+
+    // Strict active stage assignee matching: if curStage.assignee is assigned to someone else, do not show in this user's My Work
+    const execAssignee = (stageExec?.assignee || '').trim().toLowerCase().replace(/[\s_-]/g, '');
+    const userName = (currentUser.name || '').trim().toLowerCase().replace(/[\s_-]/g, '');
+    if (execAssignee) {
+      const list = execAssignee.split(/[\/,]/);
+      return list.some((a: string) => a && (a === userName || a.includes(userName) || userName.includes(a)));
+    }
+
     return isDirectlyAssignedFms(stageDef, stageExec);
   };
 
@@ -588,11 +598,22 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
 
   // C. FMS Stages
   flows.forEach((flow) => {
-    const customTemplate = flow.customTemplateId
-      ? storageAdapter.getAllMasterTemplates().find((t) => t.id === flow.customTemplateId || t.templateKey === flow.flowType)
-      : storageAdapter.getAllMasterTemplates().find((t) => t.templateKey === flow.flowType);
+    const isPurchaseFlow =
+      flow.flowType === 'INDENT_PURCHASE' ||
+      flow.flowType === 'INDENT_TO_PO' ||
+      flow.templateKey === 'INDENT_TO_PO' ||
+      flow.indentNo?.endsWith('-PUR') ||
+      flow.flowId?.includes('-PUR');
 
-    const stageDefs: FmsStageDefinition[] = customTemplate
+    const customTemplate = !isPurchaseFlow && flow.customTemplateId
+      ? storageAdapter.getAllMasterTemplates().find((t) => t.id === flow.customTemplateId || t.templateKey === flow.flowType)
+      : !isPurchaseFlow
+      ? storageAdapter.getAllMasterTemplates().find((t) => t.templateKey === flow.flowType)
+      : undefined;
+
+    const stageDefs: FmsStageDefinition[] = isPurchaseFlow
+      ? FMS_STANDARD_PURCHASE_STAGES
+      : customTemplate
       ? customTemplate.stages.map((stg, sIdx) => ({
           stageId: stg.stageId,
           stageNumber: sIdx + 1,
@@ -698,7 +719,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           sourceId: flow.id,
           referenceCode: `${refCode} (Stg ${idx + 1})`,
           title: `${stage.stageName} — ${flow.siteName} Site`,
-          subtitle: `FMS Flow: ${flow.flowId} • Role: ${def.whoRole} • Assignee: ${stage.assignee || def.whoDefaultAssignee}`,
+          subtitle: `FMS Flow: ${flow.flowId} • Role: ${stage.whoRole || def.whoRole} • Assignee: ${stage.assignee || def.whoDefaultAssignee}`,
           targetDateStr: stage.plannedDateTime || flow.indentDate || flow.poDate || flow.dprDate || todayStr,
           plannedDateTimeStr,
           actualDateTimeStr: stage.actualDateTime || (isCompleted ? `${todayStr} 12:00 PM` : '—'),
@@ -1109,28 +1130,39 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       if (onOpenStageAction) {
         return (
           <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex)}
-              className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} ${
-                hasApprovalField
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                  : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-              } font-bold rounded flex items-center gap-1.5 transition-all shadow-xs cursor-pointer`}
-              title={hasApprovalField ? 'Review & Take Approval Decision' : 'Execute Stage Dialog'}
-            >
-              {hasApprovalField ? (
-                <>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200" />
-                  <span>Approve / Reject</span>
-                </>
-              ) : (
-                <>
-                  <FileText className="w-3.5 h-3.5 text-indigo-200" />
-                  <span>Execute Stage</span>
-                </>
-              )}
-            </button>
+            {isUserResponsibleForStage(stageDef, stageExec, currentUser) ? (
+              <button
+                type="button"
+                onClick={() => onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex)}
+                className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} ${
+                  hasApprovalField
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                    : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                } font-bold rounded flex items-center gap-1.5 transition-all shadow-xs cursor-pointer`}
+                title={hasApprovalField ? 'Review & Take Approval Decision' : 'Execute Stage Dialog'}
+              >
+                {hasApprovalField ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200" />
+                    <span>Approve / Reject</span>
+                  </>
+                ) : (
+                  <>
+                    <FileText className="w-3.5 h-3.5 text-indigo-200" />
+                    <span>Execute Stage</span>
+                  </>
+                )}
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-slate-100 text-slate-400 font-medium rounded flex items-center gap-1.5 cursor-not-allowed border border-slate-200`}
+                title="You are not assigned to execute this stage"
+              >
+                <span>View Details</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => handleOpenSplitCockpit(item)}
@@ -2291,7 +2323,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                                   <ExternalLink className="w-3 h-3" /> Form
                                 </a>
                               )}
-                              {isItemActionable(item) && (
+                              {isItemActionable(item) && isUserResponsibleForStage(item.rawItem.def, item.rawItem.stage, currentUser) && (
                                 <button
                                   type="button"
                                   onClick={() => handleOpenSplitCockpit(item)}
@@ -2313,6 +2345,21 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
 
                                 const stageExec = item.rawItem.stage;
                                 const stageDef = item.rawItem.def;
+                                const isResponsible = isUserResponsibleForStage(stageDef, stageExec, currentUser);
+
+                                if (!isResponsible) {
+                                  return (
+                                    <button
+                                      type="button"
+                                      disabled
+                                      className="px-2.5 py-1 bg-slate-100 text-slate-400 border border-slate-200 font-medium rounded text-[11px] flex items-center gap-1 cursor-not-allowed"
+                                      title="Only the assigned user can execute this stage"
+                                    >
+                                      <Lock className="w-3.5 h-3.5" />
+                                      <span>View Details</span>
+                                    </button>
+                                  );
+                                }
                                 const hasFormFields = !!(
                                   (stageExec?.fields && stageExec.fields.length > 0) ||
                                   (stageDef?.fields && stageDef.fields.length > 0) ||
