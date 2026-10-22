@@ -97,6 +97,22 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
       );
     }
 
+    if (stage.status === 'Returned for Revision') {
+      const delayHrs = stage.delayHours || stage.timeDelayHours || 0;
+      if (delayHrs > 0) {
+        return (
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+            <Clock className="w-3 h-3 text-amber-600" /> Returned for Revision (+{delayHrs.toFixed(1)}h)
+          </span>
+        );
+      }
+      return (
+        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+          <Clock className="w-3 h-3 text-amber-600" /> Returned for Revision (On Time)
+        </span>
+      );
+    }
+
     if (stage.status === 'In Progress') {
       const isOverdue = stage.plannedTimestamp && new Date(stage.plannedTimestamp).getTime() < Date.now();
       return isOverdue ? (
@@ -254,7 +270,7 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
 
 
 
-          {activeFlow.stages[activeFlow.currentStageIndex]?.stageName.toLowerCase().includes('l1') && (
+          {((activeFlow.stages[activeFlow.currentStageIndex]?.stageName.toLowerCase().includes('l1') || activeFlow.stages[activeFlow.currentStageIndex]?.stageName.toLowerCase().includes('director approval'))) && (
             <button
               onClick={() => setIsL1ModalOpen(true)}
               className="px-4 py-2 text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-500 rounded-xl shadow-md transition-all flex items-center gap-1.5"
@@ -445,8 +461,19 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {activeFlow.stages.map((stage, idx) => {
-                  const isActive = idx === activeFlow.currentStageIndex;
-                  const isDone = stage.status === 'Done' || stage.status === 'Completed' || stage.status === 'Skipped';
+                  const isStageDone = stage.status === 'Done' || 
+                    stage.status === 'Completed' || 
+                    stage.status === 'Skipped' || 
+                    Boolean(stage.actualDateTime || stage.actualTimestamp) || 
+                    stage.assignee === 'System / Child Workflows' ||
+                    (stage.assignee || '').toLowerCase().includes('child workflow');
+
+                  const isActive = idx === activeFlow.currentStageIndex && 
+                    !isStageDone && 
+                    activeFlow.status !== 'Completed' && 
+                    activeFlow.status !== 'Awaiting Fulfillment';
+
+                  const isDone = isStageDone;
                   const stageDef = masterTemplate?.stages[idx] || getStageDefinitionsForFlowType(activeFlow.flowType)[idx];
                   const canExecute = isUserResponsibleForStage(stageDef, stage, currentUser);
 
@@ -456,20 +483,42 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                       className={`transition-colors ${
                         isActive
                           ? 'bg-indigo-50/70 font-medium'
-                          : stage.status === 'Done' || stage.status === 'Completed'
+                          : isStageDone
                           ? 'bg-white'
                           : 'bg-slate-50/40 opacity-80'
                       }`}
                     >
                       <td className="py-3.5 px-3 text-center font-mono font-bold text-slate-500">
-                        {idx + 1}
+                        {stage.stageId?.includes('02B') || stage.stageName?.includes('2B') ? (
+                          <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-black">
+                            2B
+                          </span>
+                        ) : stage.stageId?.includes('03-FINAL') || stage.stageName?.includes('(Final)') ? (
+                          <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-900 border border-indigo-300 text-[10px] font-black">
+                            3 (Final)
+                          </span>
+                        ) : (
+                          idx + 1
+                        )}
                       </td>
                       <td className="py-3.5 px-3">
-                        <p className="font-bold text-slate-900">{stage.stageName}</p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="font-bold text-slate-900">{stage.stageName}</p>
+                          {(stage.stageId?.includes('02B') || stage.stageName?.includes('2B')) && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-300">
+                              REVISION LOOP
+                            </span>
+                          )}
+                        </div>
                         {isActive && (
                           <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 bg-indigo-600 text-white rounded">
                             CURRENT ACTIVE STAGE
                           </span>
+                        )}
+                        {stage.remarks && (
+                          <p className="text-[11px] text-amber-800 dark:text-amber-400 mt-1 italic">
+                            {stage.remarks}
+                          </p>
                         )}
                       </td>
                       <td className="py-3.5 px-3">
@@ -493,10 +542,10 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                         )}
                       </td>
                       <td className="py-3.5 px-3 font-mono text-slate-700">
-                        {formatDateTime(stage.plannedTimestamp)}
+                        {formatDateTime(stage.plannedTimestamp || stage.plannedDateTime)}
                       </td>
                       <td className="py-3.5 px-3 font-mono text-slate-900 font-semibold">
-                        {formatDateTime(stage.actualTimestamp)}
+                        {formatDateTime(stage.actualTimestamp || stage.actualDateTime)}
                       </td>
                       <td className="py-3.5 px-3">
                         {renderSlaBadge(stage)}
@@ -594,18 +643,29 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                       </td>
                       <td className="py-3.5 px-3 text-center">
                         {((activeFlow.flowType === 'CHECK_STOCK' || activeFlow.templateKey === 'CHECK_STOCK') && !activeFlow.indentNo?.endsWith('-PUR') && !activeFlow.flowId?.includes('-PUR') && (idx === 1 || stage.stageId === 'STG-STK-02')) ? (
-                          <button
-                            type="button"
-                            onClick={() => setIsStoreTriageOpen(true)}
-                            className={`px-3 py-1.5 rounded-lg font-bold text-[11px] transition-all flex items-center gap-1 mx-auto cursor-pointer ${
-                              isActive
-                                ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
-                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 shadow-2xs'
-                            }`}
-                          >
-                            {isDone && <Eye className="w-3.5 h-3.5 text-slate-500" />}
-                            <span>{isActive ? 'Execute Stage' : 'View Details'}</span>
-                          </button>
+                          isStageDone || activeFlow.status === 'Awaiting Fulfillment' || activeFlow.status === 'Completed' ? (
+                            <button
+                              type="button"
+                              onClick={() => setIsStoreTriageOpen(true)}
+                              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold text-[11px] border border-slate-300 shadow-2xs transition-all flex items-center gap-1 mx-auto cursor-pointer"
+                              title="Stage complete - View Store Triage Breakdown"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-slate-500" />
+                              <span>View Details</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setIsStoreTriageOpen(true)}
+                              className={`px-3 py-1.5 rounded-lg font-bold text-[11px] transition-all flex items-center gap-1 mx-auto cursor-pointer ${
+                                isActive
+                                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
+                                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 shadow-2xs'
+                              }`}
+                            >
+                              <span>Execute Stage</span>
+                            </button>
+                          )
                         ) : isActive && onOpenStageAction ? (
                           canExecute ? (
                             <button
@@ -619,15 +679,22 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                             <button
                               type="button"
                               disabled
-                              className="px-3 py-1.5 bg-slate-100 text-slate-400 rounded-lg font-medium text-[11px] border border-slate-200 cursor-not-allowed mx-auto"
+                              className="px-3 py-1.5 bg-slate-100 text-slate-400 rounded-lg font-medium text-[11px] border border-slate-200 cursor-not-allowed mx-auto flex items-center gap-1"
                             >
+                              <Eye className="w-3.5 h-3.5 text-slate-400" />
                               <span>View Details</span>
                             </button>
                           )
-                        ) : isDone && onOpenStageAction ? (
+                        ) : isStageDone ? (
                           <button
                             type="button"
-                            onClick={() => onOpenStageAction(activeFlow, idx)}
+                            onClick={() => {
+                              if ((activeFlow.flowType === 'CHECK_STOCK' || activeFlow.templateKey === 'CHECK_STOCK') && idx === 1) {
+                                setIsStoreTriageOpen(true);
+                              } else if (onOpenStageAction) {
+                                onOpenStageAction(activeFlow, idx);
+                              }
+                            }}
                             className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold text-[11px] border border-slate-300 shadow-2xs transition-all flex items-center gap-1 mx-auto cursor-pointer"
                           >
                             <Eye className="w-3.5 h-3.5 text-slate-500" />
@@ -768,7 +835,15 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
         <StoreTriageModal
           flow={activeFlow}
           currentUser={currentUser}
-          readOnly={activeFlow.stages[1]?.status === 'Done' || activeFlow.stages[1]?.status === 'Completed' || activeFlow.stages[1]?.status === 'Skipped' || activeFlow.status === 'Awaiting Fulfillment' || activeFlow.status === 'Completed'}
+          readOnly={
+            activeFlow.stages[1]?.status === 'Done' || 
+            activeFlow.stages[1]?.status === 'Completed' || 
+            activeFlow.stages[1]?.status === 'Skipped' || 
+            activeFlow.status === 'Awaiting Fulfillment' || 
+            activeFlow.status === 'Completed' ||
+            Boolean(activeFlow.stages[1]?.actualDateTime || activeFlow.stages[1]?.actualTimestamp) ||
+            activeFlow.stages[1]?.assignee === 'System / Child Workflows'
+          }
           onClose={() => setIsStoreTriageOpen(false)}
           onCompleteTriage={handleCompleteTriage}
         />
@@ -784,6 +859,11 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
           currentUser={currentUser}
           onClose={() => setIsL1ModalOpen(false)}
           onApproveL1={handleApproveL1InModal}
+          onReturnToPurchaser={(updatedFlow) => {
+            setActiveFlow(updatedFlow);
+            if (onUpdateFlow) onUpdateFlow(updatedFlow);
+            setIsL1ModalOpen(false);
+          }}
         />
       )}
 

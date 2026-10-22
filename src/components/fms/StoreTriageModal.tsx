@@ -10,12 +10,30 @@ import {
   ArrowRight,
   Info,
   Layers,
-  Save
+  Save,
+  Building2,
+  Plus
 } from 'lucide-react';
-import { FmsInstance, FmsLineItem, UserProfile } from '../../types';
+import { FmsInstance, FmsLineItem, UserProfile, InventoryItem } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
+import { QuickAddInventoryModal } from '../ims/QuickAddInventoryModal';
 
-interface StoreTriageModalProps {
+export function getStockAtStore(
+  inventoryItems: InventoryItem[],
+  itemName: string,
+  storeLocation: string
+): number {
+  if (!inventoryItems || !itemName) return 0;
+  const itemLower = itemName.toLowerCase().trim();
+  const match = inventoryItems.find(
+    inv =>
+      (inv.location === storeLocation || (storeLocation.toLowerCase().includes('central') && inv.location === 'Central Store')) &&
+      (inv.name.toLowerCase().includes(itemLower) || itemLower.includes(inv.name.toLowerCase()))
+  );
+  return match ? match.currentStock : 0;
+}
+
+export interface StoreTriageModalProps {
   flow: FmsInstance;
   currentUser: UserProfile;
   readOnly?: boolean;
@@ -38,102 +56,180 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
   onClose,
   onCompleteTriage,
 }) => {
+  const masterSites = storageAdapter.getMasterSites();
+  const otherSiteOptions = masterSites.filter(s => s !== 'Central Store');
+  const defaultOtherSite = otherSiteOptions[0] || 'Bijetala Site';
+
+  // Strict mathematical stock and routing calculation helper
+  const calculateStockAndRouting = (
+    item: FmsLineItem,
+    csrStock: number,
+    otherStock: number,
+    siteName?: string,
+    forcedAlloc?: 'STORE_DISPATCH' | 'PURCHASE_REQUISITION' | 'HELD_ARCHIVED'
+  ): FmsLineItem => {
+    const reqQty = item.qty || 1;
+    const totalAvail = csrStock + otherStock;
+    const stockSite = siteName || item.stockSiteName || defaultOtherSite;
+
+    // Check manual override (Archive)
+    const isArchived = forcedAlloc === 'HELD_ARCHIVED' || (forcedAlloc === undefined && item.triageAllocation === 'HELD_ARCHIVED');
+
+    if (isArchived) {
+      return {
+        ...item,
+        csrStock,
+        otherSiteStock: otherStock,
+        stockSiteName: stockSite,
+        storeStockQtyAvailable: totalAvail,
+        csrQty: 0,
+        otherSiteQty: 0,
+        purchaseQtyRequired: 0,
+        triageAllocation: 'HELD_ARCHIVED',
+        dispatchSource: 'Central Store',
+      };
+    }
+
+    // Mathematical Stock Logic:
+    // Purchase Qty = Math.max(0, Req Qty - (CSR Stock + Other Site Stock))
+    let csrQty = 0;
+    let otherSiteQty = 0;
+    let purchaseQtyRequired = 0;
+    let triageAllocation: 'STORE_DISPATCH' | 'PURCHASE_REQUISITION' | 'HELD_ARCHIVED' = 'STORE_DISPATCH';
+
+    if (totalAvail >= reqQty) {
+      // 1. Total Avail >= Req Qty -> Store Dispatch ACTIVE, Purchase Qty = 0, Purchase DISABLED
+      triageAllocation = 'STORE_DISPATCH';
+      csrQty = Math.min(reqQty, csrStock);
+      otherSiteQty = Math.min(reqQty - csrQty, otherStock);
+      purchaseQtyRequired = 0;
+    } else if (totalAvail === 0) {
+      // 2. Total Avail == 0 -> Purchase ACTIVE, Purchase Qty = Req Qty, Store Dispatch DISABLED
+      triageAllocation = 'PURCHASE_REQUISITION';
+      csrQty = 0;
+      otherSiteQty = 0;
+      purchaseQtyRequired = reqQty;
+    } else {
+      // 3. 0 < Total Avail < Req Qty -> Split Routing
+      triageAllocation = 'STORE_DISPATCH';
+      csrQty = Math.min(reqQty, csrStock);
+      otherSiteQty = Math.min(reqQty - csrQty, otherStock);
+      purchaseQtyRequired = Math.max(0, reqQty - (csrQty + otherSiteQty));
+    }
+
+    const dispatchSource = csrQty > 0 && otherSiteQty > 0
+      ? `Central Store & ${stockSite}`
+      : csrQty > 0
+      ? 'Central Store'
+      : otherSiteQty > 0
+      ? stockSite
+      : 'Central Store';
+
+    return {
+      ...item,
+      csrStock,
+      otherSiteStock: otherStock,
+      stockSiteName: stockSite,
+      storeStockQtyAvailable: totalAvail,
+      csrQty,
+      otherSiteQty,
+      purchaseQtyRequired,
+      triageAllocation,
+      dispatchSource,
+    };
+  };
+
   // Load initial line items from flow or initialize default line item if empty
   const [lineItems, setLineItems] = useState<FmsLineItem[]>(() => {
-    if (flow.lineItems && flow.lineItems.length > 0) {
-      return flow.lineItems.map(item => ({
-        ...item,
-        triageAllocation: item.triageAllocation || 'PURCHASE_REQUISITION',
-        storeStockQtyAvailable: item.storeStockQtyAvailable ?? 0,
-        purchaseQtyRequired: item.purchaseQtyRequired ?? item.qty,
-      }));
-    }
-    // Fallback if no line items exist on flow yet: create 1 default item from title/remarks
-    return [
-      {
-        id: 'ITEM-1',
-        itemDescription: flow.title || 'Requested Indent Line Material',
-        qty: 1,
-        unit: 'Nos',
-        urgency: 'NORMAL',
-        triageAllocation: 'PURCHASE_REQUISITION',
-        storeStockQtyAvailable: 0,
-        purchaseQtyRequired: 1,
-      }
-    ];
+    const rawItems = (flow.lineItems && flow.lineItems.length > 0)
+      ? flow.lineItems
+      : [
+          {
+            id: 'ITEM-1',
+            itemDescription: flow.title || 'Requested Indent Line Material',
+            qty: 1,
+            unit: 'Nos',
+            urgency: 'NORMAL' as const,
+          }
+        ];
+
+    const inventoryItems = storageAdapter.getInventoryItems();
+
+    return rawItems.map(item => {
+      const autoCsrStock = item.csrStock ?? getStockAtStore(inventoryItems, item.itemDescription, 'Central Store');
+      const otherStock = item.otherSiteStock ?? 0;
+      const siteName = item.stockSiteName || defaultOtherSite;
+
+      return calculateStockAndRouting(item, autoCsrStock, otherStock, siteName);
+    });
   });
 
   const [triageNotes, setTriageNotes] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
 
-  // Auto-lookup stock availability from Inventory Management System (IMS)
-  useEffect(() => {
-    const imsItems = storageAdapter.getInventoryItems();
-    setLineItems(prev =>
-      prev.map(item => {
-        // Simple fuzzy match by item description name against IMS inventory catalog
-        const match = imsItems.find(
-          inv => inv.name.toLowerCase().includes(item.itemDescription.toLowerCase()) ||
-                 item.itemDescription.toLowerCase().includes(inv.name.toLowerCase())
-        );
-        const availableStock = match ? match.currentStock : 0;
-        // Default split: if stock available, allocate up to available stock for store dispatch
-        const storeQty = Math.min(item.qty, availableStock);
-        const purchaseQty = Math.max(0, item.qty - storeQty);
-        let allocation: 'STORE_DISPATCH' | 'PURCHASE_REQUISITION' | 'HELD_ARCHIVED' = 'PURCHASE_REQUISITION';
-        if (storeQty > 0 && purchaseQty === 0) {
-          allocation = 'STORE_DISPATCH';
-        } else if (storeQty > 0 && purchaseQty > 0) {
-          allocation = 'PURCHASE_REQUISITION'; // Split track
-        }
-
-        return {
-          ...item,
-          storeStockQtyAvailable: availableStock,
-          purchaseQtyRequired: item.purchaseQtyRequired ?? purchaseQty,
-          triageAllocation: item.triageAllocation || allocation,
-        };
-      })
-    );
-  }, []);
-
-  const handleUpdateAllocation = (
-    index: number,
-    allocation: 'STORE_DISPATCH' | 'PURCHASE_REQUISITION' | 'HELD_ARCHIVED'
-  ) => {
+  const handleCsrStockChange = (idx: number, val: number) => {
     if (readOnly) return;
     setLineItems(prev => {
       const next = [...prev];
-      const current = next[index];
-      const avail = current.storeStockQtyAvailable ?? 0;
-
-      let finalAlloc = allocation;
-      if (allocation === 'STORE_DISPATCH' && avail === 0) {
-        finalAlloc = 'PURCHASE_REQUISITION';
-      }
-
-      const target = { ...current, triageAllocation: finalAlloc };
-      if (finalAlloc === 'STORE_DISPATCH') {
-        target.purchaseQtyRequired = 0;
-      } else if (finalAlloc === 'PURCHASE_REQUISITION') {
-        target.purchaseQtyRequired = target.qty;
-      }
-      next[index] = target;
+      const cur = next[idx];
+      const newCsrStock = Math.max(0, val);
+      next[idx] = calculateStockAndRouting(cur, newCsrStock, cur.otherSiteStock || 0, cur.stockSiteName);
       return next;
     });
   };
 
-  const handleQtyChange = (index: number, field: 'qty' | 'purchaseQtyRequired', val: number) => {
+  const handleOtherSiteStockChange = (idx: number, val: number) => {
+    if (readOnly) return;
     setLineItems(prev => {
       const next = [...prev];
-      const target = { ...next[index], [field]: Math.max(0, val) };
-      next[index] = target;
+      const cur = next[idx];
+      const newOtherStock = Math.max(0, val);
+      next[idx] = calculateStockAndRouting(cur, cur.csrStock || 0, newOtherStock, cur.stockSiteName);
       return next;
     });
   };
 
-  const storeCount = lineItems.filter(i => i.triageAllocation === 'STORE_DISPATCH').length;
-  const purchaseCount = lineItems.filter(i => i.triageAllocation === 'PURCHASE_REQUISITION').length;
+  const handleStockSiteNameChange = (idx: number, siteName: string) => {
+    if (readOnly) return;
+    setLineItems(prev => {
+      const next = [...prev];
+      const cur = next[idx];
+      next[idx] = calculateStockAndRouting(cur, cur.csrStock || 0, cur.otherSiteStock || 0, siteName);
+      return next;
+    });
+  };
+
+  const handleToggleArchive = (idx: number) => {
+    if (readOnly) return;
+    setLineItems(prev => {
+      const next = [...prev];
+      const cur = next[idx];
+      if (cur.triageAllocation === 'HELD_ARCHIVED') {
+        // Toggle OFF archive -> revert to mathematical stock routing
+        next[idx] = calculateStockAndRouting(
+          cur,
+          cur.csrStock || 0,
+          cur.otherSiteStock || 0,
+          cur.stockSiteName,
+          'STORE_DISPATCH'
+        );
+      } else {
+        // Toggle ON archive -> manual override
+        next[idx] = calculateStockAndRouting(
+          cur,
+          cur.csrStock || 0,
+          cur.otherSiteStock || 0,
+          cur.stockSiteName,
+          'HELD_ARCHIVED'
+        );
+      }
+      return next;
+    });
+  };
+
+  const storeCount = lineItems.filter(i => i.triageAllocation !== 'HELD_ARCHIVED' && ((i.csrQty || 0) + (i.otherSiteQty || 0)) > 0).length;
+  const purchaseCount = lineItems.filter(i => i.triageAllocation !== 'HELD_ARCHIVED' && (i.purchaseQtyRequired || 0) > 0).length;
   const archivedCount = lineItems.filter(i => i.triageAllocation === 'HELD_ARCHIVED').length;
 
   const handleSubmitTriage = () => {
@@ -146,7 +242,6 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
       currentUser
     );
 
-    // Keep the current user (e.g. Store Manager Amanat Bharadwaj) on their active CHECK_STOCK flow
     const resultingFlow = updatedParent || flow;
 
     setTimeout(() => {
@@ -162,7 +257,7 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-4xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-5xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Modal Header */}
         <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -172,18 +267,18 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold px-2 py-0.5 bg-indigo-500/20 text-indigo-300 rounded border border-indigo-400/30">
-                  STAGE 2 TRIAGE
+                  STAGE 2 MULTI-STORE TRIAGE
                 </span>
                 <span className="text-xs text-slate-400">Indent #{flow.indentNo || flow.requisitionNumber}</span>
               </div>
               <h2 className="text-base font-bold text-white mt-0.5">
-                Store Stock Triage & Parallel Pipeline Split
+                Multi-Store Stock Triage & Pipeline Split
               </h2>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -224,106 +319,291 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
         {/* Line Item Triage Table */}
         <div className="p-6 overflow-y-auto space-y-4 flex-1">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span>Requested Material Line Breakdown</span>
-              <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
-                (Store Manager will verify central inventory stock and assign pipeline track)
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>Requested Material Line Breakdown</span>
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Type physical stock counts at CSR and other sites. Routing and Purchase Qty are locked to mathematical stock balance.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsQuickAddOpen(true)}
+                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Quick Add SKU</span>
+              </button>
+              <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium bg-indigo-50 dark:bg-indigo-950/40 px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800/40">
+                ⚡ Multi-Store Triage Active
               </span>
-            </h3>
-            <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium bg-indigo-50 dark:bg-indigo-950/40 px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800/40">
-              ⚡ IMS Auto Stock Check Active
-            </span>
+            </div>
           </div>
+
+          <QuickAddInventoryModal
+            isOpen={isQuickAddOpen}
+            onClose={() => setIsQuickAddOpen(false)}
+            onSuccess={() => {
+              const inv = storageAdapter.getInventoryItems();
+              setLineItems(prev => prev.map(item => {
+                const autoCsr = getStockAtStore(inv, item.itemDescription, 'Central Store');
+                if (autoCsr > 0 && (item.csrStock === 0 || !item.csrStock)) {
+                  return calculateStockAndRouting(item, autoCsr, item.otherSiteStock || 0, item.stockSiteName);
+                }
+                return item;
+              }));
+            }}
+          />
 
           <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-800">
                 <tr>
                   <th className="py-2.5 px-3 w-8">#</th>
-                  <th className="py-2.5 px-3">Material Description</th>
+                  <th className="py-2.5 px-3 min-w-[160px]">Material Description</th>
                   <th className="py-2.5 px-3 w-20 text-center">Req Qty</th>
-                  <th className="py-2.5 px-3 w-28 text-center">IMS Store Stock</th>
-                  <th className="py-2.5 px-3 w-28 text-center">Purchase Qty</th>
-                  <th className="py-2.5 px-3 text-center">Pipeline Triage Action</th>
+                  <th className="py-2.5 px-3 w-24 text-center bg-indigo-50/50 dark:bg-indigo-950/20">CSR Stock</th>
+                  <th className="py-2.5 px-3 w-28 text-center bg-blue-50/50 dark:bg-blue-950/20">Other Site Stock</th>
+                  <th className="py-2.5 px-3 w-36 text-center">Stock Site Name</th>
+                  <th className="py-2.5 px-3 w-24 text-center">Total Avail</th>
+                  <th className="py-2.5 px-3 w-24 text-center">Purchase Qty</th>
+                  <th className="py-2.5 px-3 text-center">Triage Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900">
-                {lineItems.map((item, idx) => (
-                  <tr key={item.id || idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
-                    <td className="py-3 px-3 font-mono text-slate-500">{idx + 1}</td>
-                    <td className="py-3 px-3">
-                      <p className="font-semibold text-slate-900 dark:text-white">{item.itemDescription}</p>
-                      {item.remark && <p className="text-[11px] text-slate-500 mt-0.5">{item.remark}</p>}
-                    </td>
-                    <td className="py-3 px-3 text-center font-bold text-slate-900 dark:text-white">
-                      {item.qty} {item.unit}
-                    </td>
-                    <td className="py-3 px-3 text-center">
-                      <span className={`inline-flex items-center gap-1 font-semibold px-2 py-0.5 rounded ${
-                        (item.storeStockQtyAvailable ?? 0) >= item.qty
-                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                          : (item.storeStockQtyAvailable ?? 0) > 0
-                          ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                      }`}>
-                        {item.storeStockQtyAvailable ?? 0} {item.unit}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-center">
-                      <input
-                        type="number"
-                        min={0}
-                        max={item.qty}
-                        value={item.purchaseQtyRequired ?? item.qty}
-                        onChange={(e) => handleQtyChange(idx, 'purchaseQtyRequired', parseInt(e.target.value) || 0)}
-                        disabled={item.triageAllocation === 'STORE_DISPATCH' || item.triageAllocation === 'HELD_ARCHIVED'}
-                        className="w-16 text-center py-1 px-1.5 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 font-bold text-slate-900 dark:text-white disabled:opacity-40"
-                      />
-                    </td>
-                    <td className="py-3 px-3">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateAllocation(idx, 'STORE_DISPATCH')}
-                          className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1 ${
-                            item.triageAllocation === 'STORE_DISPATCH'
-                              ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/40'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-emerald-50 hover:text-emerald-700'
-                          }`}
-                        >
-                          <Truck className="w-3.5 h-3.5" />
-                          <span>Store Dispatch</span>
-                        </button>
+                {lineItems.map((item, idx) => {
+                  const csrStockVal = item.csrStock ?? 0;
+                  const otherStockVal = item.otherSiteStock ?? 0;
+                  const totalAvail = csrStockVal + otherStockVal;
+                  const reqQty = item.qty || 1;
+                  const isArchived = item.triageAllocation === 'HELD_ARCHIVED';
 
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateAllocation(idx, 'PURCHASE_REQUISITION')}
-                          className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1 ${
-                            item.triageAllocation === 'PURCHASE_REQUISITION'
-                              ? 'bg-amber-600 text-white shadow-sm ring-2 ring-amber-500/40'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-amber-50 hover:text-amber-700'
-                          }`}
-                        >
-                          <ShoppingCart className="w-3.5 h-3.5" />
-                          <span>Purchase</span>
-                        </button>
+                  // Mathematically calculated Purchase Qty = Math.max(0, Req Qty - Total Avail)
+                  const purchaseQty = item.purchaseQtyRequired ?? Math.max(0, reqQty - totalAvail);
 
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateAllocation(idx, 'HELD_ARCHIVED')}
-                          className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1 ${
-                            item.triageAllocation === 'HELD_ARCHIVED'
-                              ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 shadow-sm'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200'
+                  // Build clear dispatch statement preview
+                  const csrQtyUsed = item.csrQty || 0;
+                  const otherQtyUsed = item.otherSiteQty || 0;
+                  const siteNameUsed = item.stockSiteName || defaultOtherSite;
+
+                  let dispatchPreviewStr = '';
+                  if (!isArchived && (csrQtyUsed > 0 || otherQtyUsed > 0)) {
+                    if (csrQtyUsed > 0 && otherQtyUsed > 0) {
+                      dispatchPreviewStr = `Dispatch ${csrQtyUsed} from Central Store and ${otherQtyUsed} from ${siteNameUsed}`;
+                    } else if (csrQtyUsed > 0) {
+                      dispatchPreviewStr = `Dispatch ${csrQtyUsed} from Central Store`;
+                    } else if (otherQtyUsed > 0) {
+                      dispatchPreviewStr = `Dispatch ${otherQtyUsed} from ${siteNameUsed}`;
+                    }
+                  }
+
+                  return (
+                    <tr key={item.id || idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                      <td className="py-3 px-3 font-mono text-slate-500">{idx + 1}</td>
+                      <td className="py-3 px-3">
+                        <p className="font-semibold text-slate-900 dark:text-white">{item.itemDescription}</p>
+                        {item.remark && <p className="text-[11px] text-slate-500 mt-0.5">{item.remark}</p>}
+                        {!isArchived && dispatchPreviewStr && (
+                          <p className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1">
+                            <Truck className="w-3 h-3" />
+                            <span>{dispatchPreviewStr}</span>
+                          </p>
+                        )}
+                        {isArchived && (
+                          <p className="text-[11px] font-bold text-slate-500 mt-1 flex items-center gap-1">
+                            <Archive className="w-3 h-3" />
+                            <span>Material Put On Hold / Archived</span>
+                          </p>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 text-center font-bold text-slate-900 dark:text-white">
+                        {reqQty} {item.unit}
+                      </td>
+
+                      {/* 1. CSR Stock Column */}
+                      <td className="py-3 px-3 text-center bg-indigo-50/30 dark:bg-indigo-950/10">
+                        <input
+                          type="number"
+                          min={0}
+                          value={csrStockVal}
+                          disabled={readOnly}
+                          onChange={(e) => handleCsrStockChange(idx, parseInt(e.target.value) || 0)}
+                          className="w-16 text-center py-1 px-1 border border-indigo-200 dark:border-indigo-800 rounded bg-white dark:bg-slate-800 font-bold text-indigo-900 dark:text-indigo-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                          title="Central Store / Raipur Workshop physical stock count"
+                        />
+                      </td>
+
+                      {/* 2. Other Site Stock Column */}
+                      <td className="py-3 px-3 text-center bg-blue-50/30 dark:bg-blue-950/10">
+                        <input
+                          type="number"
+                          min={0}
+                          value={otherStockVal}
+                          disabled={readOnly}
+                          onChange={(e) => handleOtherSiteStockChange(idx, parseInt(e.target.value) || 0)}
+                          className="w-16 text-center py-1 px-1 border border-blue-200 dark:border-blue-800 rounded bg-white dark:bg-slate-800 font-bold text-blue-900 dark:text-blue-200 focus:ring-2 focus:ring-blue-500 outline-none"
+                          title="Stock available at other sites"
+                        />
+                      </td>
+
+                      {/* 3. Stock Site Name Column */}
+                      <td className="py-3 px-3 text-center">
+                        <select
+                          value={item.stockSiteName || defaultOtherSite}
+                          disabled={readOnly || !(otherStockVal > 0)}
+                          onChange={(e) => handleStockSiteNameChange(idx, e.target.value)}
+                          className="w-full text-xs py-1 px-1.5 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-white disabled:opacity-40 cursor-pointer"
+                        >
+                          {masterSites.map((site) => (
+                            <option key={site} value={site}>
+                              {site}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
+                      {/* Total Available */}
+                      <td className="py-3 px-3 text-center">
+                        <span
+                          className={`inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded text-xs ${
+                            totalAvail >= reqQty
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                              : totalAvail > 0
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                           }`}
                         >
-                          <Archive className="w-3.5 h-3.5" />
-                          <span>Archive</span>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          {totalAvail} {item.unit}
+                        </span>
+                      </td>
+
+                      {/* Purchase Qty - Mathematically Locked */}
+                      <td className="py-3 px-3 text-center font-bold">
+                        <input
+                          type="number"
+                          min={0}
+                          max={reqQty}
+                          value={isArchived ? 0 : purchaseQty}
+                          readOnly
+                          disabled
+                          className={`w-16 text-center py-1 px-1 border rounded font-bold text-xs ${
+                            isArchived
+                              ? 'bg-slate-100 text-slate-400 border-slate-200 dark:bg-slate-800 opacity-50 cursor-not-allowed'
+                              : purchaseQty === 0
+                              ? 'bg-slate-100 text-slate-400 border-slate-200 dark:bg-slate-800 opacity-60 font-semibold cursor-not-allowed'
+                              : 'bg-amber-50 text-amber-900 border-amber-300 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-700'
+                          }`}
+                          title={
+                            totalAvail >= reqQty
+                              ? 'Stock math dictates Purchase Qty = 0 (Total stock covers full requisition)'
+                              : `Purchase Qty auto-calculated: Math.max(0, ${reqQty} - ${totalAvail}) = ${purchaseQty}`
+                          }
+                        />
+                      </td>
+
+                      {/* Triage Action Buttons - Strict Mathematical Radio Behavior */}
+                      <td className="py-3 px-3">
+                        <div className="flex items-center justify-center gap-1">
+                          {/* 1. Store Dispatch Button */}
+                          {(() => {
+                            const isFullStock = totalAvail >= reqQty;
+                            const isPartialStock = totalAvail > 0 && totalAvail < reqQty;
+                            const isZeroStock = totalAvail === 0;
+
+                            const isStoreActive = !isArchived && (isFullStock || isPartialStock);
+                            const isStoreDisabled = readOnly || isZeroStock;
+
+                            return (
+                              <button
+                                type="button"
+                                disabled={isStoreDisabled}
+                                onClick={() => {
+                                  if (isArchived) handleToggleArchive(idx);
+                                }}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 ${
+                                  isStoreActive
+                                    ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/40'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 opacity-50 cursor-not-allowed'
+                                }`}
+                                title={
+                                  isZeroStock
+                                    ? 'Stock math dictates this route: 0 stock available in stores'
+                                    : isFullStock
+                                    ? 'Store Dispatch Active: Total stock covers full requisition'
+                                    : `Partial Store Dispatch Active (${totalAvail} of ${reqQty} in stock)`
+                                }
+                              >
+                                <Truck className="w-3.5 h-3.5" />
+                                <span>
+                                  {isPartialStock ? `Dispatch (${totalAvail})` : 'Store Dispatch'}
+                                </span>
+                              </button>
+                            );
+                          })()}
+
+                          {/* 2. Purchase Button */}
+                          {(() => {
+                            const isFullStock = totalAvail >= reqQty;
+                            const isPartialStock = totalAvail > 0 && totalAvail < reqQty;
+                            const isZeroStock = totalAvail === 0;
+
+                            const isPurchaseActive = !isArchived && (isZeroStock || isPartialStock);
+                            const isPurchaseDisabled = readOnly || isFullStock;
+
+                            return (
+                              <button
+                                type="button"
+                                disabled={isPurchaseDisabled}
+                                onClick={() => {
+                                  if (isArchived) handleToggleArchive(idx);
+                                }}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 ${
+                                  isPurchaseActive
+                                    ? 'bg-amber-600 text-white shadow-xs ring-2 ring-amber-500/40'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 opacity-50 cursor-not-allowed'
+                                }`}
+                                title={
+                                  isFullStock
+                                    ? `Stock math dictates this route: Total stock ${totalAvail} >= Req ${reqQty}, purchase not required`
+                                    : isZeroStock
+                                    ? 'Purchase Active: 0 stock available in stores'
+                                    : `Partial Purchase Active (${purchaseQty} required from market)`
+                                }
+                              >
+                                <ShoppingCart className="w-3.5 h-3.5" />
+                                <span>
+                                  {isPartialStock ? `Purchase (${purchaseQty})` : 'Purchase'}
+                                </span>
+                              </button>
+                            );
+                          })()}
+
+                          {/* 3. Archive Button (Manual Override Only) */}
+                          {(() => {
+                            return (
+                              <button
+                                type="button"
+                                disabled={readOnly}
+                                onClick={() => handleToggleArchive(idx)}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                                  isArchived
+                                    ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs ring-2 ring-slate-400'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200'
+                                }`}
+                                title={isArchived ? 'Archived / On Hold (Click to restore stock math route)' : 'Manual Override: Put on Hold / Archive'}
+                              >
+                                <Archive className="w-3.5 h-3.5" />
+                                <span>Archive</span>
+                              </button>
+                            );
+                          })()}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -338,7 +618,7 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
               value={triageNotes}
               disabled={readOnly}
               onChange={(e) => setTriageNotes(e.target.value)}
-              placeholder="e.g. 2 items issued from Siladehi Store; remaining 3 items routed to Purchase Dept for vendor quotation..."
+              placeholder="e.g. Dispatched 2 units from Central Store and transferred 3 units from Bijetala Site..."
               className="w-full text-xs p-2.5 border border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-60"
             />
           </div>
@@ -348,7 +628,7 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
         <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
           <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
             <Info className="w-4 h-4 text-indigo-500 shrink-0" />
-            <span>{readOnly ? 'Stage 2 Store Triage Complete (Read-Only View).' : 'Parallel tracks will launch automatically upon submission without duplicating the indent.'}</span>
+            <span>{readOnly ? 'Stage 2 Store Triage Complete (Read-Only View).' : 'Routing and Purchase Qty are strictly locked to mathematical stock balance.'}</span>
           </p>
           <div className="flex items-center gap-3">
             <button
@@ -366,7 +646,7 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
                 className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer"
               >
                 <Save className="w-4 h-4" />
-                <span>{isSubmitting ? 'Launching Parallel Tracks...' : 'Confirm Stock Triage & Launch Sub-Tracks'}</span>
+                <span>{isSubmitting ? 'Launching Parallel Sub-Tracks...' : 'Confirm Stock Triage & Launch Sub-Tracks'}</span>
               </button>
             )}
           </div>
@@ -375,3 +655,5 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
     </div>
   );
 };
+
+export const StoreStockTriageModal = StoreTriageModal;

@@ -20,14 +20,15 @@ import {
   User,
   Scale,
   Users,
-  Layers
+  Layers,
+  FileText
 } from 'lucide-react';
 import { FmsInstance, UserProfile, isUserSuperAdmin, isUserAdmin, isUserAdminOrSuperAdmin, hasModulePermission, ChecklistItem, DelegationTask } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { getFlowDepartmentKey, getDepartmentBranchLabel, matchItemDepartment, matchTaskDepartment, getDepartmentForWorkflow } from '../../services/stageAssignment';
 import { UserAvatar } from '../common/UserAvatar';
 
-export type NavTab = 'summary' | 'mis' | 'fms' | 'fms-audit' | 'template-studio' | 'cs-sheet' | 'bank-payments' | 'vendor-directory' | 'delegation' | 'checklist' | 'ims' | 'registry' | 'audit' | 'super-admin' | 'profile';
+export type NavTab = 'summary' | 'site-requisitions' | 'mis' | 'fms' | 'fms-audit' | 'template-studio' | 'cs-sheet' | 'bank-payments' | 'vendor-directory' | 'delegation' | 'checklist' | 'ims' | 'registry' | 'audit' | 'super-admin' | 'profile';
 
 interface SidebarProps {
   activeTab: NavTab;
@@ -245,6 +246,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ? `${badgeCounts.dueTodayCount}` 
         : undefined,
       badgeColor: badgeCounts.overdueCount > 0 ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
+    },
+    {
+      id: 'site-requisitions' as NavTab,
+      label: 'Site Requisitions',
+      icon: FileText,
     },
     {
       id: 'mis' as NavTab,

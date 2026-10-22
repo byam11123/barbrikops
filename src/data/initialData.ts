@@ -741,89 +741,6 @@ export const FMS_STANDARD_PURCHASE_STAGES: FmsStageDefinition[] = [
   {
     stageId: 'STG-05',
     stageNumber: 5,
-    name: 'Advance Payment Decision',
-    what: 'Director / Purchase Head determines if advance token payment is required before vendor material release',
-    whoRole: 'PURCHASE HEAD / DIRECTOR',
-    whoDefaultAssignee: 'Pranjal Agrawal',
-    howChannel: 'PAYMENT DECISION DESK',
-    slaHours: 4,
-    hasYesNoDecision: true,
-    logic: {
-      gatewayType: 'CONDITIONAL_JUMP',
-      yesTargetStageIndex: 5, // Jump to Stage 6 (Advance Payment)
-      noTargetStageIndex: 6,  // Jump directly to Stage 7 (Material Dispatch)
-      yesConditionLabel: 'Yes (Advance Payment Required)',
-      noConditionLabel: 'No (Direct Material Dispatch)',
-      conditionFieldId: 'isAdvancePaymentRequired',
-      slaHours: 4
-    },
-    fields: [
-      {
-        id: 'isAdvancePaymentRequired',
-        label: 'Is Advance Payment Required for Issued POs?',
-        type: 'SELECT',
-        options: ['Yes', 'No'],
-        required: true,
-        placeholder: 'Select whether vendor requires advance token payment before material release'
-      },
-      {
-        id: 'advancePaymentTerms',
-        label: 'Advance Payment Percentage / Terms',
-        type: 'TEXT',
-        placeholder: 'e.g. 20% advance before loading, balance against delivery'
-      },
-      {
-        id: 'paymentDecisionRemarks',
-        label: 'Payment Terms & Decision Remarks',
-        type: 'TEXTAREA',
-        placeholder: 'Enter advance payment justification or credit terms confirmation...'
-      }
-    ]
-  },
-  {
-    stageId: 'STG-06',
-    stageNumber: 6,
-    name: 'Advance Payment Disbursement',
-    what: 'Accounts team creates payment voucher, verifies bank/tax details, and disburses advance payment to vendor',
-    whoRole: 'FINANCE / ACCOUNTS',
-    whoDefaultAssignee: 'Priyanka Agrawal',
-    howChannel: 'ACCOUNTS VOUCHER & BANK DISBURSAL',
-    slaHours: 8,
-    hasYesNoDecision: false,
-    fields: [
-      {
-        id: 'advanceVoucherRef',
-        label: 'Accounts Payment Voucher Ref / UTR No.',
-        type: 'TEXT',
-        required: true,
-        placeholder: 'e.g. VCH-2026-992 or UTR-98214'
-      },
-      {
-        id: 'advancePaymentProof',
-        label: 'Bank Payment Receipt / Advice Slip',
-        type: 'FILE',
-        placeholder: 'Upload bank advice or payment receipt PDF...'
-      },
-      {
-        id: 'accountsNotes',
-        label: 'Accounts Verification & Disbursal Notes',
-        type: 'TEXTAREA',
-        placeholder: 'Enter accounts verification remarks, deduction details, or bank confirmation...'
-      }
-    ],
-    subWorkflowTrigger: {
-      enabled: true,
-      name: 'Trigger Accounts PO to Payment Workflow',
-      targetTemplateKey: 'PO_TO_PAYMENT',
-      triggerCondition: 'ON_COMPLETE',
-      targetAssigneeRule: 'DYNAMIC_ROLE',
-      targetRole: 'FINANCE_ACCOUNTS',
-      targetAssignee: 'Priyanka Agrawal'
-    }
-  },
-  {
-    stageId: 'STG-07',
-    stageNumber: 7,
     name: 'Send PO for Material Collection & Dispatch',
     what: 'Vendor collection, gate pass generation, transporter dispatch, and central store receiving handover',
     whoRole: 'STORE MANAGER',
@@ -4097,7 +4014,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
     poAssignTo: 'Shyam Rao Sureshe',
     currentStageId: 'STG-02',
     currentStageIndex: 1,
-    totalStages: 7,
+    totalStages: 5,
     status: 'In Progress',
     createdAt: '10/07/2026 15:29:47',
     updatedAt: '16/06/2026 10:12:38',
@@ -4152,36 +4069,14 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
       },
       {
         stageId: 'STG-05',
-        stageName: 'Advance Payment Decision',
-        assignee: 'Pranjal Agrawal',
-        whoRole: 'PURCHASE HEAD / DIRECTOR',
-        whoDefaultAssignee: 'Pranjal Agrawal',
-        how: 'PAYMENT DECISION DESK',
-        status: 'Pending',
-        fields: FMS_STANDARD_PURCHASE_STAGES[4].fields,
-        logic: (FMS_STANDARD_PURCHASE_STAGES[4] as any).logic,
-      },
-      {
-        stageId: 'STG-06',
-        stageName: 'Advance Payment Disbursement',
-        assignee: 'Priyanka Agrawal',
-        whoRole: 'FINANCE / ACCOUNTS',
-        whoDefaultAssignee: 'Priyanka Agrawal',
-        how: 'ACCOUNTS VOUCHER & BANK DISBURSAL',
-        status: 'Pending',
-        fields: FMS_STANDARD_PURCHASE_STAGES[5].fields,
-        subWorkflowTrigger: (FMS_STANDARD_PURCHASE_STAGES[5] as any).subWorkflowTrigger,
-      },
-      {
-        stageId: 'STG-07',
         stageName: 'Send PO for Material Collection & Dispatch',
         assignee: 'Amanat Bharadwaj',
         whoRole: 'STORE MANAGER',
         whoDefaultAssignee: 'Amanat Bharadwaj',
         how: 'STORE DISPATCH HANDOVER',
         status: 'Pending',
-        fields: FMS_STANDARD_PURCHASE_STAGES[6].fields,
-        subWorkflowTrigger: (FMS_STANDARD_PURCHASE_STAGES[6] as any).subWorkflowTrigger,
+        fields: FMS_STANDARD_PURCHASE_STAGES[4].fields,
+        subWorkflowTrigger: (FMS_STANDARD_PURCHASE_STAGES[4] as any).subWorkflowTrigger,
       }
     ]
   },
@@ -4198,7 +4093,7 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
     poAssignTo: 'Shyam Rao Sureshe',
     currentStageId: 'STG-02',
     currentStageIndex: 1,
-    totalStages: 7,
+    totalStages: 5,
     status: 'In Progress',
     createdAt: '01/10/2026 09:15:00',
     updatedAt: '02/10/2026 14:00:00',
@@ -4252,36 +4147,14 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
       },
       {
         stageId: 'STG-05',
-        stageName: 'Advance Payment Decision',
-        assignee: 'Pranjal Agrawal',
-        whoRole: 'PURCHASE HEAD / DIRECTOR',
-        whoDefaultAssignee: 'Pranjal Agrawal',
-        how: 'PAYMENT DECISION DESK',
-        status: 'Pending',
-        fields: FMS_STANDARD_PURCHASE_STAGES[4].fields,
-        logic: (FMS_STANDARD_PURCHASE_STAGES[4] as any).logic,
-      },
-      {
-        stageId: 'STG-06',
-        stageName: 'Advance Payment Disbursement',
-        assignee: 'Priyanka Agrawal',
-        whoRole: 'FINANCE / ACCOUNTS',
-        whoDefaultAssignee: 'Priyanka Agrawal',
-        how: 'ACCOUNTS VOUCHER & BANK DISBURSAL',
-        status: 'Pending',
-        fields: FMS_STANDARD_PURCHASE_STAGES[5].fields,
-        subWorkflowTrigger: (FMS_STANDARD_PURCHASE_STAGES[5] as any).subWorkflowTrigger,
-      },
-      {
-        stageId: 'STG-07',
         stageName: 'Send PO for Material Collection & Dispatch',
         assignee: 'Amanat Bharadwaj',
         whoRole: 'STORE MANAGER',
         whoDefaultAssignee: 'Amanat Bharadwaj',
         how: 'STORE DISPATCH HANDOVER',
         status: 'Pending',
-        fields: FMS_STANDARD_PURCHASE_STAGES[6].fields,
-        subWorkflowTrigger: (FMS_STANDARD_PURCHASE_STAGES[6] as any).subWorkflowTrigger,
+        fields: FMS_STANDARD_PURCHASE_STAGES[4].fields,
+        subWorkflowTrigger: (FMS_STANDARD_PURCHASE_STAGES[4] as any).subWorkflowTrigger,
       }
     ]
   }
@@ -4921,11 +4794,38 @@ export const INITIAL_SITE_REGISTRY = [
   { id: 'site-04', code: 'CST-01', name: 'Central Store', status: 'ACTIVE' as const, createdAt: '01/10/2026' },
 ];
 
+export const DEFAULT_MASTER_CATEGORIES = [
+  'Consumables',
+  'Plant Machinery',
+  'Safety/CSR',
+  'IT Equipment',
+  'Office Hardware',
+  'Tools & Spares',
+  'Electricals',
+  'Raw Material / Fuel'
+];
+
+export const DEFAULT_MASTER_UNITS = [
+  'Nos',
+  'Kg',
+  'Ltr',
+  'Mtr',
+  'Set',
+  'Pkt',
+  'Box',
+  'Bag',
+  'Pair',
+  'Roll',
+  'Sqft'
+];
+
 export const DEFAULT_REGISTRY_CONFIG: CentralRegistryConfig = {
   organizationName: 'BarBrik Construction & Engineering',
   activeDataSource: 'HYBRID_TRANSITION',
   masterSites: ['Siladehi Site', 'Bijetala Site', 'Raipur Office', 'Central Store'],
   sitesRegistry: INITIAL_SITE_REGISTRY,
+  masterCategories: DEFAULT_MASTER_CATEGORIES,
+  masterUnits: DEFAULT_MASTER_UNITS,
   workShiftConfig: {
     shiftStartTime: '09:30',
     shiftEndTime: '18:30',
@@ -4974,7 +4874,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     departmentHub: 'PURCHASE',
     referenceLabel: 'BPL/IND/',
     defaultPriority: 'Normal',
-    description: '7-stage procurement flow: Indent verification, Comparative Statement (CS) quotation analysis, Director L1 approval, split PO issuance, advance payment decision gateway, accounts disbursement trigger, and store dispatch handover.',
+    description: '5-stage procurement flow: Indent verification, Comparative Statement (CS) quotation analysis, Director L1 approval, split PO issuance, and store dispatch handover.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
     stages: FMS_STANDARD_PURCHASE_STAGES.map((s, idx) => ({
@@ -4994,7 +4894,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
   {
     id: 'tpl_check_stock',
     templateKey: 'CHECK_STOCK',
-    name: 'Store Check Stock & Requisition Workflow',
+    name: 'Store Check Stock',
     departmentHub: 'STORE',
     referenceLabel: 'BPL/STK/',
     defaultPriority: 'Normal',

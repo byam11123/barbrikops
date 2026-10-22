@@ -16,6 +16,7 @@ import {
   Edit3,
   Trash2,
   Building2,
+  Boxes,
   ShoppingCart,
   Warehouse,
   Landmark,
@@ -210,6 +211,46 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
   const [siteError, setSiteError] = useState<string | null>(null);
 
   const canManageSites = isSuper || currentUser?.systemRole === 'DEPT_ADMIN';
+
+  // Master Categories & Units State
+  const [categoriesList, setCategoriesList] = useState<string[]>(() => storageAdapter.getMasterCategories());
+  const [unitsList, setUnitsList] = useState<string[]>(() => storageAdapter.getMasterUnits());
+  const [newCatInput, setNewCatInput] = useState('');
+  const [newUnitInput, setNewUnitInput] = useState('');
+
+  const handleAddCategory = () => {
+    if (!newCatInput.trim()) return;
+    const updated = storageAdapter.addMasterCategory(newCatInput.trim());
+    setCategoriesList(updated);
+    setNewCatInput('');
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 2500);
+  };
+
+  const handleDeleteCategory = (catToDelete: string) => {
+    const filtered = categoriesList.filter((c) => c !== catToDelete);
+    const updated = storageAdapter.saveMasterCategories(filtered);
+    setCategoriesList(updated);
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 2500);
+  };
+
+  const handleAddUnit = () => {
+    if (!newUnitInput.trim()) return;
+    const updated = storageAdapter.addMasterUnit(newUnitInput.trim());
+    setUnitsList(updated);
+    setNewUnitInput('');
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 2500);
+  };
+
+  const handleDeleteUnit = (unitToDelete: string) => {
+    const filtered = unitsList.filter((u) => u !== unitToDelete);
+    const updated = storageAdapter.saveMasterUnits(filtered);
+    setUnitsList(updated);
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 2500);
+  };
 
   const handleToggleArchiveSite = (site: SiteRegistryItem) => {
     storageAdapter.toggleArchiveSiteRegistryItem(site.id);
@@ -1067,6 +1108,123 @@ export const CentralRegistryView: React.FC<CentralRegistryViewProps> = ({
                     ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          {/* Master Inventory Categories & Measuring Units Registries */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+            {/* Master Categories Card */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <Boxes className="w-4.5 h-4.5 text-emerald-600" />
+                    <span>Master Inventory Categories ({categoriesList.length})</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Central catalog categories for IMS Inventory items. Bound to dropdowns across application.
+                  </p>
+                </div>
+              </div>
+
+              {canManageSites && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={newCatInput}
+                    onChange={(e) => setNewCatInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddCategory())}
+                    placeholder="New Category (e.g. Earthmoving Heavy)"
+                    className="flex-1 text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCategory}
+                    className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors shrink-0 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add</span>
+                  </button>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                {categoriesList.map((cat) => (
+                  <span
+                    key={cat}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-xl text-xs font-bold"
+                  >
+                    <span>{cat}</span>
+                    {canManageSites && categoriesList.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCategory(cat)}
+                        className="text-emerald-500 hover:text-rose-600 cursor-pointer ml-1 p-0.5"
+                        title="Remove category"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Master Measuring Units Card */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <Layers className="w-4.5 h-4.5 text-indigo-600" />
+                    <span>Master Measuring Units ({unitsList.length})</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Standard units of measure (Nos, Kg, Ltr, etc.) for requisition indents and store stock.
+                  </p>
+                </div>
+              </div>
+
+              {canManageSites && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={newUnitInput}
+                    onChange={(e) => setNewUnitInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddUnit())}
+                    placeholder="New Unit (e.g. Drums, Ton)"
+                    className="flex-1 text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddUnit}
+                    className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-colors shrink-0 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add</span>
+                  </button>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                {unitsList.map((unit) => (
+                  <span
+                    key={unit}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-900 border border-indigo-200 rounded-xl text-xs font-bold"
+                  >
+                    <span>{unit}</span>
+                    {canManageSites && unitsList.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteUnit(unit)}
+                        className="text-indigo-500 hover:text-rose-600 cursor-pointer ml-1 p-0.5"
+                        title="Remove unit"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
 

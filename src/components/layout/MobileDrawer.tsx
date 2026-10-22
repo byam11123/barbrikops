@@ -25,7 +25,8 @@ import {
   ShieldCheck,
   FileSpreadsheet,
   Scale,
-  Layers
+  Layers,
+  FileText
 } from 'lucide-react';
 import { NavTab } from './Sidebar';
 import { UserProfile, FmsInstance, isUserSuperAdmin, isUserAdmin, isUserAdminOrSuperAdmin, hasModulePermission, ChecklistItem, DelegationTask } from '../../types';
@@ -282,6 +283,11 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
         ? `${badgeCounts.dueTodayCount} Today` 
         : undefined,
       badgeColor: badgeCounts.overdueCount > 0 ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
+    },
+    {
+      id: 'site-requisitions' as NavTab,
+      label: 'Site Requisitions',
+      icon: FileText,
     },
     {
       id: 'mis' as NavTab,

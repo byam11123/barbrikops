@@ -43,6 +43,7 @@ import {
   CsVendorQuote, 
   UserProfile, 
   FmsInstance, 
+  FmsStageExecution,
   CsApprovalDetails 
 } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
@@ -64,6 +65,7 @@ export interface ComparativeStatementWorkspaceProps {
   mode?: 'EDIT' | 'APPROVAL' | 'VIEW';
   onClose?: () => void;
   onSaveAndLink?: (cs: ComparativeStatement) => void;
+  onReturnToPurchaser?: (updatedFlow: FmsInstance) => void;
   // Standalone Directory / List props
   onBackToDirectory?: () => void;
   statements?: ComparativeStatement[];
@@ -83,6 +85,7 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
   mode,
   onClose,
   onSaveAndLink,
+  onReturnToPurchaser,
   onBackToDirectory,
   statements = [],
   activeStatementId,
@@ -124,10 +127,26 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
     return 'EDIT';
   }, [mode, stageIndex, flow?.stages]);
 
+  // Check if current flow stage is Stage 2B (Additional Quotation Revision loop)
+  const isStage2B = useMemo(() => {
+    if (cs.directorRevisionRemarks && cs.status !== 'Approved') return true;
+    if (!flow) return false;
+    const currentStg = flow.stages?.[flow.currentStageIndex];
+    const thisStg = flow.stages?.[stageIndex];
+    return Boolean(
+      flow.currentStageId?.includes('02B') ||
+      currentStg?.stageId?.includes('02B') ||
+      currentStg?.stageName?.includes('2B') ||
+      thisStg?.stageId?.includes('02B') ||
+      thisStg?.stageName?.includes('2B') ||
+      thisStg?.stageName?.toLowerCase().includes('additional quotation')
+    );
+  }, [flow, stageIndex, cs.directorRevisionRemarks, cs.status]);
+
   // Check if record is officially signed and locked
   const isRecordLocked = useMemo(() => {
-    // If in EDIT mode (Stage 2: Quotation Entry), record must NEVER be treated as locked
-    if (effectiveMode === 'EDIT') return false;
+    // If in EDIT mode (Stage 2: Quotation Entry), or Stage 2B, or CS is explicitly unlocked (isLocked === false), record must NEVER be treated as locked
+    if (effectiveMode === 'EDIT' || isStage2B || cs.isLocked === false) return false;
 
     return (
       cs.status === 'Approved' ||
@@ -135,10 +154,10 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
       Boolean(cs.approvalDetails?.signatureStamp) ||
       Boolean(cs.approvedBy)
     );
-  }, [cs.status, cs.approvalDetails?.signatureStamp, cs.approvedBy, effectiveMode]);
+  }, [cs.status, cs.approvalDetails?.signatureStamp, cs.approvedBy, cs.isLocked, effectiveMode, isStage2B]);
 
   // Rates are locked in APPROVAL mode, VIEW mode, or when record is fully locked
-  const isRatesLocked = effectiveMode === 'APPROVAL' || effectiveMode === 'VIEW' || isRecordLocked;
+  const isRatesLocked = (effectiveMode === 'APPROVAL' && !isStage2B) || effectiveMode === 'VIEW' || isRecordLocked;
 
   // Approver states - strictly restricted to Director Pranjal Agrawal as Signatory
   const isPranjal = useMemo(() => {
@@ -179,6 +198,8 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[] | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isRequestAdditionalQuoteModalOpen, setIsRequestAdditionalQuoteModalOpen] = useState(false);
+  const [requestQuoteInstructions, setRequestQuoteInstructions] = useState('');
 
   // AI WhatsApp & Photo Quote Extraction States
   const [importTab, setImportTab] = useState<'image' | 'text'>('image');
@@ -944,8 +965,291 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
     setTimeout(() => setSaveSuccessMsg(null), 3500);
   };
 
+  // Director Stage 3: Return to Purchaser for Additional Quotation (5h SLA)
+  const handleReturnToPurchaser = (instructions: string) => {
+    if (!instructions.trim()) return;
+    setIsSaving(true);
+    const now = new Date();
+    const timestamp = now.toLocaleString('en-GB');
+    const isoNow = now.toISOString();
+
+    const updatedCs: ComparativeStatement = {
+      ...cs,
+      status: 'Draft',
+      isLocked: false,
+      directorRevisionRemarks: instructions,
+      approvedBy: undefined,
+      approvalDate: undefined,
+      approvalDetails: undefined,
+      notes: `[DIRECTOR DIRECTIVE - ${timestamp}]: ${instructions}\n${cs.notes || ''}`,
+      updatedAt: timestamp,
+    };
+    storageAdapter.saveComparativeStatement(updatedCs);
+    setCs(updatedCs);
+
+    let updatedFlowResult: FmsInstance | null = null;
+
+    if (flow) {
+      const currentIdx = flow.currentStageIndex !== undefined ? flow.currentStageIndex : 2;
+      const existingStages = [...flow.stages];
+
+      // Calculate iteration number for revision loop tracking
+      const revisionCount = existingStages.filter((s) => s.stageId?.includes('02B') || s.stageId?.includes('ITER')).length + 1;
+      const iterStageId = `STG-02B-ITER-${revisionCount}`;
+      const finalDirectorStageId = `STG-03-FINAL-ITER-${revisionCount}`;
+
+      // 3. Pause Director SLA:
+      // Record actualDateTime for Director's stage as 'Returned for Revision' (stopping Director's SLA clock)
+      const currentDirectorStage = existingStages[currentIdx] || ({} as FmsStageExecution);
+      let directorDelay = 0;
+      if (currentDirectorStage.plannedTimestamp) {
+        const diffMs = now.getTime() - new Date(currentDirectorStage.plannedTimestamp).getTime();
+        directorDelay = diffMs > 0 ? Math.round((diffMs / 3600000) * 10) / 10 : 0;
+      }
+
+      existingStages[currentIdx] = {
+        ...currentDirectorStage,
+        status: 'Returned for Revision',
+        actualTimestamp: isoNow,
+        actualDateTime: timestamp,
+        delayHours: directorDelay,
+        timeDelayHours: directorDelay,
+        remarks: `Returned for Revision: ${instructions}`,
+        notes: `Returned for Revision to Purchase Executive (Shyam Rao Sureshe). Directive: "${instructions}"`,
+      };
+
+      // 1. Dynamic Stage Insertion on Loop: STG-02B-ITER-N
+      const planned5hDate = new Date(now.getTime() + 5 * 3600 * 1000);
+      const stage2B: FmsStageExecution = {
+        stageId: iterStageId,
+        stageName: 'Stage 2B: Get Additional Quotation (Revision)',
+        whoRole: 'PURCHASE_EXECUTIVE',
+        whoDefaultAssignee: 'Shyam Rao Sureshe',
+        assignee: 'Shyam Rao Sureshe',
+        how: 'COMPARATIVE STATEMENT MODULE',
+        slaHours: 5,
+        targetDurationHours: 5,
+        status: 'In Progress',
+        stageStartedAt: isoNow,
+        plannedDateTime: planned5hDate.toLocaleString('en-GB'),
+        plannedTimestamp: planned5hDate.toISOString(),
+        remarks: `Director Directive: ${instructions}`,
+        notes: `Additional Quotation Directive from Director Pranjal Agrawal: "${instructions}"`,
+        fields: [
+          {
+            id: 'directorInstructions',
+            label: 'Director Directives',
+            type: 'TEXTAREA',
+            defaultValue: instructions,
+          },
+          {
+            id: 'csModule',
+            label: 'Comparative Statement (CS) Module',
+            type: 'CS_MODULE_EMBED',
+            required: true,
+          },
+          {
+            id: 'purchaserRevisionNotes',
+            label: 'Revision Notes / Quotation Actions Taken',
+            type: 'TEXTAREA',
+            placeholder: 'Summary of additional vendor quotes acquired or rate revisions made...',
+          },
+        ],
+      };
+
+      // 3. Prepare subsequent 'Director Approval (Final)' stage
+      // SLA: 2 hours fresh plannedDateTime for Director final sign-off
+      const stage3Final: FmsStageExecution = {
+        stageId: finalDirectorStageId,
+        stageName: 'Director Approval (Final)',
+        whoRole: 'DIRECTOR / PROJECT MANAGER',
+        whoDefaultAssignee: 'Pranjal Agrawal',
+        assignee: 'Pranjal Agrawal',
+        how: 'DIRECTOR APPROVAL DESK',
+        slaHours: 2,
+        targetDurationHours: 2,
+        status: 'Pending',
+        fields: [
+          {
+            id: 'csL1Approval',
+            label: 'Director L1 Award Allocation & Digital Sign-off',
+            type: 'CS_L1_APPROVAL_EMBED',
+            required: true,
+          },
+          {
+            id: 'approvalRemarks',
+            label: 'Final Approval Remarks',
+            type: 'TEXTAREA',
+            defaultValue: 'Approved with item-wise split PO allocation to maintain dual vendor operational readiness. Freight strictly OURS.',
+          },
+        ],
+      };
+
+      // Build Execution Matrix clearly showing:
+      // Stage 3 (Director - Returned for Revision) -> Stage 2B (Purchaser 5h SLA) -> Stage 3 (Director Final 2h SLA) -> Stage 4 (Generate PO)
+      const nextStages = [
+        ...existingStages.slice(0, currentIdx + 1),
+        stage2B,
+        stage3Final,
+        ...existingStages.slice(currentIdx + 1).filter((s) => s.stageId !== 'STG-03-R2' && !s.stageId?.startsWith('STG-02B-ITER') && !s.stageId?.startsWith('STG-03-FINAL')),
+      ];
+
+      const updatedFlow: FmsInstance = {
+        ...flow,
+        currentStageIndex: currentIdx + 1, // Points to Stage 2B
+        currentStageId: iterStageId,
+        status: 'In Progress',
+        stages: nextStages,
+        totalStages: nextStages.length,
+        updatedAt: timestamp,
+        remarks: `Returned to Purchaser (Shyam) for additional quote revision #${revisionCount}: "${instructions}"`,
+      };
+
+      updatedFlowResult = updatedFlow;
+
+      const allFlows = storageAdapter.getFmsFlows();
+      const updatedList = allFlows.map((f) => (f.id === flow.id || f.flowId === flow.flowId ? updatedFlow : f));
+      storageAdapter.saveFmsFlows(updatedList);
+
+      storageAdapter.logAudit({
+        userId: currentUser.userId,
+        userName: currentUser.name,
+        module: 'FMS',
+        action: 'STAGE_ADVANCE',
+        entityId: flow.flowId,
+        details: `Director Pranjal Agrawal returned Stage 3 to Purchaser Shyam Rao Sureshe for additional quotation revision #${revisionCount} (5h SLA). Directive: "${instructions}"`,
+      });
+
+      storageAdapter.addNotification({
+        userId: 'USR-003', // Shyam Rao Sureshe
+        title: `Action Required: Stage 2B (Get Additional Quotation) - Indent #${flow.indentNo}`,
+        message: `Director Pranjal Agrawal requested additional quote revision: "${instructions}". 5-hour SLA assigned.`,
+        type: 'FMS_ACTION_REQUIRED',
+        linkTab: 'fms',
+        linkEntityId: updatedFlow.id,
+        data: { flowId: updatedFlow.flowId, stageIndex: currentIdx + 1 },
+      });
+    }
+
+    setIsSaving(false);
+    setIsRequestAdditionalQuoteModalOpen(false);
+
+    if (updatedFlowResult && onReturnToPurchaser) {
+      onReturnToPurchaser(updatedFlowResult);
+    } else if (onClose) {
+      onClose();
+    }
+  };
+
+  // Purchaser Stage 2B: Resubmit to Director for Final Approval
+  const handleResubmitToDirector = () => {
+    if (!flow) return;
+    setIsSaving(true);
+    const now = new Date();
+    const timestamp = now.toLocaleString('en-GB');
+    const isoNow = now.toISOString();
+
+    const saved = storageAdapter.saveComparativeStatement({
+      ...cs,
+      updatedAt: timestamp,
+    });
+    setCs(saved);
+
+    const currentIdx = flow.currentStageIndex !== undefined ? flow.currentStageIndex : 1;
+    const existingStages = [...flow.stages];
+    const currentStage2B = existingStages[currentIdx];
+
+    // 4. Delay Calculation:
+    // The Time Delay for Stage 2B must calculate strictly against the 5-hour SLA for this specific loop.
+    // If Shyam takes 7 hours, variance shows +2 hours attributed to Shyam.
+    const existingDelay = currentStage2B?.delayHours ?? currentStage2B?.timeDelayHours;
+    let shyamDelay = existingDelay !== undefined && existingDelay > 0 ? existingDelay : 0;
+    if (shyamDelay === 0 && currentStage2B?.plannedTimestamp) {
+      const diffMs = now.getTime() - new Date(currentStage2B.plannedTimestamp).getTime();
+      shyamDelay = diffMs > 0 ? Math.round((diffMs / 3600000) * 10) / 10 : 0;
+    } else if (shyamDelay === 0 && currentStage2B?.stageStartedAt) {
+      const diffMs = now.getTime() - (new Date(currentStage2B.stageStartedAt).getTime() + 5 * 3600 * 1000);
+      shyamDelay = diffMs > 0 ? Math.round((diffMs / 3600000) * 10) / 10 : 0;
+    }
+
+    // Mark Stage 2B as Done with accurate delay variance
+    existingStages[currentIdx] = {
+      ...currentStage2B,
+      status: 'Done',
+      actualTimestamp: isoNow,
+      actualDateTime: timestamp,
+      delayHours: shyamDelay,
+      timeDelayHours: shyamDelay,
+      remarks: `Updated CS with requested vendor quotes and resubmitted to Director. Delay: ${shyamDelay > 0 ? `+${shyamDelay}h` : 'On Time'}`,
+    };
+
+    // 3. Pause/Resume Director SLA:
+    // Activate next 'Director Approval (Final)' stage with a fresh plannedDateTime based on Director's 2-hour SLA
+    const nextIdx = currentIdx + 1;
+    const directorPlannedDate = new Date(now.getTime() + 2 * 3600 * 1000);
+    if (existingStages[nextIdx]) {
+      existingStages[nextIdx] = {
+        ...existingStages[nextIdx],
+        stageName: 'Director Approval (Final)',
+        status: 'In Progress',
+        assignee: 'Pranjal Agrawal',
+        whoRole: 'DIRECTOR / PROJECT MANAGER',
+        whoDefaultAssignee: 'Pranjal Agrawal',
+        how: 'DIRECTOR APPROVAL DESK',
+        slaHours: 2,
+        targetDurationHours: 2,
+        stageStartedAt: isoNow,
+        plannedDateTime: directorPlannedDate.toLocaleString('en-GB'),
+        plannedTimestamp: directorPlannedDate.toISOString(),
+      };
+    }
+
+    const totalDelay = existingStages.reduce((sum, s) => sum + (s.delayHours || s.timeDelayHours || 0), 0);
+    const updatedFlow: FmsInstance = {
+      ...flow,
+      currentStageIndex: nextIdx,
+      currentStageId: existingStages[nextIdx]?.stageId || 'STG-03-FINAL',
+      status: 'In Progress',
+      totalDelayHours: totalDelay,
+      stages: existingStages,
+      updatedAt: timestamp,
+      remarks: `Resubmitted to Director Pranjal Agrawal for Final Approval by Purchaser ${currentUser.name}`,
+    };
+
+    const allFlows = storageAdapter.getFmsFlows();
+    const updatedList = allFlows.map((f) => (f.id === flow.id || f.flowId === flow.flowId ? updatedFlow : f));
+    storageAdapter.saveFmsFlows(updatedList);
+
+    storageAdapter.logAudit({
+      userId: currentUser.userId,
+      userName: currentUser.name,
+      module: 'FMS',
+      action: 'STAGE_ADVANCE',
+      entityId: flow.flowId,
+      details: `Purchaser ${currentUser.name} completed Stage 2B (Delay: ${shyamDelay > 0 ? `+${shyamDelay}h` : '0h'}) and resubmitted CS to Director Pranjal Agrawal for Final Approval (2h SLA).`,
+    });
+
+    storageAdapter.addNotification({
+      userId: 'DIR',
+      title: `Action Required: Director Approval (Final) - Indent #${flow.indentNo}`,
+      message: `Purchaser ${currentUser.name} resubmitted updated Comparative Statement for final Director Approval. 2-hour SLA active.`,
+      type: 'FMS_ACTION_REQUIRED',
+      linkTab: 'fms',
+      linkEntityId: updatedFlow.id,
+      data: { flowId: updatedFlow.flowId, stageIndex: nextIdx },
+    });
+
+    setIsSaving(false);
+    if (onReturnToPurchaser) {
+      onReturnToPurchaser(updatedFlow);
+    } else if (onClose) {
+      onClose();
+    }
+  };
+
   return (
-    <div className={`space-y-6 ${isEmbedded ? 'p-1' : ''}`}>
+    <>
+      <div className={`space-y-6 ${isEmbedded ? 'p-1' : ''}`}>
       {/* 1. TOP HEADER & CORPORATE BRANDING */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 rounded-2xl shadow-sm border border-slate-800">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -1120,6 +1424,34 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
             )}
           </div>
         </div>
+      </div>
+
+      {/* STAGE 2B DIRECTIVE BANNER (IF RETURNED TO PURCHASER BY DIRECTOR) */}
+      {(isStage2B || Boolean(cs.directorRevisionRemarks) || (flow && flow.currentStageId?.includes('02B'))) && (
+        <div className="p-4 bg-amber-950/80 border border-amber-500/60 rounded-2xl flex items-start gap-3 shadow-lg animate-in fade-in">
+          <div className="p-2 bg-amber-500/20 text-amber-300 rounded-xl border border-amber-500/30 shrink-0 mt-0.5">
+            <AlertTriangle className="w-5 h-5 text-amber-400" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-black px-2 py-0.5 bg-amber-500/30 text-amber-300 rounded border border-amber-400/40">
+                STAGE 2B: ADDITIONAL QUOTATION DIRECTIVE
+              </span>
+              <span className="text-xs text-amber-200 font-mono font-bold bg-slate-900/60 px-2 py-0.5 rounded border border-slate-700">
+                5-Hour SLA Active (Assigned to Shyam Rao Sureshe)
+              </span>
+            </div>
+            <div className="mt-2 p-3 bg-amber-900/40 border border-amber-500/40 rounded-xl">
+              <p className="text-sm font-black text-amber-200">
+                Director Requested Revision: <span className="font-semibold text-white">{cs.directorRevisionRemarks || (flow?.stages?.[flow.currentStageIndex]?.remarks?.replace('Director Directive: ', '')) || flow?.remarks || 'Get rate for branded item from Vendor Y'}</span>
+              </p>
+            </div>
+            <p className="text-xs text-amber-300/90 mt-1.5">
+              CS is unlocked for editing. Add the new vendor/quote and click &quot;Resubmit to Director (Stage 3)&quot; below to return to Director Pranjal Agrawal.
+            </p>
+          </div>
+        </div>
+      )}
 
         {/* Embedded FMS Action Banner for STAGE 2 (EDIT) and STAGE 3 (APPROVAL) */}
         {isEmbedded && (
@@ -1153,6 +1485,16 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
                   <>
                     <button
                       type="button"
+                      onClick={() => setIsRequestAdditionalQuoteModalOpen(true)}
+                      className="px-3.5 py-2 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 font-bold rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                      title="Return requisition to Purchaser (Shyam) for additional vendor quotation (5h SLA)"
+                    >
+                      <AlertTriangle className="w-4 h-4 text-amber-400" />
+                      <span>Request Additional Quotation</span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={handleSaveDraftAwardInFms}
                       className="px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 font-bold rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
                       title="Save current award selections without signing"
@@ -1177,6 +1519,29 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
                     <span>Awaiting Director (Pranjal Agrawal) Approval</span>
                   </div>
                 )
+              ) : isStage2B ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleSaveDraftInFms}
+                    className="px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 font-bold rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                    title="Save draft rates without advancing the stage"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Save Draft Rates</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleResubmitToDirector}
+                    disabled={isSaving}
+                    className="px-5 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-black rounded-xl text-xs shadow-lg transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                    title="Resubmit updated Comparative Statement to Director Pranjal Agrawal for Stage 3 Approval"
+                  >
+                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4 text-indigo-200" />}
+                    <span>Resubmit to Director (Stage 3)</span>
+                  </button>
+                </>
               ) : (
                 <>
                   <button
@@ -1665,7 +2030,7 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
                         type="number"
                         min="1"
                         value={item.qty}
-                        disabled={isRatesLocked}
+                        disabled={isRecordLocked || (effectiveMode === 'APPROVAL' && !isPranjal)}
                         onChange={(e) => handleUpdateItemMeta(item.id, 'qty', e.target.value)}
                         className="w-full text-xs text-right font-mono font-bold bg-transparent focus:bg-white border-b border-transparent focus:border-indigo-500 focus:outline-none"
                       />
@@ -2485,6 +2850,75 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
           </div>
         </div>
       )}
-    </div>
+      {/* REQUEST ADDITIONAL QUOTATION MODAL (DIRECTOR -> PURCHASER 5H SLA) */}
+      {isRequestAdditionalQuoteModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in fade-in duration-200">
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-amber-500/20 rounded-xl border border-amber-500/30 text-amber-400">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black">Request Additional Quotation</h3>
+                  <p className="text-xs text-slate-400">Return to Purchaser (Shyam) with specific directives</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRequestAdditionalQuoteModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs text-slate-800">
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 space-y-1">
+                <p className="font-bold flex items-center gap-1">
+                  <Clock className="w-4 h-4 text-amber-600" />
+                  <span>SLA Clock Shift: Director &rarr; Purchaser (5-Hour SLA)</span>
+                </p>
+                <p className="text-[11px] text-amber-800">
+                  This action marks Stage 3 as <strong>Returned to Purchaser</strong> (stopping the Director&apos;s SLA clock) and spawns <strong>Stage 2B</strong> with a 5-hour SLA assigned strictly to Purchase Executive Shyam Rao Sureshe.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block font-bold text-slate-900">
+                  Director Directives &amp; Quotation Instructions <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={4}
+                  value={requestQuoteInstructions}
+                  onChange={(e) => setRequestQuoteInstructions(e.target.value)}
+                  placeholder='e.g. "Get rate for branded item from Vendor Y" or "Negotiate 5% additional discount on hydraulic pumps with Mahavir Traders"...'
+                  className="w-full text-xs p-3 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setIsRequestAdditionalQuoteModalOpen(false)}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!requestQuoteInstructions.trim() || isSaving}
+                  onClick={() => handleReturnToPurchaser(requestQuoteInstructions)}
+                  className="px-5 py-2 bg-amber-600 hover:bg-amber-500 text-white font-black rounded-xl text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 text-amber-200" />}
+                  <span>Return to Purchaser (5h SLA)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };

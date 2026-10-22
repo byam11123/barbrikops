@@ -21,6 +21,7 @@ import { FmsCreateInputSchema, storageAdapter } from '../../services/storageAdap
 import { addWorkingSlaHours, formatToStandardDateTime, DEFAULT_WORK_SHIFT_CONFIG } from '../../services/workShiftService';
 import { FileUploadField } from '../common/FileUploadField';
 import { FmsStagePreviewAccordion } from './FmsStagePreviewAccordion';
+import { MasterItemAutocompleteInput } from './MasterItemAutocompleteInput';
 
 interface CreateFmsModalProps {
   isOpen: boolean;
@@ -39,9 +40,18 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
 }) => {
   const allMasterTemplates = storageAdapter.getAllMasterTemplates();
   const allExistingFlows = storageAdapter.getFmsFlows();
-  // Separate templates into System Blueprints and truly Custom Templates
-  const systemBlueprints = allMasterTemplates.filter((t) => !t.isCustom);
-  const customTemplates = allMasterTemplates.filter((t) => t.isCustom);
+  // Separate templates into System Blueprints and truly Custom Templates, avoiding duplicates
+  const systemBlueprints = allMasterTemplates.filter(
+    (t, index, self) => !t.isCustom && self.findIndex((x) => x.templateKey === t.templateKey || x.id === t.id) === index
+  );
+  const customTemplates = allMasterTemplates.filter(
+    (t) =>
+      t.isCustom &&
+      t.templateKey !== 'CHECK_STOCK' &&
+      t.templateKey !== 'STORE_CHECK_STOCK' &&
+      !t.name?.toLowerCase().includes('stock check') &&
+      !t.name?.toLowerCase().includes('check stock')
+  );
   const [selectedCustomTemplateId, setSelectedCustomTemplateId] = useState<string | null>(null);
   const [customFormData, setCustomFormData] = useState<Record<string, any>>({});
   const [flowType, setFlowType] = useState<
@@ -535,16 +545,23 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
       // Extract lineItems if Stage 1 contained MULTI_ITEM_TABLE entries
       const multiItemField = stage1DefFields.find((f) => f.type === 'MULTI_ITEM_TABLE');
       const rawMultiItems = multiItemField && Array.isArray(customFormData[multiItemField.id]) ? customFormData[multiItemField.id] : [];
-      const extractedLineItems: FmsLineItem[] = rawMultiItems.map((r: any, idx: number) => ({
-        id: r.id || `item_${Date.now()}_${idx + 1}`,
-        itemDescription: r.item_description || r.description || r.item || `Requisition Item #${idx + 1}`,
-        qty: parseFloat(r.quantity || r.qty) || 1,
-        requestedQty: parseFloat(r.quantity || r.qty) || 1,
-        unit: r.unit || 'Nos',
-        workPurpose: r.work_purpose || r.purpose || r.work || effectiveRemarks,
-        remarks: r.remarks || r.remark || '',
-        status: 'PENDING_TRIAGE' as const,
-      }));
+      const extractedLineItems: FmsLineItem[] = rawMultiItems.map((r: any, idx: number) => {
+        const masterMatch = storageAdapter.getInventoryItems().find(
+          inv => (r.inventoryItemId && (inv.itemId === r.inventoryItemId || inv.id === r.inventoryItemId)) ||
+                 inv.name.toLowerCase().trim() === (r.item_description || r.description || r.item || '').toLowerCase().trim()
+        );
+        return {
+          id: r.id || `item_${Date.now()}_${idx + 1}`,
+          inventoryItemId: masterMatch?.itemId || r.inventoryItemId || r.inventory_item_id,
+          itemDescription: r.item_description || r.description || r.item || `Requisition Item #${idx + 1}`,
+          qty: parseFloat(r.quantity || r.qty) || 1,
+          requestedQty: parseFloat(r.quantity || r.qty) || 1,
+          unit: r.unit || masterMatch?.unit || 'Nos',
+          workPurpose: r.work_purpose || r.purpose || r.work || effectiveRemarks,
+          remarks: r.remarks || r.remark || '',
+          status: 'PENDING_TRIAGE' as const,
+        };
+      });
 
       const newFlow: FmsInstance = {
         id: `fms-inst-cust-${Date.now()}`,
@@ -586,16 +603,41 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
       const workShiftConfig = storageAdapter.getRegistryConfig().workShiftConfig || DEFAULT_WORK_SHIFT_CONFIG;
 
       const rawMultiItems = Array.isArray(customFormData.requisitionItems) ? customFormData.requisitionItems : [];
-      const extractedLineItems: FmsLineItem[] = rawMultiItems.map((r: any, idx: number) => ({
-        id: r.id || `item_${Date.now()}_${idx + 1}`,
-        itemDescription: r.item_description || r.description || r.item || `Requisition Item #${idx + 1}`,
-        qty: parseFloat(r.quantity || r.qty) || 1,
-        requestedQty: parseFloat(r.quantity || r.qty) || 1,
-        unit: r.unit || 'Nos',
-        workPurpose: r.work_purpose || r.purpose || r.work || remarks,
-        remarks: r.remarks || r.remark || '',
-        status: 'PENDING_TRIAGE' as const,
-      }));
+      const masterInvItems = storageAdapter.getInventoryItems();
+
+      // Validate that all items belong to Master Catalog
+      for (const row of rawMultiItems) {
+        const itemDesc = (row.item_description || row.description || row.item || '').trim();
+        if (itemDesc) {
+          const matched = masterInvItems.find(
+            inv => inv.name.toLowerCase().trim() === itemDesc.toLowerCase() ||
+                   inv.itemId.toLowerCase().trim() === itemDesc.toLowerCase() ||
+                   (row.inventoryItemId && (inv.itemId === row.inventoryItemId || inv.id === row.inventoryItemId))
+          );
+          if (!matched) {
+            setError(`Selected item "${itemDesc}" is not in the Master Inventory catalog. Please select a valid item from the dropdown or ask the Store Manager to add it.`);
+            return;
+          }
+        }
+      }
+
+      const extractedLineItems: FmsLineItem[] = rawMultiItems.map((r: any, idx: number) => {
+        const masterMatch = masterInvItems.find(
+          inv => (r.inventoryItemId && (inv.itemId === r.inventoryItemId || inv.id === r.inventoryItemId)) ||
+                 inv.name.toLowerCase().trim() === (r.item_description || r.description || r.item || '').toLowerCase().trim()
+        );
+        return {
+          id: r.id || `item_${Date.now()}_${idx + 1}`,
+          inventoryItemId: masterMatch?.itemId || r.inventoryItemId || r.inventory_item_id,
+          itemDescription: r.item_description || r.description || r.item || `Requisition Item #${idx + 1}`,
+          qty: parseFloat(r.quantity || r.qty) || 1,
+          requestedQty: parseFloat(r.quantity || r.qty) || 1,
+          unit: r.unit || masterMatch?.unit || 'Nos',
+          workPurpose: r.work_purpose || r.purpose || r.work || remarks,
+          remarks: r.remarks || r.remark || '',
+          status: 'PENDING_TRIAGE' as const,
+        };
+      });
 
       const initialStages = FMS_CHECK_STOCK_STAGES.map((def, idx) => {
         const sla = def.slaHours !== undefined ? def.slaHours : 0;
@@ -1476,24 +1518,49 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                                                 <td className="py-2 px-2 text-center font-mono text-slate-400 text-[11px]">
                                                   {rIdx + 1}
                                                 </td>
-                                                {columns.map((col) => (
-                                                  <td key={col.key} className="py-1.5 px-1.5">
-                                                    <input
-                                                      type={col.type === 'NUMBER' ? 'number' : 'text'}
-                                                      step={col.type === 'NUMBER' ? 'any' : undefined}
-                                                      value={row[col.key] !== undefined ? row[col.key] : ''}
-                                                      onChange={(e) =>
-                                                        handleRowChange(
-                                                          rIdx,
-                                                          col.key,
-                                                          col.type === 'NUMBER' ? parseFloat(e.target.value) || 0 : e.target.value
-                                                        )
-                                                      }
-                                                      placeholder={col.label}
-                                                      className="w-full text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-md px-2 py-1 font-semibold text-slate-800 focus:outline-none"
-                                                    />
-                                                  </td>
-                                                ))}
+                                                {columns.map((col) => {
+                                                  const isItemDescCol = col.key === 'item_description' || col.key === 'description' || col.key === 'item';
+                                                  if (isItemDescCol) {
+                                                    return (
+                                                      <td key={col.key} className="py-1.5 px-1.5 min-w-[220px]">
+                                                        <MasterItemAutocompleteInput
+                                                          value={row[col.key] || ''}
+                                                          placeholder={col.label}
+                                                          onChange={(val, selectedItem) => {
+                                                            const updatedRows = [...rows];
+                                                            const updatedRow = {
+                                                              ...updatedRows[rIdx],
+                                                              [col.key]: val,
+                                                              inventoryItemId: selectedItem ? selectedItem.itemId : undefined,
+                                                              inventory_item_id: selectedItem ? selectedItem.itemId : undefined,
+                                                              unit: selectedItem ? selectedItem.unit : (updatedRows[rIdx].unit || 'Nos'),
+                                                            };
+                                                            updatedRows[rIdx] = updatedRow;
+                                                            handleCustomFieldChange(field.id, updatedRows);
+                                                          }}
+                                                        />
+                                                      </td>
+                                                    );
+                                                  }
+                                                  return (
+                                                    <td key={col.key} className="py-1.5 px-1.5">
+                                                      <input
+                                                        type={col.type === 'NUMBER' ? 'number' : 'text'}
+                                                        step={col.type === 'NUMBER' ? 'any' : undefined}
+                                                        value={row[col.key] !== undefined ? row[col.key] : ''}
+                                                        onChange={(e) =>
+                                                          handleRowChange(
+                                                            rIdx,
+                                                            col.key,
+                                                            col.type === 'NUMBER' ? parseFloat(e.target.value) || 0 : e.target.value
+                                                          )
+                                                        }
+                                                        placeholder={col.label}
+                                                        className="w-full text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-md px-2 py-1 font-semibold text-slate-800 focus:outline-none"
+                                                      />
+                                                    </td>
+                                                  );
+                                                })}
                                                 <td className="py-1.5 px-1 text-center">
                                                   <button
                                                     type="button"
@@ -1794,13 +1861,22 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
                               <td className="py-2 px-2 text-center font-mono text-slate-400 text-[11px] w-12 shrink-0">
                                 {rIdx + 1}
                               </td>
-                              <td className="py-1.5 px-2 min-w-[250px]">
-                                <input
-                                  type="text"
+                              <td className="py-1.5 px-2 min-w-[280px]">
+                                <MasterItemAutocompleteInput
                                   value={row.item_description !== undefined ? row.item_description : ''}
-                                  onChange={(e) => handleRowChange(rIdx, 'item_description', e.target.value)}
-                                  placeholder="e.g. TMT Steel Bar 12mm FE550"
-                                  className="w-full text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-emerald-500 rounded-md px-2.5 py-1.5 font-semibold text-slate-800 focus:outline-none"
+                                  placeholder="Search item in master catalog (e.g. TYRE)..."
+                                  onChange={(val, selectedItem) => {
+                                    const updatedRows = [...rows];
+                                    const updatedRow = {
+                                      ...updatedRows[rIdx],
+                                      item_description: val,
+                                      inventoryItemId: selectedItem ? selectedItem.itemId : undefined,
+                                      inventory_item_id: selectedItem ? selectedItem.itemId : undefined,
+                                      unit: selectedItem ? selectedItem.unit : (updatedRows[rIdx].unit || 'Nos'),
+                                    };
+                                    updatedRows[rIdx] = updatedRow;
+                                    handleCustomFieldChange('requisitionItems', updatedRows);
+                                  }}
                                 />
                               </td>
                               <td className="py-1.5 px-1.5 w-24 shrink-0">

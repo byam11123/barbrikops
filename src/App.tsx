@@ -37,6 +37,7 @@ import { MyProfilePage } from './components/user/MyProfilePage';
 import { SuperAdminModal } from './components/user/SuperAdminModal';
 import { SuperAdminGovernanceView } from './components/user/SuperAdminGovernanceView';
 import { GlobalSearchModal } from './components/common/GlobalSearchModal';
+import { SiteRequisitionTracker } from './components/fms/SiteRequisitionTracker';
 import { Plus } from 'lucide-react';
 
 import { 
@@ -725,6 +726,19 @@ export default function App() {
       const diffMs = now.getTime() - new Date(currentStage.plannedTimestamp).getTime();
       const delayHrs = diffMs > 0 ? diffMs / (1000 * 3600) : 0;
       currentStage.delayHours = Math.round(delayHrs * 10) / 10;
+      currentStage.timeDelayHours = currentStage.delayHours;
+    } else if (currentStage.plannedDateTime) {
+      try {
+        const parsed = new Date(currentStage.plannedDateTime);
+        if (!isNaN(parsed.getTime())) {
+          const diffMs = now.getTime() - parsed.getTime();
+          const delayHrs = diffMs > 0 ? diffMs / (1000 * 3600) : 0;
+          currentStage.delayHours = Math.round(delayHrs * 10) / 10;
+          currentStage.timeDelayHours = currentStage.delayHours;
+        }
+      } catch {
+        // ignore invalid date strings
+      }
     }
 
     if (decision) {
@@ -944,17 +958,25 @@ export default function App() {
     if (!isComplete && updatedStages[nextIndex]) {
       updatedStages[nextIndex].status = 'In Progress';
       const def = stageDefs.find((s) => s.stageId === updatedStages[nextIndex].stageId);
-      const sla = def?.slaHours !== undefined ? def.slaHours : 0;
+      const sla: number = typeof updatedStages[nextIndex].slaHours === 'number' ? updatedStages[nextIndex].slaHours! : (typeof def?.slaHours === 'number' ? def.slaHours : 0);
       const workShiftConfig = storageAdapter.getRegistryConfig().workShiftConfig || DEFAULT_WORK_SHIFT_CONFIG;
       const targetDate = addWorkingSlaHours(now, sla, workShiftConfig);
-      updatedStages[nextIndex].plannedDateTime = formatToStandardDateTime(targetDate);
+      if (!updatedStages[nextIndex].plannedDateTime) {
+        updatedStages[nextIndex].plannedDateTime = formatToStandardDateTime(targetDate);
+      }
+      if (!updatedStages[nextIndex].plannedTimestamp) {
+        updatedStages[nextIndex].plannedTimestamp = targetDate.toISOString();
+      }
     }
+
+    const totalDelay = updatedStages.reduce((acc, s) => acc + (s.delayHours || s.timeDelayHours || 0), 0);
 
     const updatedFlow: FmsInstance = {
       ...flow,
       currentStageIndex: isComplete ? Math.max(0, updatedStages.length - 1) : nextIndex,
       currentStageId: nextStageId,
       status: isComplete ? 'Completed' : 'In Progress',
+      totalDelayHours: totalDelay,
       updatedAt: formattedNow,
       stages: updatedStages,
       instanceDataPool: updatedDataPool,
@@ -1254,26 +1276,36 @@ export default function App() {
         }
       }
 
+      // Parent CHECK_STOCK status is always moved to Awaiting Fulfillment and handed off to System / Child Workflows
+      updatedFlow.status = 'Awaiting Fulfillment';
+      updatedFlow.poAssignTo = 'System / Child Workflows';
+      if (updatedFlow.stages && updatedFlow.stages[1]) {
+        updatedFlow.stages[1].assignee = 'System / Child Workflows';
+        updatedFlow.stages[1].status = 'Done';
+        updatedFlow.stages[1].actualTimestamp = now.toISOString();
+        updatedFlow.stages[1].actualDateTime = formattedNow;
+      }
       if (generatedSubFlows.length > 0) {
         updatedFlow.linkedSubFlows = generatedSubFlows;
-        updatedFlow.status = 'Awaiting Fulfillment';
-        updatedFlow.poAssignTo = 'System / Child Workflows';
-        if (updatedFlow.stages && updatedFlow.stages[1]) {
-          updatedFlow.stages[1].assignee = 'System / Child Workflows';
-        }
-        updatedFlowsList = updatedFlowsList.map((f) => (
-          f.id === updatedFlow.id 
-            ? { 
-                ...f, 
-                status: 'Awaiting Fulfillment' as const, 
-                poAssignTo: 'System / Child Workflows',
-                linkedSubFlows: generatedSubFlows, 
-                lineItems: submittedItems,
-                stages: f.stages.map((stg, sIdx) => sIdx === 1 ? { ...stg, assignee: 'System / Child Workflows', status: 'Done' as const } : stg)
-              } 
-            : f
-        ));
       }
+      updatedFlowsList = updatedFlowsList.map((f) => (
+        f.id === updatedFlow.id 
+          ? { 
+              ...f, 
+              status: 'Awaiting Fulfillment' as const, 
+              poAssignTo: 'System / Child Workflows',
+              linkedSubFlows: generatedSubFlows.length > 0 ? generatedSubFlows : f.linkedSubFlows, 
+              lineItems: submittedItems,
+              stages: f.stages.map((stg, sIdx) => sIdx === 1 ? { 
+                ...stg, 
+                assignee: 'System / Child Workflows', 
+                status: 'Done' as const,
+                actualTimestamp: now.toISOString(),
+                actualDateTime: formattedNow
+              } : stg)
+            } 
+          : f
+      ));
 
       // 3. Generate 7-Day Archive Review Task for Amanat Bharadwaj if hold items exist
       if (holdItems.length > 0) {
@@ -1888,10 +1920,19 @@ export default function App() {
 
   // Inventory Handlers
   const handleUpdateInventoryItem = (updatedItem: InventoryItem) => {
-    const updated = inventoryItems.map((i) => (i.id === updatedItem.id ? updatedItem : i));
-    setInventoryItems(updated);
-    storageAdapter.saveInventoryItems(updated);
-    showToast(`Inventory item ${updatedItem.itemId} updated.`);
+    const { isNew } = storageAdapter.saveInventoryItem(updatedItem);
+    const updatedList = storageAdapter.getInventoryItems();
+    setInventoryItems(updatedList);
+    storageAdapter.logAudit({
+      userId: currentUser.userId,
+      userName: currentUser.name,
+      module: 'IMS',
+      action: isNew ? 'CREATE' : 'UPDATE',
+      entityId: updatedItem.itemId,
+      details: `${isNew ? 'Registered new item' : 'Updated item'} ${updatedItem.itemId} (${updatedItem.name}) in Master Catalog`,
+    });
+    setAuditLogs(storageAdapter.getAuditLogs());
+    showToast(isNew ? 'Item Created Successfully' : `Inventory item ${updatedItem.itemId} updated.`);
   };
 
   const handleRecordStockMovement = (
@@ -2240,6 +2281,13 @@ export default function App() {
                     onTogglePcDesk={isAdminOrSuperAdmin ? (active) => setPcDeskActive(active) : undefined}
                     onOpenStageAction={(flow, stageIndex) => setStageActionTarget({ flow, stageIndex })}
                     onCreateFmsFlow={(isSuperAdmin || hasModulePermission(currentUser, 'summary', 'edit')) ? () => setIsCreateFmsOpen(true) : undefined}
+                  />
+                )}
+
+                {activeTab === 'site-requisitions' && (
+                  <SiteRequisitionTracker
+                    currentUser={currentUser}
+                    flows={flows}
                   />
                 )}
 

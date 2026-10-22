@@ -64,6 +64,16 @@ export const PaymentDetailDrawer: React.FC<PaymentDetailDrawerProps> = ({
     reEnteredIfscCode: '',
   });
 
+  const handleVerificationStatusChange = React.useCallback((isValid: boolean, details: { reEnteredAccountNo: string; reEnteredIfscCode: string }) => {
+    setDoubleEntryValid((prev) => (prev !== isValid ? isValid : prev));
+    setReEnteredData((prev) => {
+      if (prev.reEnteredAccountNo === details.reEnteredAccountNo && prev.reEnteredIfscCode === details.reEnteredIfscCode) {
+        return prev;
+      }
+      return details;
+    });
+  }, []);
+
   // Stage 3 Portal Entry Form State
   const [entryProofUrl, setEntryProofUrl] = useState('');
 
@@ -304,10 +314,7 @@ export const PaymentDetailDrawer: React.FC<PaymentDetailDrawerProps> = ({
                 cancelledChequeUrl={payment.cancelledChequeUrl}
                 isAlreadyVerified={Boolean(payment.verifiedByAccountant)}
                 verificationTimestamp={payment.accountantVerificationTimestamp}
-                onVerificationStatusChange={(isValid, details) => {
-                  setDoubleEntryValid(isValid);
-                  setReEnteredData(details);
-                }}
+                onVerificationStatusChange={handleVerificationStatusChange}
               />
 
               {!payment.verifiedByAccountant && isAccounts && (

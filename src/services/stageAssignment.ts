@@ -107,6 +107,11 @@ export const isFlowAwaitingUserAction = (
   const curStage = flow.stages[curIndex];
   if (!curStage) return false;
 
+  // Skip completed stages or stages with actual timestamp
+  if (curStage.status === 'Done' || curStage.status === 'Completed' || curStage.status === 'Skipped' || Boolean(curStage.actualDateTime || curStage.actualTimestamp)) {
+    return false;
+  }
+
   // Skip system/child workflow assignees
   const assigneeLower = (curStage.assignee || '').toLowerCase();
   if (assigneeLower.includes('system') || assigneeLower.includes('child workflows')) {

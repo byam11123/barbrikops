@@ -15,6 +15,8 @@ import {
 import { InventoryItem, InventoryMovement, UserProfile } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 
+import { QuickAddInventoryModal } from './QuickAddInventoryModal';
+
 interface InventoryManagerProps {
   items: InventoryItem[];
   movements: InventoryMovement[];
@@ -36,6 +38,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   const [locationFilter, setLocationFilter] = useState<string>('ALL');
   const [conditionFilter, setConditionFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
 
   const filteredItems = items.filter((item) => {
     if (locationFilter !== 'ALL' && item.location !== locationFilter) return false;
@@ -199,16 +202,35 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
           )}
         </div>
 
-        {onNewMovement && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={onNewMovement}
-            className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors shrink-0"
+            type="button"
+            onClick={() => setIsQuickAddOpen(true)}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors shrink-0 cursor-pointer"
           >
-            <ArrowRightLeft className="w-4 h-4" />
-            <span>Record Stock Transfer / Issue</span>
+            <Plus className="w-4 h-4" />
+            <span>Quick Add SKU</span>
           </button>
-        )}
+
+          {onNewMovement && (
+            <button
+              onClick={onNewMovement}
+              className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors shrink-0"
+            >
+              <ArrowRightLeft className="w-4 h-4" />
+              <span>Record Stock Transfer / Issue</span>
+            </button>
+          )}
+        </div>
       </div>
+
+      <QuickAddInventoryModal
+        isOpen={isQuickAddOpen}
+        onClose={() => setIsQuickAddOpen(false)}
+        onSuccess={(newItem) => {
+          onUpdateItem(newItem);
+        }}
+      />
 
       {/* Stock Master Table or Movement Logs */}
       {activeTab === 'STOCK' ? (

@@ -14,6 +14,7 @@ export interface EmbeddedL1ApprovalModalProps {
   currentUser: UserProfile;
   onClose: () => void;
   onApproveL1: (updatedCs: ComparativeStatement, remarks: string) => void;
+  onReturnToPurchaser?: (updatedFlow: FmsInstance) => void;
 }
 
 export const EmbeddedL1ApprovalModal: React.FC<EmbeddedL1ApprovalModalProps> = ({
@@ -24,6 +25,7 @@ export const EmbeddedL1ApprovalModal: React.FC<EmbeddedL1ApprovalModalProps> = (
   currentUser,
   onClose,
   onApproveL1,
+  onReturnToPurchaser,
 }) => {
   if (!isOpen) return null;
 
@@ -39,6 +41,7 @@ export const EmbeddedL1ApprovalModal: React.FC<EmbeddedL1ApprovalModalProps> = (
             initialCs={csSheet || undefined}
             currentUser={currentUser}
             onClose={onClose}
+            onReturnToPurchaser={onReturnToPurchaser}
             onSaveAndLink={(approvedCs) => {
               onApproveL1(
                 approvedCs,

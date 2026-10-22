@@ -835,7 +835,7 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
       flow.flowType === 'INDENT_PURCHASE' ||
       flow.indentNo?.endsWith('-PUR') ||
       flow.flowId?.includes('-PUR')) &&
-      (stageIndex === 1 || stage.stageId === 'STG-02'))
+      (stageIndex === 1 || stage.stageId === 'STG-02' || stage.stageId?.includes('02B') || stage.stageName?.toLowerCase().includes('additional quotation')))
   ) {
     return (
       <EmbeddedCsCreatorModal
@@ -869,7 +869,7 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
       flow.flowType === 'INDENT_PURCHASE' ||
       flow.indentNo?.endsWith('-PUR') ||
       flow.flowId?.includes('-PUR')) &&
-      (stageIndex === 2 || stage.stageId === 'STG-03'))
+      (stageIndex === 2 || stage.stageId?.includes('STG-03') || stage.stageName?.toLowerCase().includes('director') || stage.stageName?.toLowerCase().includes('l1')))
   ) {
     const activeCs = linkedCsSheet || storageAdapter.getComparativeStatements().find((c) => c.indentNo === flow.indentNo);
     return (
@@ -2939,6 +2939,10 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
             csSheet={linkedCsSheet}
             currentUser={currentUser}
             onClose={() => setIsL1ModalOpen(false)}
+            onReturnToPurchaser={(updatedFlow) => {
+              setIsL1ModalOpen(false);
+              onClose();
+            }}
             onApproveL1={(updatedCs, remarks) => {
               setIsL1ModalOpen(false);
               const payload = {

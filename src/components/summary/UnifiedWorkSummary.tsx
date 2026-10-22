@@ -676,7 +676,14 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         : isMineFmsStage(def, stage);
 
       if (isRelevantForPc) {
-        const isCompleted = stage.status === 'Done' || stage.status === 'Skipped';
+        const isCompleted = stage.status === 'Done' || 
+          stage.status === 'Skipped' || 
+          stage.status === 'Completed' ||
+          Boolean(stage.actualDateTime || stage.actualTimestamp) ||
+          stage.assignee === 'System / Child Workflows' ||
+          (stage.assignee || '').toLowerCase().includes('child workflow') ||
+          flow.status === 'Completed' ||
+          flow.status === 'Awaiting Fulfillment';
         const isCurrentActiveStage = !isCompleted && (flow.status === 'In Progress' || flow.status === 'Pending') && idx === flow.currentStageIndex;
         const plannedDateTimeStr = stage.plannedDateTime
           || (flow.indentDate ? `${flow.indentDate} 11:00 AM` : undefined)

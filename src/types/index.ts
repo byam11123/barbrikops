@@ -253,8 +253,8 @@ export function getUserModulePermission(
     return user.permissions[moduleId];
   }
   // Core user modules are visible to everyone
-  if (moduleId === 'summary' || moduleId === 'mis') {
-    return { visible: true, canEdit: true, canDelete: false };
+  if (moduleId === 'summary' || moduleId === 'mis' || moduleId === 'site-requisitions') {
+    return { visible: true, canEdit: false, canDelete: false };
   }
   // Department modules (dept-*) default based on user's assigned departments
   if (moduleId.startsWith('dept-')) {
@@ -626,14 +626,16 @@ export interface FmsStageExecution {
   plannedDateTime?: string;
   actualDateTime?: string;
   targetDurationHours?: number;
+  slaHours?: number;
   stageStartedAt?: string;
   plannedTimestamp?: string; // ISO string calculated from stageStartedAt + SLA hours
   actualTimestamp?: string;  // ISO string recorded on completion
-  status: 'Pending' | 'In Progress' | 'Done' | 'Skipped' | 'Delayed' | 'Completed' | 'Rejected' | 'OVERRIDDEN';
+  status: 'Pending' | 'In Progress' | 'Done' | 'Skipped' | 'Delayed' | 'Completed' | 'Rejected' | 'OVERRIDDEN' | 'Returned to Purchaser' | 'Returned for Revision';
   decisionValue?: 'Yes' | 'No' | ''; // For checkpoint decisions
   timeDelayHours?: number;
   delayHours?: number;
   notes?: string;
+  remarks?: string;
   formResponseRef?: string;
   evidenceDocumentUrl?: string;
   googleFormUrl?: string;
@@ -693,6 +695,14 @@ export interface FmsLineItem {
   vendorQuotes?: FmsVendorQuote[];
   selectedL1Vendor?: string;
   selectedL1Amount?: number;
+  // Multi-Store Triage Fields
+  inventoryItemId?: string; // Master Inventory Catalog SKU ID (e.g. "ITEM-CON-001")
+  csrStock?: number; // Stock available at Central Store / Raipur Workshop
+  otherSiteStock?: number; // Stock available at other site
+  stockSiteName?: string; // Location name of other site stock
+  csrQty?: number; // Amount dispatched from Central Store
+  otherSiteQty?: number; // Amount dispatched from other site
+  dispatchSource?: string; // e.g. "Central Store", "Bijetala Site", "Central Store & Bijetala Site"
   status?: 'PENDING_TRIAGE' | 'IN_STORE_DISPATCH' | 'IN_PURCHASE_QUOTE' | 'L1_APPROVED' | 'PURCHASED' | 'DELIVERED_TO_SITE' | 'ARCHIVED';
   purchaserQty?: number;
 }
@@ -796,8 +806,8 @@ export interface InventoryItem {
   id: string;
   itemId: string; // e.g. "ITEM-IT-001"
   name: string;
-  category: 'IT Equipment' | 'Office Hardware' | 'Plant Machinery' | 'Consumables' | 'Safety/CSR';
-  location: 'Siladehi Site' | 'Bijetala Site' | 'Raipur Office' | 'Central Store';
+  category: 'IT Equipment' | 'Office Hardware' | 'Plant Machinery' | 'Consumables' | 'Safety/CSR' | string;
+  location: 'Siladehi Site' | 'Bijetala Site' | 'Raipur Office' | 'Central Store' | string;
   currentStock: number;
   minThreshold: number;
   unit: string;
@@ -854,6 +864,8 @@ export interface CentralRegistryConfig {
   activeDataSource: 'GOOGLE_SHEETS' | 'POSTGRES_SUPABASE' | 'HYBRID_TRANSITION';
   masterSites?: string[];
   sitesRegistry?: SiteRegistryItem[];
+  masterCategories?: string[];
+  masterUnits?: string[];
   masterVendors?: string[];
   masterPriorities?: string[];
   workShiftConfig?: WorkShiftConfig;
@@ -971,6 +983,8 @@ export interface ComparativeStatement {
   items: CsItem[];
   vendors: CsVendorQuote[];
   status: 'Draft' | 'Pending Approval' | 'Approved' | 'PO Created';
+  isLocked?: boolean;
+  directorRevisionRemarks?: string;
   preparedBy?: string; // e.g. "Shyam Rao Sureshe" / "Brahmanand Patel"
   approvedBy?: string;
   approvalDate?: string;

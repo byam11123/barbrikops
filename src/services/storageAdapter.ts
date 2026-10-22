@@ -218,17 +218,77 @@ class StorageAdapter {
 
   private handleFirestoreError(err: any) {
     if (!err) return;
-    const msg = String(err?.message || err).toLowerCase();
+    const msg = String(err?.message || err?.details || err).toLowerCase();
     const code = String(err?.code || '').toLowerCase();
-    if (code.includes('resource-exhausted') || msg.includes('quota limit exceeded') || msg.includes('resource-exhausted') || msg.includes('quota exceeded')) {
+    if (
+      code.includes('resource-exhausted') ||
+      code.includes('quota') ||
+      msg.includes('quota limit exceeded') ||
+      msg.includes('resource-exhausted') ||
+      msg.includes('quota exceeded')
+    ) {
       if (!this.isQuotaExceeded) {
         this.isQuotaExceeded = true;
-        console.warn('[StorageAdapter] Firestore daily quota reached. Detaching remote listeners and operating seamlessly with persistent local storage.');
+        console.warn('[StorageAdapter] Firestore daily write quota reached. Detaching remote sync and operating seamlessly with persistent local storage.');
         this.activeUnsubscribes.forEach((unsub) => {
           try { unsub(); } catch (_) {}
         });
         this.activeUnsubscribes = [];
       }
+    }
+  }
+
+  public syncSingleToFirestore(baseCollectionName: string, item: any, idKey: string) {
+    if (this.isQuotaExceeded || !item) return;
+    const collectionName = getEnvCollectionName(baseCollectionName);
+    try {
+      const id = item[idKey] || item.id || item.flowId || item.taskId || item.itemId || item.userId || item.auditId;
+      if (id) {
+        const cleanPayload = sanitizeForFirestore(item);
+        setDoc(doc(db, collectionName, String(id)), cleanPayload, { merge: true })
+          .catch((err) => {
+            this.handleFirestoreError(err);
+          });
+      }
+    } catch (err) {
+      this.handleFirestoreError(err);
+    }
+  }
+
+  private syncToFirestore(baseCollectionName: string, items: any[], idKey: string) {
+    if (this.isQuotaExceeded || !Array.isArray(items)) return;
+    const collectionName = getEnvCollectionName(baseCollectionName);
+    try {
+      const currentIds = new Set(
+        items.map((item) => String(item[idKey] || item.id || item.flowId || item.taskId || item.itemId || item.userId || item.auditId)).filter(Boolean)
+      );
+
+      // 1. Create / Update (Upsert) clean items
+      for (const item of items) {
+        if (this.isQuotaExceeded) break;
+        const id = item[idKey] || item.id || item.flowId || item.taskId || item.itemId || item.userId || item.auditId;
+        if (id) {
+          const cleanPayload = sanitizeForFirestore(item);
+          setDoc(doc(db, collectionName, String(id)), cleanPayload, { merge: true })
+            .catch((err) => {
+              this.handleFirestoreError(err);
+            });
+        }
+      }
+
+      // 2. Delete removed items from remote Firestore collection
+      if (!this.isQuotaExceeded) {
+        getDocs(collection(db, collectionName)).then((snap) => {
+          if (this.isQuotaExceeded) return;
+          snap.docs.forEach((d) => {
+            if (!currentIds.has(d.id)) {
+              deleteDoc(doc(db, collectionName, d.id)).catch((err) => this.handleFirestoreError(err));
+            }
+          });
+        }).catch((err) => this.handleFirestoreError(err));
+      }
+    } catch (err) {
+      this.handleFirestoreError(err);
     }
   }
 
@@ -240,13 +300,15 @@ class StorageAdapter {
   }
 
   private notifyListeners() {
-    this.listeners.forEach((cb) => {
-      try {
-        cb();
-      } catch (e) {
-        // Callback warning
-      }
-    });
+    setTimeout(() => {
+      this.listeners.forEach((cb) => {
+        try {
+          cb();
+        } catch (e) {
+          // Callback warning
+        }
+      });
+    }, 0);
   }
 
   public initFirestoreRealtimeSync() {
@@ -472,47 +534,7 @@ class StorageAdapter {
     }
   }
 
-  private syncToFirestore(baseCollectionName: string, items: any[], idKey: string) {
-    if (this.isQuotaExceeded) return;
-    const collectionName = getEnvCollectionName(baseCollectionName);
-    try {
-      const currentIds = new Set(
-        items.map((item) => String(item[idKey] || item.id || item.flowId || item.taskId || item.itemId || item.userId || item.auditId)).filter(Boolean)
-      );
 
-      // 1. Create / Update (Upsert) clean items
-      for (const item of items) {
-        if (this.isQuotaExceeded) break;
-        const id = item[idKey] || item.id || item.flowId || item.taskId || item.itemId || item.userId || item.auditId;
-        if (id) {
-          const cleanPayload = sanitizeForFirestore(item);
-          setDoc(doc(db, collectionName, String(id)), cleanPayload, { merge: true })
-            .catch((err) => {
-              this.handleFirestoreError(err);
-              if (!this.isQuotaExceeded) {
-                console.warn(`[Firestore Write Error] ${collectionName}/${id}:`, err?.message || err);
-              }
-            });
-        }
-      }
-
-      // 2. Delete removed items from remote Firestore collection
-      if (!this.isQuotaExceeded) {
-        getDocs(collection(db, collectionName)).then((snap) => {
-          snap.docs.forEach((d) => {
-            if (!currentIds.has(d.id)) {
-              deleteDoc(doc(db, collectionName, d.id)).catch((err) => this.handleFirestoreError(err));
-            }
-          });
-        }).catch((err) => this.handleFirestoreError(err));
-      }
-    } catch (err) {
-      this.handleFirestoreError(err);
-      if (!this.isQuotaExceeded) {
-        console.warn(`[Firestore Sync Exception] ${collectionName}:`, err);
-      }
-    }
-  }
 
   public deleteFromFirestore(baseCollectionName: string, id: string) {
     if (this.isQuotaExceeded) return;
@@ -1318,8 +1340,14 @@ class StorageAdapter {
     const existingFlows = this.getFmsFlows();
     const baseIndentNo = parentFlow.indentNo || parentFlow.requisitionNumber || `IND-${Date.now().toString().slice(-4)}`;
     
-    const storeItems = lineItems.filter((i) => i.triageAllocation === 'STORE_DISPATCH');
-    const purchaseItems = lineItems.filter((i) => i.triageAllocation === 'PURCHASE_REQUISITION');
+    const storeItems = lineItems.filter((i) => i.triageAllocation !== 'HELD_ARCHIVED' && (((i.csrQty || 0) + (i.otherSiteQty || 0)) > 0 || i.triageAllocation === 'STORE_DISPATCH'));
+    const purchaseItems = lineItems
+      .filter((i) => i.triageAllocation !== 'HELD_ARCHIVED' && ((i.purchaseQtyRequired || 0) > 0 || (i.triageAllocation === 'PURCHASE_REQUISITION' && ((i.csrQty || 0) + (i.otherSiteQty || 0)) === 0)))
+      .map((i) => ({
+        ...i,
+        qty: i.purchaseQtyRequired !== undefined && i.purchaseQtyRequired > 0 ? i.purchaseQtyRequired : i.qty,
+        requestedQty: i.purchaseQtyRequired !== undefined && i.purchaseQtyRequired > 0 ? i.purchaseQtyRequired : i.qty,
+      }));
 
     let storeFlow: FmsInstance | null = null;
     let purchaseFlow: FmsInstance | null = null;
@@ -1333,6 +1361,39 @@ class StorageAdapter {
       const dispFlowId = `FLOW-DISP-${Date.now().toString().slice(-6)}`;
       const dispIndentNo = `${baseIndentNo}-DISP`;
 
+      let totalCsrQty = 0;
+      let totalOtherSiteQty = 0;
+      const dispatchSourcesSet = new Set<string>();
+      const dispatchNotesList: string[] = [];
+
+      storeItems.forEach((item) => {
+        const csr = item.csrQty ?? item.csrStock ?? 0;
+        const other = item.otherSiteQty ?? item.otherSiteStock ?? 0;
+        const otherSite = item.stockSiteName || 'Other Site';
+
+        totalCsrQty += csr;
+        totalOtherSiteQty += other;
+
+        if (csr > 0) dispatchSourcesSet.add('Central Store');
+        if (other > 0) dispatchSourcesSet.add(otherSite);
+
+        if (csr > 0 && other > 0) {
+          dispatchNotesList.push(`Dispatch ${csr} from Central Store and ${other} from ${otherSite}`);
+        } else if (csr > 0) {
+          dispatchNotesList.push(`Dispatch ${csr} from Central Store`);
+        } else if (other > 0) {
+          dispatchNotesList.push(`Dispatch ${other} from ${otherSite}`);
+        } else {
+          dispatchNotesList.push(`Dispatch ${item.qty} from Store`);
+        }
+      });
+
+      const dispatchSourcesArr = Array.from(dispatchSourcesSet);
+      const dispatchSourceStr = dispatchSourcesArr.join(' & ') || 'Central Store';
+      const dispatchNotice = (totalCsrQty > 0 && totalOtherSiteQty > 0)
+        ? `Dispatch ${totalCsrQty} from Central Store and ${totalOtherSiteQty} from ${Array.from(dispatchSourcesSet).filter(s => s !== 'Central Store').join(', ') || 'Other Site'}`
+        : (dispatchNotesList[0] || 'Store Stock Issue');
+
       storeFlow = {
         ...parentFlow,
         id: dispId,
@@ -1343,7 +1404,7 @@ class StorageAdapter {
         indentNo: dispIndentNo,
         requisitionNumber: dispIndentNo,
         flowType: 'STORE_TO_SITE_DISPATCH',
-        title: `[STORE DISPATCH TRACK] ${parentFlow.title || 'Store Stock Issue'}`,
+        title: `[STORE DISPATCH TRACK] ${dispatchNotice}`,
         status: 'In Progress',
         isClosed: false,
         lineItems: storeItems,
@@ -1359,16 +1420,96 @@ class StorageAdapter {
           how: stg.howChannel || 'In-App Form',
           status: idx === 0 ? ('In Progress' as const) : ('Pending' as const),
           stageStartedAt: idx === 0 ? nowIso : undefined,
+          notes: idx === 0 ? dispatchNotice : undefined,
           plannedTimestamp: idx === 0 ? new Date(Date.now() + (stg.slaHours || 12) * 3600 * 1000).toISOString() : undefined,
         })),
         instanceDataPool: {
           ...(parentFlow.instanceDataPool || {}),
           parentIndentNo: baseIndentNo,
           splitTrackType: 'STORE_DISPATCH',
+          dispatchSource: dispatchSourceStr,
+          csrQty: totalCsrQty,
+          otherSiteQty: totalOtherSiteQty,
+          dispatchNotice,
           triageNotes,
           triagedBy: currentUser?.name || 'Store Keeper',
         },
       };
+
+      // Ledger Sync: Auto-generate InventoryMovement entries and deduct digital stock
+      const invItems = this.getInventoryItems();
+      const existingMovements = this.getInventoryMovements();
+      const newMovements: InventoryMovement[] = [];
+      let invChanged = false;
+
+      storeItems.forEach((sItem, idx) => {
+        const csrQty = sItem.csrQty ?? sItem.csrStock ?? sItem.qty;
+        const otherQty = sItem.otherSiteQty ?? sItem.otherSiteStock ?? 0;
+        const siteName = sItem.stockSiteName || 'Secondary Site';
+        const targetSite = parentFlow.siteName || 'Site';
+
+        const matchIdx = invItems.findIndex(
+          (inv) => (sItem.inventoryItemId && (inv.itemId === sItem.inventoryItemId || inv.id === sItem.inventoryItemId)) ||
+                   inv.name.toLowerCase().trim() === sItem.itemDescription.toLowerCase().trim()
+        );
+
+        const targetItemId = matchIdx >= 0 ? invItems[matchIdx].itemId : (sItem.inventoryItemId || `ITEM-${idx + 1}`);
+
+        if (csrQty > 0) {
+          const movId = `MOV-DISP-CSR-${Date.now()}-${idx + 1}`;
+          newMovements.push({
+            id: movId,
+            transactionId: movId,
+            itemId: targetItemId,
+            itemName: sItem.itemDescription,
+            type: 'ISSUE',
+            quantity: csrQty,
+            sourceLocation: 'Central Store',
+            destinationLocation: targetSite,
+            referenceDoc: dispIndentNo,
+            initiatedBy: currentUser?.name || 'Store Manager Amanat Bharadwaj',
+            timestamp: nowIso,
+            notes: `Store Stock Triage: Dispatched ${csrQty} ${sItem.unit} from Central Store to ${targetSite}`
+          });
+
+          if (matchIdx >= 0) {
+            invItems[matchIdx].currentStock = Math.max(0, invItems[matchIdx].currentStock - csrQty);
+            invItems[matchIdx].lastCheckedDate = nowStr;
+            invChanged = true;
+          }
+        }
+
+        if (otherQty > 0) {
+          const movId = `MOV-XFER-${Date.now()}-${idx + 1}`;
+          newMovements.push({
+            id: movId,
+            transactionId: movId,
+            itemId: targetItemId,
+            itemName: sItem.itemDescription,
+            type: 'TRANSFER',
+            quantity: otherQty,
+            sourceLocation: siteName,
+            destinationLocation: targetSite,
+            referenceDoc: dispIndentNo,
+            initiatedBy: currentUser?.name || 'Store Manager Amanat Bharadwaj',
+            timestamp: nowIso,
+            notes: `Store Stock Triage: Transferred ${otherQty} ${sItem.unit} from ${siteName} to ${targetSite}`
+          });
+
+          if (matchIdx >= 0 && csrQty === 0) {
+            invItems[matchIdx].currentStock = Math.max(0, invItems[matchIdx].currentStock - otherQty);
+            invItems[matchIdx].lastCheckedDate = nowStr;
+            invChanged = true;
+          }
+        }
+      });
+
+      if (newMovements.length > 0) {
+        this.saveInventoryMovements([...existingMovements, ...newMovements]);
+      }
+      if (invChanged) {
+        this.saveInventoryItems(invItems);
+      }
     }
 
     // 2. Create Purchase Requisition Indent if purchase items exist
@@ -1445,6 +1586,7 @@ class StorageAdapter {
           assignee: 'System / Child Workflows',
           status: 'Done' as const,
           actualTimestamp: nowIso,
+          actualDateTime: nowStr,
           notes: triageNotes || `Store stock check & triage completed (${storeItems.length} Store Dispatch, ${purchaseItems.length} Purchase Requisition).`,
         };
       }
@@ -1462,7 +1604,7 @@ class StorageAdapter {
     const updatedParent: FmsInstance = {
       ...parentFlow,
       poAssignTo: 'System / Child Workflows',
-      status: (storeFlow || purchaseFlow) ? 'Awaiting Fulfillment' : (hasNextStage ? 'In Progress' : 'Completed'),
+      status: (storeFlow || purchaseFlow || parentFlow.flowType === 'CHECK_STOCK' || parentFlow.templateKey === 'CHECK_STOCK') ? 'Awaiting Fulfillment' : (hasNextStage ? 'In Progress' : 'Completed'),
       isClosed: false,
       currentStageIndex: Math.min(parentFlow.currentStageIndex, Math.max(0, parentFlow.stages.length - 1)),
       currentStageId: hasNextStage ? parentFlow.stages[nextStageIdx]?.stageId || parentFlow.currentStageId : parentFlow.currentStageId,
@@ -1903,6 +2045,23 @@ class StorageAdapter {
     this.notifyListeners();
   }
 
+  public saveInventoryItem(item: InventoryItem): { item: InventoryItem; isNew: boolean } {
+    const current = this.getInventoryItems();
+    const existingIndex = current.findIndex((i) => i.id === item.id || i.itemId === item.itemId);
+    let updated: InventoryItem[];
+    let isNew = false;
+
+    if (existingIndex >= 0) {
+      updated = current.map((i, idx) => (idx === existingIndex ? item : i));
+    } else {
+      updated = [item, ...current];
+      isNew = true;
+    }
+
+    this.saveInventoryItems(updated);
+    return { item, isNew };
+  }
+
   public getInventoryMovements(): InventoryMovement[] {
     if (typeof window === 'undefined') return INITIAL_INVENTORY_MOVEMENTS;
     try {
@@ -2042,23 +2201,88 @@ class StorageAdapter {
   }
 
   public getMasterSites(): string[] {
-    const activeSites = this.getActiveSites();
-    if (activeSites.length > 0) {
-      return activeSites.map((s) => s.name);
-    }
+    const activeSites = this.getActiveSites().map((s) => s.name);
     const config = this.getRegistryConfig();
+    const configSites = (config.masterSites && Array.isArray(config.masterSites)) ? config.masterSites : [];
     const defaults = ['Siladehi Site', 'Bijetala Site', 'Raipur Office', 'Central Store'];
-    if (config.masterSites && Array.isArray(config.masterSites) && config.masterSites.length > 0) {
-      const merged = Array.from(new Set([...defaults, ...config.masterSites]));
-      return merged;
-    }
-    return defaults;
+    const merged = Array.from(new Set([...defaults, ...activeSites, ...configSites])).filter(Boolean);
+    return merged;
   }
 
   public addMasterSite(siteName: string): string[] {
     const clean = siteName.trim();
     if (!clean) return this.getMasterSites();
-    return this.addSiteRegistryItem(clean.slice(0, 3).toUpperCase(), clean).map(s => s.name);
+    this.addSiteRegistryItem(clean.slice(0, 3).toUpperCase(), clean);
+    return this.getMasterSites();
+  }
+
+  public getMasterCategories(): string[] {
+    const config = this.getRegistryConfig();
+    const defaults = [
+      'Consumables',
+      'Plant Machinery',
+      'Safety/CSR',
+      'IT Equipment',
+      'Office Hardware',
+      'Tools & Spares',
+      'Electricals',
+      'Raw Material / Fuel'
+    ];
+    if (config.masterCategories && Array.isArray(config.masterCategories) && config.masterCategories.length > 0) {
+      return Array.from(new Set([...defaults, ...config.masterCategories]));
+    }
+    return defaults;
+  }
+
+  public saveMasterCategories(categories: string[]): string[] {
+    const config = this.getRegistryConfig();
+    const clean = categories.map((c) => c.trim()).filter(Boolean);
+    const updated = Array.from(new Set(clean));
+    this.saveRegistryConfig({ ...config, masterCategories: updated });
+    return updated;
+  }
+
+  public addMasterCategory(categoryName: string): string[] {
+    const clean = categoryName.trim();
+    if (!clean) return this.getMasterCategories();
+    const current = this.getMasterCategories();
+    return this.saveMasterCategories([...current, clean]);
+  }
+
+  public getMasterUnits(): string[] {
+    const config = this.getRegistryConfig();
+    const defaults = [
+      'Nos',
+      'Kg',
+      'Ltr',
+      'Mtr',
+      'Set',
+      'Pkt',
+      'Box',
+      'Bag',
+      'Pair',
+      'Roll',
+      'Sqft'
+    ];
+    if (config.masterUnits && Array.isArray(config.masterUnits) && config.masterUnits.length > 0) {
+      return Array.from(new Set([...defaults, ...config.masterUnits]));
+    }
+    return defaults;
+  }
+
+  public saveMasterUnits(units: string[]): string[] {
+    const config = this.getRegistryConfig();
+    const clean = units.map((u) => u.trim()).filter(Boolean);
+    const updated = Array.from(new Set(clean));
+    this.saveRegistryConfig({ ...config, masterUnits: updated });
+    return updated;
+  }
+
+  public addMasterUnit(unitName: string): string[] {
+    const clean = unitName.trim();
+    if (!clean) return this.getMasterUnits();
+    const current = this.getMasterUnits();
+    return this.saveMasterUnits([...current, clean]);
   }
 
   public getMasterVendors(): string[] {

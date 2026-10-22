@@ -53,12 +53,21 @@ export const AccountsDoubleEntryVerificationPanel: React.FC<AccountsDoubleEntryV
   const hasAccountError = isAccountTyped && !isAccountMatch;
   const hasIfscError = isIfscTyped && !isIfscMatch;
 
+  const prevMatchRef = React.useRef<{ isFullMatch?: boolean; account?: string; ifsc?: string }>({});
+
   useEffect(() => {
-    onVerificationStatusChange(isFullMatch, {
-      reEnteredAccountNo: cleanTypedAccount,
-      reEnteredIfscCode: cleanTypedIfsc,
-    });
-  }, [isFullMatch, cleanTypedAccount, cleanTypedIfsc]);
+    if (
+      prevMatchRef.current.isFullMatch !== isFullMatch ||
+      prevMatchRef.current.account !== cleanTypedAccount ||
+      prevMatchRef.current.ifsc !== cleanTypedIfsc
+    ) {
+      prevMatchRef.current = { isFullMatch, account: cleanTypedAccount, ifsc: cleanTypedIfsc };
+      onVerificationStatusChange(isFullMatch, {
+        reEnteredAccountNo: cleanTypedAccount,
+        reEnteredIfscCode: cleanTypedIfsc,
+      });
+    }
+  }, [isFullMatch, cleanTypedAccount, cleanTypedIfsc, onVerificationStatusChange]);
 
   const chequeProofUrl = cancelledChequeUrl || 'https://pdfobject.com/pdf/sample.pdf';
 
