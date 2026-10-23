@@ -76,7 +76,7 @@ import {
   FMS_PAYMENT_TO_DISPATCH_STAGES,
   FMS_SITE_RECEIVE_STAGES
 } from './data/initialData';
-import { isFlowAwaitingUserAction, getDepartmentForWorkflow } from './services/stageAssignment';
+import { isFlowAwaitingUserAction, getDepartmentForWorkflow, getBestPurchaseAssistant } from './services/stageAssignment';
 import { storageAdapter } from './services/storageAdapter';
 
 export default function App() {
@@ -894,52 +894,77 @@ export default function App() {
         }
       }
     } else {
-      // INDENT_PURCHASE Rules:
-      const isStoreAvailabilityStage = currentStage.stageId === 'STG-IND-02' || currentStage.stageName.toUpperCase().includes('AVAILABLE IN STORE');
-      const isDegradedMaterialCheck = currentStage.stageName.toUpperCase().includes('DEGRADED') || (currentStage.stageId === 'STG-02' && !isStoreAvailabilityStage);
+      // INDENT_PURCHASE / INDENT_TO_PO Rules:
+      const isPurchaseFlow =
+        flow.flowType === 'INDENT_PURCHASE' ||
+        flow.flowType === 'INDENT_TO_PO' ||
+        flow.templateKey === 'INDENT_TO_PO';
 
-      // 1. Degraded Material Check (Stage 2 in standard purchase flows)
-      if (isDegradedMaterialCheck && decision === 'No') {
-        if (updatedStages[2]) {
-          updatedStages[2].status = 'Skipped';
-          updatedStages[2].notes = 'Skipped: No degraded material to return';
-        }
-        nextIndex = 3; // Skip Stage 3 (RETURN OF DEGRADED MATERIAL) and jump directly to Stage 4 (PURCHASE APPROVAL)
-      } else if (isStoreAvailabilityStage) {
-        // 2. Store Availability Check (Construction Operations Flow)
-        const availChoice = (submittedData?.availabilityDecision || decision || 'PARTIAL').toString().toUpperCase();
-        if (availChoice === 'ALL') {
-          // ALL items in store -> skip quotation & purchase stages (stages 2 through 10), jump directly to Store Dispatch
-          for (let sIdx = 2; sIdx < updatedStages.length - 1; sIdx++) {
-            if (updatedStages[sIdx]) {
-              updatedStages[sIdx].status = 'Skipped';
-              updatedStages[sIdx].notes = 'Skipped: All items available in store inventory, direct site dispatch issued';
-            }
+      if (isPurchaseFlow) {
+        // Normal Flow: After Stage 2 (Index 1: Get Quotation & Generate CS), mark Stage 3 (Index 2: Get Another Quotation) as Skipped and jump directly to Stage 4 (Index 3: Director L1 Approval)
+        if (currentIndex === 1 || currentStage.stageId === 'STG-02') {
+          if (updatedStages[2]) {
+            updatedStages[2].status = 'Skipped';
+            updatedStages[2].notes = 'Skipped in normal flow';
           }
-          nextIndex = updatedStages.length - 1; // Stage 12: MATERIAL COLLECTION / DISPATCH
-          updatedDataPool.storeAvailability = 'ALL';
-          updatedDataPool.availableQty = submittedData?.availableQty || 'All items available';
-        } else if (availChoice === 'NONE') {
-          // NONE in store -> proceed sequentially to Purchase Approval & Vendor Quotations
-          nextIndex = currentIndex + 1;
-          updatedDataPool.storeAvailability = 'NONE';
-          updatedDataPool.purchaseQty = submittedData?.purchaseQty || 'All items require procurement';
-        } else {
-          // PARTIAL: Store records available items (e.g. 5 of 10), dispatches them, balance proceeds to Purchase
-          nextIndex = currentIndex + 1;
-          updatedDataPool.storeAvailability = 'PARTIAL';
-          updatedDataPool.availableQty = submittedData?.availableQty || '5 items in store (Dispatched to Site)';
-          updatedDataPool.purchaseQty = submittedData?.purchaseQty || '5 items sent to Purchase for Quotations';
-          updatedDataPool.partialDispatchStatus = 'DISPATCHED_TO_SITE';
+          nextIndex = 3; // Stage 4: Director L1 Approval
+        } else if (currentIndex === 2 || currentStage.stageId === 'STG-03') {
+          // Rework Flow: When Brahmanand submits Stage 3 (Index 2: Get Another Quotation), jump back to Stage 4 (Index 3: Director L1 Approval)
+          nextIndex = 3; // Stage 4: Director L1 Approval
+        } else if (currentIndex === 3 || currentStage.stageId === 'STG-04') {
+          // Stage 4 (Index 3: Director L1 Approval) -> Stage 5 (Index 4: Generate & Issue PO)
+          nextIndex = 4;
+        } else if (currentIndex === 4 || currentStage.stageId === 'STG-05') {
+          // Stage 5 (Index 4: Generate & Issue PO) -> Stage 6 (Index 5: Send PO for Material Collection)
+          // Dynamic Workload & Delay Assignment for Stage 6
+          const bestAssistant = getBestPurchaseAssistant(flows, delegationTasks, usersList);
+          if (updatedStages[5]) {
+            updatedStages[5].assignee = bestAssistant.name;
+            updatedStages[5].whoDefaultAssignee = bestAssistant.name;
+          }
+          nextIndex = 5;
         }
-      }
+      } else {
+        const isStoreAvailabilityStage = currentStage.stageId === 'STG-IND-02' || currentStage.stageName.toUpperCase().includes('AVAILABLE IN STORE');
+        const isDegradedMaterialCheck = currentStage.stageName.toUpperCase().includes('DEGRADED') || (currentStage.stageId === 'STG-02' && !isStoreAvailabilityStage);
 
+        if (isDegradedMaterialCheck && decision === 'No') {
+          if (updatedStages[2]) {
+            updatedStages[2].status = 'Skipped';
+            updatedStages[2].notes = 'Skipped: No degraded material to return';
+          }
+          nextIndex = 3;
+        } else if (isStoreAvailabilityStage) {
+          const availChoice = (submittedData?.availabilityDecision || decision || 'PARTIAL').toString().toUpperCase();
+          if (availChoice === 'ALL') {
+            for (let sIdx = 2; sIdx < updatedStages.length - 1; sIdx++) {
+              if (updatedStages[sIdx]) {
+                updatedStages[sIdx].status = 'Skipped';
+                updatedStages[sIdx].notes = 'Skipped: All items available in store inventory, direct site dispatch issued';
+              }
+            }
+            nextIndex = updatedStages.length - 1;
+            updatedDataPool.storeAvailability = 'ALL';
+            updatedDataPool.availableQty = submittedData?.availableQty || 'All items available';
+          } else if (availChoice === 'NONE') {
+            nextIndex = currentIndex + 1;
+            updatedDataPool.storeAvailability = 'NONE';
+            updatedDataPool.purchaseQty = submittedData?.purchaseQty || 'All items require procurement';
+          } else {
+            nextIndex = currentIndex + 1;
+            updatedDataPool.storeAvailability = 'PARTIAL';
+            updatedDataPool.availableQty = submittedData?.availableQty || '5 items in store (Dispatched to Site)';
+            updatedDataPool.purchaseQty = submittedData?.purchaseQty || '5 items sent to Purchase for Quotations';
+            updatedDataPool.partialDispatchStatus = 'DISPATCHED_TO_SITE';
+          }
+        }
 
-      if (currentStage.stageId === 'STG-10' && decision === 'No') {
-        if (updatedStages[10]) {
-          updatedStages[10].status = 'Skipped';
-          updatedStages[10].notes = 'Skipped: No advance payment required';
-          nextIndex = 11; // Skips Stage 11 (SEND FOR PAYMENT) and jumps directly to Stage 12 (MATERIAL COLLECTION PO)
+        if (currentStage.stageId === 'STG-10' && decision === 'No') {
+          if (updatedStages[10]) {
+            updatedStages[10].status = 'Skipped';
+            updatedStages[10].notes = 'Skipped: No advance payment required';
+            nextIndex = 11;
+          }
         }
       }
     }
@@ -961,11 +986,30 @@ export default function App() {
       const sla: number = typeof updatedStages[nextIndex].slaHours === 'number' ? updatedStages[nextIndex].slaHours! : (typeof def?.slaHours === 'number' ? def.slaHours : 0);
       const workShiftConfig = storageAdapter.getRegistryConfig().workShiftConfig || DEFAULT_WORK_SHIFT_CONFIG;
       const targetDate = addWorkingSlaHours(now, sla, workShiftConfig);
-      if (!updatedStages[nextIndex].plannedDateTime) {
+
+      // CRITICAL (SLA Reset): Re-entering Stage 4 after Stage 3 or starting Stage 4 resets Director's SLA
+      const isPurchaseFlow = flow.flowType === 'INDENT_PURCHASE' || flow.flowType === 'INDENT_TO_PO' || flow.templateKey === 'INDENT_TO_PO';
+      if (nextIndex === 3 && isPurchaseFlow) {
+        updatedStages[3].plannedDateTime = formatToStandardDateTime(targetDate);
+        updatedStages[3].plannedTimestamp = targetDate.toISOString();
+        updatedStages[3].stageStartedAt = now.toISOString();
+        updatedStages[3].actualDateTime = undefined;
+        updatedStages[3].actualTimestamp = undefined;
+        updatedStages[3].delayHours = undefined;
+        updatedStages[3].timeDelayHours = undefined;
+        if (!updatedStages[3].assignee) {
+          updatedStages[3].assignee = 'Pranjal Agrawal';
+        }
+      } else {
         updatedStages[nextIndex].plannedDateTime = formatToStandardDateTime(targetDate);
-      }
-      if (!updatedStages[nextIndex].plannedTimestamp) {
         updatedStages[nextIndex].plannedTimestamp = targetDate.toISOString();
+        updatedStages[nextIndex].actualDateTime = undefined;
+        updatedStages[nextIndex].actualTimestamp = undefined;
+        updatedStages[nextIndex].delayHours = undefined;
+        updatedStages[nextIndex].timeDelayHours = undefined;
+        if (!updatedStages[nextIndex].stageStartedAt) {
+          updatedStages[nextIndex].stageStartedAt = now.toISOString();
+        }
       }
     }
 
@@ -1000,7 +1044,7 @@ export default function App() {
       else if (trigger.triggerCondition === 'ON_DECISION_NO' && decision === 'No') conditionMet = true;
       else if (!trigger.triggerCondition || trigger.triggerCondition === 'ON_COMPLETE') conditionMet = true;
 
-      if (conditionMet) {
+      if (conditionMet && trigger.targetTemplateKey) {
         const targetType = trigger.targetTemplateKey;
         const mappings = trigger.fieldMappings || [];
         

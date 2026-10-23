@@ -57,6 +57,130 @@ import {
 // Helper to normalize strings: lowercase, remove spaces, underscores, hyphens
 const normalize = (str?: string) => (str || '').toLowerCase().replace(/[\s_-]/g, '');
 
+/**
+ * Evaluates all users with the PURCHASE_ASSISTANT role (Rajnikant, Vivek, Rajendra)
+ * and returns the best candidate based on:
+ * a) Active Workload: Number of current tasks assigned to them with status Pending or In Progress.
+ * b) Historical Delay: Average delay hours of their completed tasks.
+ * Routing Rule: Assign the Stage 6 task to the user with the lowest active workload.
+ * If there is a tie in workload, assign it to the user with the lowest historical delay.
+ */
+export const getBestPurchaseAssistant = (
+  allFlows: FmsInstance[] = [],
+  allDelegationTasks: DelegationTask[] = [],
+  allUsers: UserProfile[] = []
+): UserProfile => {
+  const candidateNames = ['rajnikant', 'vivek', 'rajendra'];
+
+  let candidates = allUsers.filter((u) => {
+    const r = normalize(u.role);
+    const sr = normalize(u.systemRole);
+    const name = normalize(u.name);
+    return (
+      r.includes('purchaseassistant') ||
+      r.includes('purchaser') ||
+      sr.includes('purchaseassistant') ||
+      candidateNames.some((cn) => name.includes(cn))
+    );
+  });
+
+  if (candidates.length === 0) {
+    candidates = allUsers.filter(u => ['USR-007', 'USR-016', 'USR-017'].includes(u.userId));
+  }
+
+  const scores = candidates.map((user) => {
+    const userNameNorm = normalize(user.name);
+
+    let activeWorkload = 0;
+
+    // 1. Check FMS active stages
+    allFlows.forEach((flow) => {
+      if (flow.status === 'Completed' || flow.status === 'Cancelled') return;
+      
+      const curIndex = flow.currentStageIndex;
+      const curStage = flow.stages[curIndex];
+      if (curStage) {
+        const stageStatus = curStage.status;
+        if (stageStatus === 'Pending' || stageStatus === 'In Progress') {
+          const assigneeNorm = normalize(curStage.assignee || curStage.whoDefaultAssignee);
+          if (assigneeNorm && (assigneeNorm === userNameNorm || assigneeNorm.includes(userNameNorm) || userNameNorm.includes(assigneeNorm))) {
+            activeWorkload++;
+          }
+        }
+      }
+    });
+
+    // 2. Check Delegation Tasks
+    allDelegationTasks.forEach((task) => {
+      if (task.status === 'Pending') {
+        const nameNorm = normalize(task.name);
+        const roleNorm = normalize(task.rolePhone);
+        if (nameNorm.includes(userNameNorm) || roleNorm.includes(userNameNorm) || userNameNorm.includes(nameNorm)) {
+          activeWorkload++;
+        }
+      }
+    });
+
+    let totalDelayHours = 0;
+    let completedCount = 0;
+
+    // 1. Completed FMS stages
+    allFlows.forEach((flow) => {
+      flow.stages.forEach((stg) => {
+        if (stg.status === 'Done' || stg.status === 'Completed') {
+          const assigneeNorm = normalize(stg.assignee || stg.whoDefaultAssignee);
+          if (assigneeNorm && (assigneeNorm === userNameNorm || assigneeNorm.includes(userNameNorm) || userNameNorm.includes(assigneeNorm))) {
+            completedCount++;
+            const delay = stg.delayHours || stg.timeDelayHours || 0;
+            if (delay > 0) {
+              totalDelayHours += delay;
+            }
+          }
+        }
+      });
+    });
+
+    // 2. Completed Delegation Tasks
+    allDelegationTasks.forEach((task) => {
+      if (task.status === 'Completed') {
+        const nameNorm = normalize(task.name);
+        const roleNorm = normalize(task.rolePhone);
+        if (nameNorm.includes(userNameNorm) || roleNorm.includes(userNameNorm) || userNameNorm.includes(nameNorm)) {
+          completedCount++;
+          if (task.completedAt && task.latestRevision) {
+            try {
+              const compMs = new Date(task.completedAt).getTime();
+              const planMs = new Date(task.latestRevision).getTime();
+              if (!isNaN(compMs) && !isNaN(planMs) && compMs > planMs) {
+                totalDelayHours += (compMs - planMs) / (1000 * 3600);
+              }
+            } catch {
+              // ignore date parsing error
+            }
+          }
+        }
+      }
+    });
+
+    const avgHistoricalDelay = completedCount > 0 ? totalDelayHours / completedCount : 0;
+
+    return {
+      user,
+      activeWorkload,
+      avgHistoricalDelay,
+    };
+  });
+
+  scores.sort((a, b) => {
+    if (a.activeWorkload !== b.activeWorkload) {
+      return a.activeWorkload - b.activeWorkload;
+    }
+    return a.avgHistoricalDelay - b.avgHistoricalDelay;
+  });
+
+  return scores[0]?.user || candidates[0] || allUsers[0];
+};
+
 export const isUserResponsibleForStage = (
   stageDef: FmsStageDefinition | FmsStageTemplate | undefined,
   stageExec: FmsStageExecution | undefined,

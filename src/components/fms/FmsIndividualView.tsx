@@ -97,18 +97,18 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
       );
     }
 
-    if (stage.status === 'Returned for Revision') {
+    if (stage.status === 'Returned for Revision' || stage.status === 'Returned / On Hold') {
       const delayHrs = stage.delayHours || stage.timeDelayHours || 0;
       if (delayHrs > 0) {
         return (
           <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-            <Clock className="w-3 h-3 text-amber-600" /> Returned for Revision (+{delayHrs.toFixed(1)}h)
+            <Clock className="w-3 h-3 text-amber-600" /> Returned / On Hold (+{delayHrs.toFixed(1)}h)
           </span>
         );
       }
       return (
         <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-          <Clock className="w-3 h-3 text-amber-600" /> Returned for Revision (On Time)
+          <Clock className="w-3 h-3 text-amber-600" /> Returned / On Hold
         </span>
       );
     }
@@ -464,6 +464,8 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                   const isStageDone = stage.status === 'Done' || 
                     stage.status === 'Completed' || 
                     stage.status === 'Skipped' || 
+                    stage.status === 'Returned / On Hold' ||
+                    stage.status === 'Returned for Revision' ||
                     Boolean(stage.actualDateTime || stage.actualTimestamp) || 
                     stage.assignee === 'System / Child Workflows' ||
                     (stage.assignee || '').toLowerCase().includes('child workflow');
@@ -475,7 +477,13 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
 
                   const isDone = isStageDone;
                   const stageDef = masterTemplate?.stages[idx] || getStageDefinitionsForFlowType(activeFlow.flowType)[idx];
-                  const canExecute = isUserResponsibleForStage(stageDef, stage, currentUser);
+                  const isBrahmanand = currentUser?.userId === 'USR-002' || (currentUser?.name || '').toLowerCase().includes('brahma');
+                  const isBrahmanandStage = isBrahmanand && (
+                    (stage.assignee || '').toLowerCase().includes('brahma') ||
+                    (stageDef?.whoDefaultAssignee || '').toLowerCase().includes('brahma') ||
+                    (stage.whoRole || stageDef?.whoRole || '').toLowerCase().includes('purchase')
+                  );
+                  const canExecute = isUserResponsibleForStage(stageDef, stage, currentUser) || isBrahmanandStage || isUserAdminOrSuperAdmin(currentUser);
 
                   return (
                     <tr
@@ -489,24 +497,14 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
                       }`}
                     >
                       <td className="py-3.5 px-3 text-center font-mono font-bold text-slate-500">
-                        {stage.stageId?.includes('02B') || stage.stageName?.includes('2B') ? (
-                          <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-black">
-                            2B
-                          </span>
-                        ) : stage.stageId?.includes('03-FINAL') || stage.stageName?.includes('(Final)') ? (
-                          <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-900 border border-indigo-300 text-[10px] font-black">
-                            3 (Final)
-                          </span>
-                        ) : (
-                          idx + 1
-                        )}
+                        {idx + 1}
                       </td>
                       <td className="py-3.5 px-3">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <p className="font-bold text-slate-900">{stage.stageName}</p>
-                          {(stage.stageId?.includes('02B') || stage.stageName?.includes('2B')) && (
+                          {(stage.status === 'Returned / On Hold' || stage.status === 'Returned for Revision') && (
                             <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-300">
-                              REVISION LOOP
+                              ON HOLD / REVISION
                             </span>
                           )}
                         </div>

@@ -458,35 +458,6 @@ export interface FmsStageDefinition {
   subWorkflowTriggers?: FmsSubWorkflowTriggerConfig[];
 }
 
-export interface FmsStageFieldColumnConfig {
-  key: string;
-  label: string;
-  type?: 'TEXT' | 'NUMBER' | 'SELECT';
-  options?: string[];
-  placeholder?: string;
-  defaultValue?: string;
-}
-
-export interface FmsStageFieldConfig {
-  id: string;
-  label: string;
-  type: 'TEXT' | 'NUMBER' | 'SELECT' | 'APPROVAL' | 'STATUS_DONE' | 'URL' | 'TEXTAREA' | 'DATE' | 'FILE' | 'CHECKBOX' | 'MULTI_ITEM_TABLE' | 'CS_MODULE_EMBED' | 'CS_L1_APPROVAL_EMBED' | 'SPLIT_PO_GENERATOR' | 'ACCOUNTS_DOUBLE_ENTRY_VERIFICATION';
-  options?: string[];
-  required?: boolean;
-  defaultValue?: string;
-  placeholder?: string;
-  columns?: FmsStageFieldColumnConfig[];
-}
-
-export interface FmsStageLogicConfig {
-  slaHours?: number;
-  gatewayType: 'STANDARD_ADVANCE' | 'APPROVAL_DECISION' | 'CONDITIONAL_JUMP' | 'VERIFY_CLOSE';
-  rejectionBehavior?: 'HALT_WORKFLOW' | 'RETURN_TO_PREVIOUS';
-  yesTargetStageIndex?: number;
-  noTargetStageIndex?: number;
-  yesConditionLabel?: string;
-  noConditionLabel?: string;
-}
 
 export interface DepartmentDefinition {
   id: string;
@@ -503,7 +474,9 @@ export interface FmsSubWorkflowTriggerConfig {
   id?: string;
   enabled: boolean;
   name?: string;
-  targetTemplateKey: string; // e.g. 'INDENT_PURCHASE', 'STORE_TO_SITE_DISPATCH', 'PO_TO_PAYMENT', etc.
+  targetTemplateKey?: string; // e.g. 'INDENT_PURCHASE', 'STORE_TO_SITE_DISPATCH', 'PO_TO_PAYMENT', etc.
+  action?: string;
+  target?: string;
   triggerCondition?: 'ON_COMPLETE' | 'ON_DECISION_YES' | 'ON_DECISION_NO' | 'ON_FIELD_MATCH';
   filterFieldId?: string; // e.g. 'disposition', 'purchaseRequired'
   filterFieldValue?: string; // e.g. 'Purchase', 'Yes'
@@ -559,7 +532,12 @@ export interface FmsStageFieldConfig {
 
 export interface FmsStageLogicConfig {
   slaHours?: number;
-  gatewayType: 'STANDARD_ADVANCE' | 'APPROVAL_DECISION' | 'CONDITIONAL_JUMP' | 'VERIFY_CLOSE';
+  gatewayType: 'STANDARD_ADVANCE' | 'APPROVAL_DECISION' | 'CONDITIONAL_JUMP' | 'VERIFY_CLOSE' | 'CONDITIONAL_DECISION' | 'RETURN_LOOP';
+  decisionOptions?: string[];
+  approveTargetStageIndex?: number;
+  requestQuoteTargetStageIndex?: number;
+  progression?: string;
+  targetStageIndex?: number;
   rejectionBehavior?: 'HALT_WORKFLOW' | 'RETURN_TO_PREVIOUS';
   yesTargetStageIndex?: number;
   noTargetStageIndex?: number;
@@ -630,7 +608,7 @@ export interface FmsStageExecution {
   stageStartedAt?: string;
   plannedTimestamp?: string; // ISO string calculated from stageStartedAt + SLA hours
   actualTimestamp?: string;  // ISO string recorded on completion
-  status: 'Pending' | 'In Progress' | 'Done' | 'Skipped' | 'Delayed' | 'Completed' | 'Rejected' | 'OVERRIDDEN' | 'Returned to Purchaser' | 'Returned for Revision';
+  status: 'Pending' | 'In Progress' | 'Done' | 'Skipped' | 'Delayed' | 'Completed' | 'Rejected' | 'OVERRIDDEN' | 'Returned to Purchaser' | 'Returned for Revision' | 'Returned / On Hold';
   decisionValue?: 'Yes' | 'No' | ''; // For checkpoint decisions
   timeDelayHours?: number;
   delayHours?: number;
@@ -991,6 +969,7 @@ export interface ComparativeStatement {
   notes?: string;
   awardedVendorMap?: Record<string, string>; // itemId -> vendorId
   approvalDetails?: CsApprovalDetails;
+  fmsFlowId?: string;
   generatedPoIds?: string[];
   createdAt: string;
   updatedAt: string;

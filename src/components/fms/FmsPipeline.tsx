@@ -744,12 +744,65 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
       }
 
 
-      if (currentStage.stageId === 'STG-10' && decision === 'No') {
-        if (updatedStages[10]) {
-          updatedStages[10].status = 'Skipped';
-          updatedStages[10].notes = 'Skipped: No advance payment required';
-          nextIndex = 11; // Skips Stage 11 (SEND FOR PAYMENT) and jumps directly to Stage 12 (MATERIAL COLLECTION PO)
+      const isIndentFlow =
+        flow.flowType === 'INDENT_TO_PO' ||
+        flow.flowType === 'INDENT_PURCHASE' ||
+        flow.templateKey === 'INDENT_TO_PO' ||
+        flow.templateKey === 'tpl_indent_purchase' ||
+        flow.indentNo?.endsWith('-PUR') ||
+        flow.flowId?.includes('-PUR');
+
+      if (isIndentFlow && (currentStage.stageId === 'STG-03' || flow.currentStageIndex === 2)) {
+        if (decision === 'Yes' || currentStage.status === 'Done') {
+          // Skip static Stage 4 (GET ANOTHER QUOTATION)
+          if (updatedStages[3]) {
+            updatedStages[3].status = 'Skipped';
+            updatedStages[3].notes = 'Skipped: Director Approved without additional quotation';
+          }
+          nextIndex = 4; // Jump directly to Stage 5 (Generate & Issue PO)
+        } else {
+          // Request Additional Quotation branch
+          currentStage.status = 'Returned / On Hold';
+          currentStage.remarks = 'Returned for Additional Quotation';
+          nextIndex = 3; // Advance to Stage 4 (GET ANOTHER QUOTATION)
+
+          if (updatedStages[3]) {
+            updatedStages[3].status = 'In Progress';
+            updatedStages[3].assignee = 'Brahmanand Patel';
+            updatedStages[3].whoDefaultAssignee = 'Brahmanand Patel';
+            updatedStages[3].whoRole = 'ASST. MANAGER PURCHASE';
+            const planned12hDate = new Date(Date.now() + 12 * 3600 * 1000);
+            updatedStages[3].slaHours = 12;
+            updatedStages[3].targetDurationHours = 12;
+            updatedStages[3].plannedDateTime = formatToStandardDateTime(planned12hDate);
+            updatedStages[3].plannedTimestamp = planned12hDate.toISOString();
+          }
         }
+      } else if (isIndentFlow && (currentStage.stageId === 'STG-04' || flow.currentStageIndex === 3)) {
+        // Stage 4: GET ANOTHER QUOTATION (Completed by Brahmanand Patel)
+        currentStage.status = 'Done';
+        nextIndex = 2; // Route back to Stage 3 (0-indexed: 2)
+        if (updatedStages[2]) {
+          updatedStages[2].status = 'In Progress';
+          updatedStages[2].assignee = 'Pranjal Agrawal';
+          updatedStages[2].whoDefaultAssignee = 'Pranjal Agrawal';
+          updatedStages[2].whoRole = 'DIRECTOR / PROJECT MANAGER';
+          updatedStages[2].actualDateTime = undefined;
+          updatedStages[2].actualTimestamp = undefined;
+          updatedStages[2].remarks = 'Awaiting Director Final L1 Approval after Stage 4 additional quotation';
+        }
+      } else if (
+        isIndentFlow &&
+        ((currentStage.stageId === 'STG-06' ||
+          currentStage.stageId === 'STG-10' ||
+          currentStage.stageName.toUpperCase().includes('ADVANCE PAYMENT TO BE DONE')) &&
+          decision === 'No')
+      ) {
+        if (updatedStages[flow.currentStageIndex + 1]) {
+          updatedStages[flow.currentStageIndex + 1].status = 'Skipped';
+          updatedStages[flow.currentStageIndex + 1].notes = 'Skipped: No advance payment required';
+        }
+        nextIndex = flow.currentStageIndex + 2;
       }
     }
 

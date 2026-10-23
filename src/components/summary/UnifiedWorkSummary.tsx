@@ -497,16 +497,45 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   const isMineFmsStage = (stageDef: any, stageExec?: any) => {
     if (pcDeskActive && workspaceMode === 'PC_DESK') return true;
     if (!currentUser) return false;
+    if (isAdminOrSuperAdmin) return true;
 
-    // Strict active stage assignee matching: if curStage.assignee is assigned to someone else, do not show in this user's My Work
-    const execAssignee = (stageExec?.assignee || '').trim().toLowerCase().replace(/[\s_-]/g, '');
-    const userName = (currentUser.name || '').trim().toLowerCase().replace(/[\s_-]/g, '');
+    const normalizeUser = (s?: string) =>
+      (s || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[\s_.-]/g, '')
+        .replace(/bramhanand/g, 'brahmanand')
+        .replace(/bramha/g, 'brahma');
+
+    const execAssignee = normalizeUser(stageExec?.assignee);
+    const defAssignee = normalizeUser(stageDef?.whoDefaultAssignee);
+    const userName = normalizeUser(currentUser.name);
+    const isBrahmanandUser = currentUser.userId === 'USR-002' || userName.includes('brahma');
+
+    // 1. Strict active stage assignee matching
     if (execAssignee) {
       const list = execAssignee.split(/[\/,]/);
-      return list.some((a: string) => a && (a === userName || a.includes(userName) || userName.includes(a)));
+      if (list.some((a: string) => a && (a === userName || a.includes(userName) || userName.includes(a)))) return true;
+      if (isBrahmanandUser && list.some((a: string) => a && a.includes('brahma'))) return true;
     }
 
-    return isDirectlyAssignedFms(stageDef, stageExec);
+    // 2. Check template default assignee
+    if (defAssignee) {
+      const list = defAssignee.split(/[\/,]/);
+      if (list.some((a: string) => a && (a === userName || a.includes(userName) || userName.includes(a)))) return true;
+      if (isBrahmanandUser && list.some((a: string) => a && a.includes('brahma'))) return true;
+    }
+
+    // 3. Delegation / responsible stage check
+    if (isDirectlyAssignedFms(stageDef, stageExec)) return true;
+
+    // 4. Role matching for Brahmanand
+    if (isBrahmanandUser) {
+      const whoRole = normalizeUser(stageDef?.whoRole || stageExec?.whoRole);
+      if (whoRole.includes('purchase') || whoRole.includes('store')) return true;
+    }
+
+    return false;
   };
 
   // Build Unified Items List

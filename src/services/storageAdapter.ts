@@ -928,35 +928,7 @@ class StorageAdapter {
     let updatedStages = [...flow.stages];
     let changed = false;
 
-    // Checkpoint 1: Stage 2 (DEGRADED MATERIAL CHECK) -> Stage 3 (RETURN OF DEGRADED MATERIAL FORM)
-    const stg2 = updatedStages.find((s) => s.stageId === 'STG-02');
-    const stg3 = updatedStages.find((s) => s.stageId === 'STG-03');
-    if (stg2?.decisionValue === 'No' && stg3 && stg3.status !== 'Skipped') {
-      stg3.status = 'Skipped';
-      stg3.notes = 'Skipped: No degraded materials returned';
-      stg3.actualDateTime = undefined;
-      changed = true;
-    }
 
-    // Checkpoint 2: Stage 6 (CHECK OTHER QUOTATIONS) -> Stage 7 (GET OTHER QUOTATION)
-    const stg6 = updatedStages.find((s) => s.stageId === 'STG-06');
-    const stg7 = updatedStages.find((s) => s.stageId === 'STG-07');
-    if (stg6?.decisionValue === 'No' && stg7 && stg7.status !== 'Skipped') {
-      stg7.status = 'Skipped';
-      stg7.notes = 'Skipped: Single OEM quotation sufficient';
-      stg7.actualDateTime = undefined;
-      changed = true;
-    }
-
-    // Checkpoint 3: Stage 10 (ADVANCE PAYMENT DECISION) -> Stage 11 (SEND FOR PAYMENT)
-    const stg10 = updatedStages.find((s) => s.stageId === 'STG-10');
-    const stg11 = updatedStages.find((s) => s.stageId === 'STG-11');
-    if (stg10?.decisionValue === 'No' && stg11 && stg11.status !== 'Skipped') {
-      stg11.status = 'Skipped';
-      stg11.notes = 'Skipped: No advance payment required';
-      stg11.actualDateTime = undefined;
-      changed = true;
-    }
 
     // Accounts PO to Payment Checkpoints
     if (flow.flowType === 'PO_TO_PAYMENT') {
@@ -1027,7 +999,7 @@ class StorageAdapter {
       }
     }
 
-    // Enforce 7-stage architecture for INDENT_TO_PO / INDENT_PURCHASE
+    // Enforce 6-stage architecture for INDENT_TO_PO / INDENT_PURCHASE
     if (
       flow.flowType === 'INDENT_PURCHASE' || 
       flow.flowType === 'INDENT_TO_PO' || 
@@ -1036,7 +1008,7 @@ class StorageAdapter {
       flow.indentNo?.endsWith('-PUR') ||
       flow.flowId?.includes('-PUR')
     ) {
-      if (updatedStages.length !== 7) {
+      if (updatedStages.length !== 6) {
         const newStages = FMS_STANDARD_PURCHASE_STAGES.map((s, idx) => {
           const old = updatedStages[idx];
           return {
@@ -1044,7 +1016,7 @@ class StorageAdapter {
             stageName: s.name,
             whoRole: s.whoRole,
             whoDefaultAssignee: s.whoDefaultAssignee,
-            assignee: s.whoDefaultAssignee,
+            assignee: old?.assignee || s.whoDefaultAssignee,
             how: s.howChannel,
             status: old ? old.status : (idx === 0 ? 'Done' : idx === 1 ? 'In Progress' : 'Pending'),
             plannedDateTime: old?.plannedDateTime,
@@ -1062,14 +1034,12 @@ class StorageAdapter {
         updatedStages = newStages as any;
         flow = {
           ...flow,
-          poAssignTo: 'Shyam Rao Sureshe',
           stages: updatedStages,
-          totalStages: 7,
-          currentStageIndex: Math.min(flow.currentStageIndex, 6),
+          totalStages: 6,
+          currentStageIndex: Math.min(flow.currentStageIndex, 5),
         };
         changed = true;
-      } else if (updatedStages.length === 7) {
-        // Synchronize stage fields, logic, roles, assignees, and subWorkflowTrigger
+      } else if (updatedStages.length === 6) {
         let stagesUpdated = false;
         const syncedStages = updatedStages.map((stg, idx) => {
           const ref = FMS_STANDARD_PURCHASE_STAGES[idx];
@@ -1079,18 +1049,22 @@ class StorageAdapter {
           const lacksLogic = !stg.logic && Boolean((ref as any).logic);
           const lacksTrigger = !stg.subWorkflowTrigger && Boolean((ref as any).subWorkflowTrigger);
 
-          const wrongAssignee = 
-            (idx === 1 && stg.assignee !== 'Shyam Rao Sureshe') || 
-            (idx === 2 && stg.assignee !== 'Pranjal Agrawal') ||
-            (idx === 3 && stg.assignee !== 'Shyam Rao Sureshe') ||
-            (idx === 4 && stg.assignee !== 'Pranjal Agrawal') ||
-            (idx === 5 && stg.assignee !== 'Priyanka Agrawal') ||
-            (idx === 6 && stg.assignee !== 'Amanat Bharadwaj') ||
-            !stg.assignee;
           const wrongRole = stg.whoRole !== ref.whoRole;
           const wrongName = stg.stageName !== ref.name;
+          const missingAssignee = !stg.assignee;
 
-          if ((refHasEmbed && !hasEmbed) || lacksLogic || lacksTrigger || !stg.fields || stg.fields.length === 0 || wrongAssignee || wrongRole || wrongName || !stg.whoDefaultAssignee) {
+          let targetAssignee = stg.assignee || ref.whoDefaultAssignee;
+          if (ref.stageId === 'STG-02' && (stg.assignee === 'Pranjal Agrawal' || !stg.assignee)) {
+            targetAssignee = 'Brahmanand Patel';
+          } else if (ref.stageId === 'STG-03' && (stg.assignee === 'Pranjal Agrawal' || !stg.assignee)) {
+            targetAssignee = 'Brahmanand Patel';
+          } else if (ref.stageId === 'STG-05' && (stg.assignee === 'Pranjal Agrawal' || !stg.assignee || stg.assignee !== 'Shyam Rao Sureshe')) {
+            targetAssignee = 'Shyam Rao Sureshe';
+          }
+
+          const wrongAssignee = stg.assignee !== targetAssignee || stg.whoDefaultAssignee !== ref.whoDefaultAssignee;
+
+          if ((refHasEmbed && !hasEmbed) || lacksLogic || lacksTrigger || !stg.fields || stg.fields.length === 0 || missingAssignee || wrongRole || wrongName || !stg.whoDefaultAssignee || wrongAssignee) {
             stagesUpdated = true;
             return {
               ...stg,
@@ -1098,7 +1072,7 @@ class StorageAdapter {
               stageName: ref.name,
               whoRole: ref.whoRole,
               whoDefaultAssignee: ref.whoDefaultAssignee,
-              assignee: wrongAssignee ? ref.whoDefaultAssignee : stg.assignee,
+              assignee: targetAssignee,
               how: ref.howChannel,
               fields: ref.fields,
               logic: (ref as any).logic || stg.logic,
@@ -1108,13 +1082,12 @@ class StorageAdapter {
           return stg;
         });
 
-        if (stagesUpdated || flow.poAssignTo !== 'Shyam Rao Sureshe') {
+        if (stagesUpdated || flow.totalStages !== 6) {
           updatedStages = syncedStages as any;
           flow = {
             ...flow,
-            poAssignTo: 'Shyam Rao Sureshe',
             stages: updatedStages,
-            totalStages: 7,
+            totalStages: 6,
           };
           changed = true;
         }

@@ -53,6 +53,7 @@ import {
 } from '../../services/comparativeExcelService';
 import { downloadComparativeStatementPdf } from '../../services/comparativePdfService';
 import { parseRawQuoteText, extractQuotationWithAI, ExtractedVendorQuoteData } from '../../utils/quoteTextParser';
+import { addWorkingSlaHours, formatToStandardDateTime, DEFAULT_WORK_SHIFT_CONFIG } from '../../services/workShiftService';
 
 export interface ComparativeStatementWorkspaceProps {
   initialCs?: ComparativeStatement;
@@ -990,119 +991,53 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
     let updatedFlowResult: FmsInstance | null = null;
 
     if (flow) {
-      const currentIdx = flow.currentStageIndex !== undefined ? flow.currentStageIndex : 2;
       const existingStages = [...flow.stages];
+      const workShiftConfig = storageAdapter.getRegistryConfig().workShiftConfig || DEFAULT_WORK_SHIFT_CONFIG;
 
-      // Calculate iteration number for revision loop tracking
-      const revisionCount = existingStages.filter((s) => s.stageId?.includes('02B') || s.stageId?.includes('ITER')).length + 1;
-      const iterStageId = `STG-02B-ITER-${revisionCount}`;
-      const finalDirectorStageId = `STG-03-FINAL-ITER-${revisionCount}`;
-
-      // 3. Pause Director SLA:
-      // Record actualDateTime for Director's stage as 'Returned for Revision' (stopping Director's SLA clock)
-      const currentDirectorStage = existingStages[currentIdx] || ({} as FmsStageExecution);
-      let directorDelay = 0;
-      if (currentDirectorStage.plannedTimestamp) {
-        const diffMs = now.getTime() - new Date(currentDirectorStage.plannedTimestamp).getTime();
-        directorDelay = diffMs > 0 ? Math.round((diffMs / 3600000) * 10) / 10 : 0;
+      // Pause Stage 4 (Director L1 Approval - Index 3)
+      if (existingStages[3]) {
+        existingStages[3] = {
+          ...existingStages[3],
+          status: 'Pending',
+          actualDateTime: undefined,
+          actualTimestamp: undefined,
+          delayHours: undefined,
+          timeDelayHours: undefined,
+          remarks: `Returned for Additional Quotation: ${instructions}`,
+          notes: `Returned to Brahmanand Patel for Additional Quotation. Directive: "${instructions}"`,
+        };
       }
 
-      existingStages[currentIdx] = {
-        ...currentDirectorStage,
-        status: 'Returned for Revision',
-        actualTimestamp: isoNow,
-        actualDateTime: timestamp,
-        delayHours: directorDelay,
-        timeDelayHours: directorDelay,
-        remarks: `Returned for Revision: ${instructions}`,
-        notes: `Returned for Revision to Purchase Executive (Shyam Rao Sureshe). Directive: "${instructions}"`,
-      };
-
-      // 1. Dynamic Stage Insertion on Loop: STG-02B-ITER-N
-      const planned5hDate = new Date(now.getTime() + 5 * 3600 * 1000);
-      const stage2B: FmsStageExecution = {
-        stageId: iterStageId,
-        stageName: 'Stage 2B: Get Additional Quotation (Revision)',
-        whoRole: 'PURCHASE_EXECUTIVE',
-        whoDefaultAssignee: 'Shyam Rao Sureshe',
-        assignee: 'Shyam Rao Sureshe',
-        how: 'COMPARATIVE STATEMENT MODULE',
-        slaHours: 5,
-        targetDurationHours: 5,
-        status: 'In Progress',
-        stageStartedAt: isoNow,
-        plannedDateTime: planned5hDate.toLocaleString('en-GB'),
-        plannedTimestamp: planned5hDate.toISOString(),
-        remarks: `Director Directive: ${instructions}`,
-        notes: `Additional Quotation Directive from Director Pranjal Agrawal: "${instructions}"`,
-        fields: [
-          {
-            id: 'directorInstructions',
-            label: 'Director Directives',
-            type: 'TEXTAREA',
-            defaultValue: instructions,
-          },
-          {
-            id: 'csModule',
-            label: 'Comparative Statement (CS) Module',
-            type: 'CS_MODULE_EMBED',
-            required: true,
-          },
-          {
-            id: 'purchaserRevisionNotes',
-            label: 'Revision Notes / Quotation Actions Taken',
-            type: 'TEXTAREA',
-            placeholder: 'Summary of additional vendor quotes acquired or rate revisions made...',
-          },
-        ],
-      };
-
-      // 3. Prepare subsequent 'Director Approval (Final)' stage
-      // SLA: 2 hours fresh plannedDateTime for Director final sign-off
-      const stage3Final: FmsStageExecution = {
-        stageId: finalDirectorStageId,
-        stageName: 'Director Approval (Final)',
-        whoRole: 'DIRECTOR / PROJECT MANAGER',
-        whoDefaultAssignee: 'Pranjal Agrawal',
-        assignee: 'Pranjal Agrawal',
-        how: 'DIRECTOR APPROVAL DESK',
-        slaHours: 2,
-        targetDurationHours: 2,
-        status: 'Pending',
-        fields: [
-          {
-            id: 'csL1Approval',
-            label: 'Director L1 Award Allocation & Digital Sign-off',
-            type: 'CS_L1_APPROVAL_EMBED',
-            required: true,
-          },
-          {
-            id: 'approvalRemarks',
-            label: 'Final Approval Remarks',
-            type: 'TEXTAREA',
-            defaultValue: 'Approved with item-wise split PO allocation to maintain dual vendor operational readiness. Freight strictly OURS.',
-          },
-        ],
-      };
-
-      // Build Execution Matrix clearly showing:
-      // Stage 3 (Director - Returned for Revision) -> Stage 2B (Purchaser 5h SLA) -> Stage 3 (Director Final 2h SLA) -> Stage 4 (Generate PO)
-      const nextStages = [
-        ...existingStages.slice(0, currentIdx + 1),
-        stage2B,
-        stage3Final,
-        ...existingStages.slice(currentIdx + 1).filter((s) => s.stageId !== 'STG-03-R2' && !s.stageId?.startsWith('STG-02B-ITER') && !s.stageId?.startsWith('STG-03-FINAL')),
-      ];
+      // Activate Stage 3 (Get Another Quotation - Index 2)
+      const targetDate = addWorkingSlaHours(now, 12, workShiftConfig);
+      if (existingStages[2]) {
+        existingStages[2] = {
+          ...existingStages[2],
+          status: 'In Progress',
+          assignee: 'Brahmanand Patel',
+          whoRole: 'ASST. MANAGER PURCHASE',
+          whoDefaultAssignee: 'Brahmanand Patel',
+          slaHours: 12,
+          stageStartedAt: isoNow,
+          plannedDateTime: formatToStandardDateTime(targetDate),
+          plannedTimestamp: targetDate.toISOString(),
+          actualDateTime: undefined,
+          actualTimestamp: undefined,
+          delayHours: undefined,
+          timeDelayHours: undefined,
+          remarks: `Director Directive: ${instructions}`,
+          notes: `Additional Quotation Directive from Director Pranjal Agrawal: "${instructions}"`,
+        };
+      }
 
       const updatedFlow: FmsInstance = {
         ...flow,
-        currentStageIndex: currentIdx + 1, // Points to Stage 2B
-        currentStageId: iterStageId,
+        currentStageIndex: 2, // Jump backward to Stage 3
+        currentStageId: 'STG-03',
         status: 'In Progress',
-        stages: nextStages,
-        totalStages: nextStages.length,
+        stages: existingStages,
         updatedAt: timestamp,
-        remarks: `Returned to Purchaser (Shyam) for additional quote revision #${revisionCount}: "${instructions}"`,
+        remarks: `Director requested additional quote: "${instructions}"`,
       };
 
       updatedFlowResult = updatedFlow;
@@ -1117,17 +1052,17 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
         module: 'FMS',
         action: 'STAGE_ADVANCE',
         entityId: flow.flowId,
-        details: `Director Pranjal Agrawal returned Stage 3 to Purchaser Shyam Rao Sureshe for additional quotation revision #${revisionCount} (5h SLA). Directive: "${instructions}"`,
+        details: `Director Pranjal Agrawal returned Stage 4 to Brahmanand Patel for Stage 3 (Get Another Quotation, 12h SLA). Directive: "${instructions}"`,
       });
 
       storageAdapter.addNotification({
-        userId: 'USR-003', // Shyam Rao Sureshe
-        title: `Action Required: Stage 2B (Get Additional Quotation) - Indent #${flow.indentNo}`,
-        message: `Director Pranjal Agrawal requested additional quote revision: "${instructions}". 5-hour SLA assigned.`,
+        userId: 'USR-002', // Brahmanand Patel
+        title: `Action Required: Stage 3 (Get Another Quotation) - Indent #${flow.indentNo}`,
+        message: `Director Pranjal Agrawal requested additional quote: "${instructions}". 12-hour SLA assigned.`,
         type: 'FMS_ACTION_REQUIRED',
         linkTab: 'fms',
         linkEntityId: updatedFlow.id,
-        data: { flowId: updatedFlow.flowId, stageIndex: currentIdx + 1 },
+        data: { flowId: updatedFlow.flowId, stageIndex: 2 },
       });
     }
 
@@ -1141,7 +1076,7 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
     }
   };
 
-  // Purchaser Stage 2B: Resubmit to Director for Final Approval
+  // Rework Flow: Brahmanand Submits Stage 3 -> Jump back to Stage 4 with SLA Reset
   const handleResubmitToDirector = () => {
     if (!flow) return;
     setIsSaving(true);
@@ -1155,65 +1090,48 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
     });
     setCs(saved);
 
-    const currentIdx = flow.currentStageIndex !== undefined ? flow.currentStageIndex : 1;
     const existingStages = [...flow.stages];
-    const currentStage2B = existingStages[currentIdx];
+    const workShiftConfig = storageAdapter.getRegistryConfig().workShiftConfig || DEFAULT_WORK_SHIFT_CONFIG;
 
-    // 4. Delay Calculation:
-    // The Time Delay for Stage 2B must calculate strictly against the 5-hour SLA for this specific loop.
-    // If Shyam takes 7 hours, variance shows +2 hours attributed to Shyam.
-    const existingDelay = currentStage2B?.delayHours ?? currentStage2B?.timeDelayHours;
-    let shyamDelay = existingDelay !== undefined && existingDelay > 0 ? existingDelay : 0;
-    if (shyamDelay === 0 && currentStage2B?.plannedTimestamp) {
-      const diffMs = now.getTime() - new Date(currentStage2B.plannedTimestamp).getTime();
-      shyamDelay = diffMs > 0 ? Math.round((diffMs / 3600000) * 10) / 10 : 0;
-    } else if (shyamDelay === 0 && currentStage2B?.stageStartedAt) {
-      const diffMs = now.getTime() - (new Date(currentStage2B.stageStartedAt).getTime() + 5 * 3600 * 1000);
-      shyamDelay = diffMs > 0 ? Math.round((diffMs / 3600000) * 10) / 10 : 0;
+    // Mark Stage 3 (Index 2: Get Another Quotation) as Done
+    if (existingStages[2]) {
+      existingStages[2] = {
+        ...existingStages[2],
+        status: 'Done',
+        actualTimestamp: isoNow,
+        actualDateTime: timestamp,
+        remarks: `Updated CS with requested additional quotes and resubmitted to Director.`,
+      };
     }
 
-    // Mark Stage 2B as Done with accurate delay variance
-    existingStages[currentIdx] = {
-      ...currentStage2B,
-      status: 'Done',
-      actualTimestamp: isoNow,
-      actualDateTime: timestamp,
-      delayHours: shyamDelay,
-      timeDelayHours: shyamDelay,
-      remarks: `Updated CS with requested vendor quotes and resubmitted to Director. Delay: ${shyamDelay > 0 ? `+${shyamDelay}h` : 'On Time'}`,
-    };
-
-    // 3. Pause/Resume Director SLA:
-    // Activate next 'Director Approval (Final)' stage with a fresh plannedDateTime based on Director's 2-hour SLA
-    const nextIdx = currentIdx + 1;
-    const directorPlannedDate = new Date(now.getTime() + 2 * 3600 * 1000);
-    if (existingStages[nextIdx]) {
-      existingStages[nextIdx] = {
-        ...existingStages[nextIdx],
-        stageName: 'Director Approval (Final)',
+    // Activate Stage 4 (Index 3: Director L1 Approval) with RESET SLA!
+    const targetDate = addWorkingSlaHours(now, 12, workShiftConfig);
+    if (existingStages[3]) {
+      existingStages[3] = {
+        ...existingStages[3],
         status: 'In Progress',
         assignee: 'Pranjal Agrawal',
         whoRole: 'DIRECTOR / PROJECT MANAGER',
         whoDefaultAssignee: 'Pranjal Agrawal',
-        how: 'DIRECTOR APPROVAL DESK',
-        slaHours: 2,
-        targetDurationHours: 2,
+        slaHours: 12,
         stageStartedAt: isoNow,
-        plannedDateTime: directorPlannedDate.toLocaleString('en-GB'),
-        plannedTimestamp: directorPlannedDate.toISOString(),
+        plannedDateTime: formatToStandardDateTime(targetDate),
+        plannedTimestamp: targetDate.toISOString(),
+        actualDateTime: undefined,
+        actualTimestamp: undefined,
+        delayHours: undefined,
+        timeDelayHours: undefined,
       };
     }
 
-    const totalDelay = existingStages.reduce((sum, s) => sum + (s.delayHours || s.timeDelayHours || 0), 0);
     const updatedFlow: FmsInstance = {
       ...flow,
-      currentStageIndex: nextIdx,
-      currentStageId: existingStages[nextIdx]?.stageId || 'STG-03-FINAL',
+      currentStageIndex: 3, // Jump back to Stage 4
+      currentStageId: 'STG-04',
       status: 'In Progress',
-      totalDelayHours: totalDelay,
       stages: existingStages,
       updatedAt: timestamp,
-      remarks: `Resubmitted to Director Pranjal Agrawal for Final Approval by Purchaser ${currentUser.name}`,
+      remarks: `Resubmitted to Director Pranjal Agrawal for L1 Approval by ${currentUser.name}`,
     };
 
     const allFlows = storageAdapter.getFmsFlows();
@@ -1226,17 +1144,17 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
       module: 'FMS',
       action: 'STAGE_ADVANCE',
       entityId: flow.flowId,
-      details: `Purchaser ${currentUser.name} completed Stage 2B (Delay: ${shyamDelay > 0 ? `+${shyamDelay}h` : '0h'}) and resubmitted CS to Director Pranjal Agrawal for Final Approval (2h SLA).`,
+      details: `Brahmanand Patel completed Stage 3 and resubmitted CS to Director Pranjal Agrawal for L1 Approval (fresh 12h SLA reset).`,
     });
 
     storageAdapter.addNotification({
-      userId: 'DIR',
-      title: `Action Required: Director Approval (Final) - Indent #${flow.indentNo}`,
-      message: `Purchaser ${currentUser.name} resubmitted updated Comparative Statement for final Director Approval. 2-hour SLA active.`,
+      userId: 'USR-013', // Pranjal Agrawal
+      title: `Action Required: Director L1 Approval - Indent #${flow.indentNo}`,
+      message: `Brahmanand Patel resubmitted updated Comparative Statement for Director Approval. Fresh 12-hour SLA active.`,
       type: 'FMS_ACTION_REQUIRED',
       linkTab: 'fms',
       linkEntityId: updatedFlow.id,
-      data: { flowId: updatedFlow.flowId, stageIndex: nextIdx },
+      data: { flowId: updatedFlow.flowId, stageIndex: 3 },
     });
 
     setIsSaving(false);

@@ -827,15 +827,15 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
       .trim();
   };
 
-  // Dedicated routing for CS_MODULE_EMBED: renders EmbeddedCsCreatorModal directly
+  // Dedicated routing for CS_MODULE_EMBED (Stage 2): renders EmbeddedCsCreatorModal directly
   if (
-    fields.some((f) => f.type === 'CS_MODULE_EMBED') ||
+    (fields.some((f) => f.type === 'CS_MODULE_EMBED') && stage.stageId !== 'STG-04' && stageIndex !== 3) ||
     ((flow.templateKey === 'INDENT_TO_PO' ||
       flow.flowType === 'INDENT_TO_PO' ||
       flow.flowType === 'INDENT_PURCHASE' ||
       flow.indentNo?.endsWith('-PUR') ||
       flow.flowId?.includes('-PUR')) &&
-      (stageIndex === 1 || stage.stageId === 'STG-02' || stage.stageId?.includes('02B') || stage.stageName?.toLowerCase().includes('additional quotation')))
+      (stageIndex === 1 || stage.stageId === 'STG-02'))
   ) {
     return (
       <EmbeddedCsCreatorModal
@@ -940,8 +940,8 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-5 text-xs">
 
-          {/* Stage 5 Logistics Summary: Dispatch Readiness Card */}
-          {(stage.stageId === 'STG-05' || (stageIndex === 4 && (flow.flowType === 'INDENT_PURCHASE' || flow.flowType === 'INDENT_TO_PO'))) && (
+          {/* Stage 6 Logistics Summary: Dispatch Readiness Card */}
+          {(stage.stageId === 'STG-06' || (stageIndex === 5 && (flow.flowType === 'INDENT_PURCHASE' || flow.flowType === 'INDENT_TO_PO'))) && (
             <div className="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl shadow-md border border-indigo-500/40 space-y-3">
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div className="flex items-center gap-2.5">
