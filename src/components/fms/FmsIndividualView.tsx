@@ -61,7 +61,7 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
   // Keep activeFlow synced whenever the parent flow prop updates after stage submission
   useEffect(() => {
     setActiveFlow(flow);
-  }, [flow.id, flow.currentStageIndex, flow.status, flow.updatedAt]);
+  }, [flow.id, flow.currentStageIndex, flow.status, flow.updatedAt, flow.poAssignTo, flow.stages]);
 
   const isSuperAdmin = isUserSuperAdmin(currentUser);
   const isAdmin = isUserAdminOrSuperAdmin(currentUser);
@@ -200,10 +200,13 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
       return stg;
     });
 
+    const nextAssignee = nextStages[nextStageIdx]?.assignee || nextStages[nextStageIdx]?.whoDefaultAssignee || activeFlow.poAssignTo;
+
     const updated: FmsInstance = {
       ...activeFlow,
       currentStageIndex: nextStageIdx,
       stages: nextStages,
+      poAssignTo: nextAssignee,
       instanceDataPool: {
         ...(activeFlow.instanceDataPool || {}),
         selectedL1Vendor: csSheet.approvedBy,
@@ -211,6 +214,10 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
         l1ApprovalRemarks: remarks,
       }
     };
+
+    const existingFlows = storageAdapter.getFmsFlows();
+    const updatedFlows = existingFlows.map((f) => (f.id === updated.id || f.flowId === updated.flowId ? updated : f));
+    storageAdapter.saveFmsFlows(updatedFlows);
 
     setActiveFlow(updated);
     if (onUpdateFlow) onUpdateFlow(updated);

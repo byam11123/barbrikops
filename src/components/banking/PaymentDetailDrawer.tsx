@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Landmark, Check, AlertTriangle, ShieldCheck, FileText, Clock, Upload } from 'lucide-react';
+import { X, Landmark, Check, AlertTriangle, ShieldCheck, FileText, Clock, Upload, Plus } from 'lucide-react';
 import { BankPaymentRecord, UserProfile, isUserDirector } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { AttachmentPreviewModal } from './AttachmentPreviewModal';
@@ -83,6 +83,16 @@ export const PaymentDetailDrawer: React.FC<PaymentDetailDrawerProps> = ({
 
   const [message, setMessage] = useState<string | null>(null);
 
+  // Add Beneficiary State
+  const [isAddBeneficiaryOpen, setIsAddBeneficiaryOpen] = useState(false);
+  const [benName, setBenName] = useState('');
+  const [benAccountNo, setBenAccountNo] = useState('');
+  const [benConfirmAccountNo, setBenConfirmAccountNo] = useState('');
+  const [benIfscCode, setBenIfscCode] = useState('');
+  const [benBankName, setBenBankName] = useState('State Bank of India');
+  const [benChequeUrl, setBenChequeUrl] = useState('');
+  const [addBenError, setAddBenError] = useState<string | null>(null);
+
   // Document Preview State
   const [previewDoc, setPreviewDoc] = useState<{
     isOpen: boolean;
@@ -99,6 +109,19 @@ export const PaymentDetailDrawer: React.FC<PaymentDetailDrawerProps> = ({
 
   const isDirector = isUserDirector(currentUser);
   const isAccounts = (currentUser.departmentKeys || []).includes('ACCOUNTS') || (currentUser.departmentName || '').toUpperCase().includes('ACCOUNTS') || currentUser.role.toUpperCase().includes('ACCOUNTS');
+
+  const vendor = payment.vendorId 
+    ? storageAdapter.getVendorProfileById(payment.vendorId) 
+    : storageAdapter.getVendorProfiles().find(v => v.tradeName.toLowerCase() === payment.vendorName.toLowerCase());
+
+  const hasMissingBeneficiary = 
+    payment.modeOfPayment === 'ACCOUNT' && 
+    (payment.beneficiaryMasterStatus === 'NEEDS_ADDITION' || 
+     !payment.accountNo || 
+     !vendor || 
+     !vendor.bankAccounts || 
+     vendor.bankAccounts.length === 0 || 
+     !vendor.bankAccounts.some(a => a.verificationStatus === 'VERIFIED'));
 
   const handleApprove = () => {
     storageAdapter.approveBankPaymentRecord(payment.id, true, currentUser);
@@ -302,8 +325,192 @@ export const PaymentDetailDrawer: React.FC<PaymentDetailDrawerProps> = ({
             </div>
           </div>
 
+          {/* Missing Beneficiary Gatekeeper Warning & Form */}
+          {hasMissingBeneficiary && (
+            <div className="p-4 bg-amber-50 border-2 border-amber-400 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 font-black text-amber-950 text-xs uppercase tracking-wider">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                  <span>Missing Beneficiary Details</span>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-200 text-amber-900 rounded-full">
+                  ACCOUNTS GATEKEEPER CHECK
+                </span>
+              </div>
+              <p className="text-xs text-amber-900 leading-relaxed font-medium">
+                Vendor <span className="font-bold">{payment.vendorName}</span> does not have a verified bank account in the Master. Accounts must add beneficiary details before this request can be approved and routed to Director.
+              </p>
+
+              {isAccounts && !isAddBeneficiaryOpen && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBenName(payment.beneficiaryName || payment.vendorName);
+                    setBenAccountNo('');
+                    setBenConfirmAccountNo('');
+                    setBenIfscCode('');
+                    setBenBankName('State Bank of India');
+                    setBenChequeUrl('');
+                    setAddBenError(null);
+                    setIsAddBeneficiaryOpen(true);
+                  }}
+                  className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs transition-colors shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add Beneficiary</span>
+                </button>
+              )}
+
+              {isAddBeneficiaryOpen && (
+                <div className="p-4 bg-slate-900 border-2 border-indigo-500 rounded-2xl text-white space-y-3 shadow-xl">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <div className="flex items-center gap-2">
+                      <Landmark className="w-4 h-4 text-indigo-400" />
+                      <h4 className="font-extrabold text-xs text-indigo-300 uppercase tracking-wider">
+                        Add Vendor Beneficiary &amp; Bank Details
+                      </h4>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddBeneficiaryOpen(false)}
+                      className="text-slate-400 hover:text-white p-1 rounded-lg cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {addBenError && (
+                    <div className="p-2.5 bg-rose-950/80 border border-rose-500 text-rose-200 text-xs font-semibold rounded-xl">
+                      {addBenError}
+                    </div>
+                  )}
+
+                  <div className="space-y-3 text-xs">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        Legal Beneficiary Account Holder Title *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={benName}
+                        onChange={(e) => setBenName(e.target.value)}
+                        placeholder="e.g. MAHAVIR GAS CHULHA REPAIR STORE"
+                        className="w-full p-2 bg-slate-950 border border-slate-700 rounded-xl text-white font-semibold text-xs focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                          Bank Account Number *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={benAccountNo}
+                          onChange={(e) => setBenAccountNo(e.target.value)}
+                          placeholder="Enter account number..."
+                          className="w-full p-2 bg-slate-950 border border-slate-700 rounded-xl text-white font-mono font-bold text-xs focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                          Confirm Account Number *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={benConfirmAccountNo}
+                          onChange={(e) => setBenConfirmAccountNo(e.target.value)}
+                          placeholder="Re-enter account number..."
+                          className="w-full p-2 bg-slate-950 border border-slate-700 rounded-xl text-white font-mono font-bold text-xs focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                          IFSC Code *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={benIfscCode}
+                          onChange={(e) => setBenIfscCode(e.target.value.toUpperCase())}
+                          placeholder="e.g. SBIN0001292"
+                          className="w-full p-2 bg-slate-950 border border-slate-700 rounded-xl text-white font-mono font-bold text-xs uppercase focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                          Bank Name *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={benBankName}
+                          onChange={(e) => setBenBankName(e.target.value)}
+                          placeholder="e.g. State Bank of India"
+                          className="w-full p-2 bg-slate-950 border border-slate-700 rounded-xl text-white font-semibold text-xs focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        Cancelled Cheque Proof URL / File *
+                      </label>
+                      <input
+                        type="text"
+                        value={benChequeUrl}
+                        onChange={(e) => setBenChequeUrl(e.target.value)}
+                        placeholder="Paste cheque image URL or leave default..."
+                        className="w-full p-2 bg-slate-950 border border-slate-700 rounded-xl text-white font-mono text-xs focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddBenError(null);
+                        if (!benName.trim()) { setAddBenError('Legal Beneficiary Title is required'); return; }
+                        if (!benAccountNo.trim()) { setAddBenError('Account Number is required'); return; }
+                        if (benAccountNo.trim() !== benConfirmAccountNo.trim()) { setAddBenError('Account Numbers do not match'); return; }
+                        if (!benIfscCode.trim()) { setAddBenError('IFSC Code is required'); return; }
+                        if (!benBankName.trim()) { setAddBenError('Bank Name is required'); return; }
+
+                        const updated = storageAdapter.addBeneficiaryDetailsToPayment(payment.id, {
+                          beneficiaryName: benName.trim(),
+                          accountNo: benAccountNo.trim(),
+                          ifscCode: benIfscCode.trim().toUpperCase(),
+                          bankName: benBankName.trim(),
+                          cancelledChequeUrl: benChequeUrl.trim() || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600'
+                        }, currentUser);
+
+                        if (updated) {
+                          setMessage('Beneficiary details created, attached to Vendor Master, and verified! Ready for Director approval.');
+                          setIsAddBeneficiaryOpen(false);
+                          onUpdate();
+                          setTimeout(() => setMessage(null), 3000);
+                        }
+                      }}
+                      className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-xl text-xs transition-colors cursor-pointer shadow-md flex items-center justify-center gap-1.5"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>Save Beneficiary &amp; Route to Director</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ACCOUNTS STAFF Action Controls for Beneficiary Verification */}
-          {payment.modeOfPayment === 'ACCOUNT' && (payment.beneficiaryMasterStatus === 'NEEDS_ADDITION' || isAccounts) && (
+          {!hasMissingBeneficiary && payment.modeOfPayment === 'ACCOUNT' && (payment.beneficiaryMasterStatus === 'NEEDS_ADDITION' || isAccounts) && (
             <div className="space-y-3">
               <AccountsDoubleEntryVerificationPanel
                 beneficiaryName={payment.beneficiaryName}

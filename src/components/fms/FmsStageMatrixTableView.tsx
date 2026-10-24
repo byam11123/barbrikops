@@ -169,7 +169,14 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
     }
     if (activeBranchKey === 'CHECK_STOCK' || activeBranchKey === 'tpl_check_stock') return FMS_CHECK_STOCK_STAGES;
     if (activeBranchKey === 'PO_TO_PAYMENT' || activeBranchKey === 'tpl_po_to_payment') return FMS_PO_PAYMENT_STAGES;
-    if (activeBranchKey === 'INDENT_PURCHASE' || activeBranchKey === 'tpl_indent_purchase') return FMS_STANDARD_PURCHASE_STAGES;
+    if (
+      activeBranchKey === 'INDENT_PURCHASE' || 
+      activeBranchKey === 'tpl_indent_purchase' || 
+      activeBranchKey === 'INDENT_TO_PO' || 
+      activeBranchKey.toUpperCase().includes('INDENT')
+    ) {
+      return FMS_STANDARD_PURCHASE_STAGES;
+    }
     if (activeBranchKey === 'PURCHASE_TO_STORE_DISPATCH' || activeBranchKey === 'tpl_purchase_to_store') return FMS_PURCHASE_TO_STORE_DISPATCH_STAGES;
     if (activeBranchKey === 'STORE_TO_SITE_DISPATCH' || activeBranchKey === 'tpl_store_to_site') return FMS_STORE_TO_SITE_DISPATCH_STAGES;
     if (activeBranchKey === 'PAYMENT_TO_DISPATCH' || activeBranchKey === 'tpl_payment_to_dispatch') return FMS_PAYMENT_TO_DISPATCH_STAGES;
@@ -204,8 +211,8 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
         stageNumber: idx + 1,
         name: stg.stageName,
         what: stg.stageName,
-        whoRole: 'ASSIGNED_ROLE',
-        whoDefaultAssignee: stg.assignee || 'Assignee',
+        whoRole: stg.whoRole || 'ASSIGNED_ROLE',
+        whoDefaultAssignee: stg.whoDefaultAssignee || stg.assignee || 'Assignee',
         howChannel: stg.how || 'IN-APP FORM',
         slaHours: 4,
         fields: stg.fields

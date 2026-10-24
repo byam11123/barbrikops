@@ -210,9 +210,16 @@ export const isUserResponsibleForStage = (
     if (whoRole === userRole) return true;
     if (whoRole === sysRole) return true;
     // Explicit alias mapping ONLY
-    if (whoRole === 'director' && (userRole === 'director' || sysRole === 'director')) return true;
-    if (whoRole === 'financeaccounts' && userRole === 'accountsmanager') return true;
+    if (whoRole === 'director' && (userRole === 'director' || sysRole === 'director' || userName.includes('pranjal'))) return true;
+    if ((whoRole === 'accountant' || whoRole === 'accounts' || whoRole === 'financeaccounts') && (userRole.includes('account') || userName.includes('priyanka'))) return true;
     if (whoRole === 'purchasehead' && userRole === 'asst.managerpurchase&store') return true;
+  }
+
+  // Proxy Actions for PO_TO_PAYMENT (STG-PAY-04, STG-PAY-07): Both Accountant & Director can execute
+  const stgId = stageDef?.stageId || stageExec?.stageId;
+  if (stgId === 'STG-PAY-04' || stgId === 'STG-PAY-07') {
+    if (userRole === 'director' || sysRole === 'director' || userName.includes('pranjal')) return true;
+    if (userRole.includes('account') || userName.includes('priyanka')) return true;
   }
 
   return false;
@@ -242,10 +249,19 @@ export const isFlowAwaitingUserAction = (
     return false;
   }
 
+  const userName = normalize(user.name);
+  const userRole = normalize(user.role);
+  const sysRole = normalize(user.systemRole);
+
+  // Proxy Action Rule for PO_TO_PAYMENT STG-PAY-04 and STG-PAY-07:
+  // Even though assigned to Director, Accountant (Priyanka) has proxy execution rights!
+  const isProxyStage = curStage.stageId === 'STG-PAY-04' || curStage.stageId === 'STG-PAY-07';
+  const isAccountantUser = userRole.includes('account') || userName.includes('priyanka');
+  const isDirectorUser = userRole === 'director' || sysRole === 'director' || userName.includes('pranjal');
+
   // Strict active stage assignee matching: if curStage.assignee is assigned to someone else, do not show for this user
   const execAssignee = (curStage.assignee || '').trim().toLowerCase().replace(/[\s_-]/g, '');
-  const userName = (user.name || '').trim().toLowerCase().replace(/[\s_-]/g, '');
-  if (execAssignee) {
+  if (execAssignee && !(isProxyStage && (isAccountantUser || isDirectorUser))) {
     const list = execAssignee.split(/[\/,]/);
     if (!list.some(a => a && (a === userName || a.includes(userName) || userName.includes(a)))) {
       return false;

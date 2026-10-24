@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { FmsTemplateDefinition, FmsStageTemplate, FmsStageFieldConfig, Priority, FmsInstance, FmsStageDefinition } from '../types';
+import { FMS_STANDARD_PURCHASE_STAGES } from '../data/initialData';
 import { calculateWorkingHoursDelay, formatDelayHms, DEFAULT_WORK_SHIFT_CONFIG, WorkShiftConfig } from './workShiftService';
 import { storageAdapter } from './storageAdapter';
 
@@ -628,21 +629,13 @@ export function generateFmsHorizontalMatrixWorkbook(
       slaHours: 2,
     }));
   } else {
-    // Default fallback to 12 stages of Indent to PO from user's sheet
-    stagesHeader = [
-      { name: '1. INDENT RECIEVE', assignee: 'Amanat Bharadwaj (Store Manager)', how: 'WHATSAPP / CALL / PHYSICAL', slaHours: 0 },
-      { name: '2. DEGRADED MATERIAL CHECK', assignee: 'Bramhanand Patel (Asst. Mgr Purchase)', how: 'PHYSICAL CHECK', slaHours: 1 },
-      { name: '3. RETURN OF DEGRADED MATERIAL FORM', assignee: 'Shyam Rao Sureshe (Purchase Exec)', how: 'IN-APP FORM', slaHours: 1 },
-      { name: '4. PURCHASE APPROVAL', assignee: 'Pranay Ghosh (Project Manager)', how: 'MANUAL SHEET / IN-APP', slaHours: 3 },
-      { name: '5. GET QUOTATION', assignee: 'Bramhanand Patel', how: 'CALL / EMAIL', slaHours: 25 },
-      { name: '6. GET APPROVAL FOR QUOTATION', assignee: 'Pranay Ghosh', how: 'IN-APP APPROVAL', slaHours: 12 },
-      { name: '7. COMPARATIVE STATEMENT', assignee: 'Bramhanand Patel', how: 'EXCEL COMPARATIVE', slaHours: 1 },
-      { name: '8. PO CREATION', assignee: 'Shyam Rao Sureshe', how: 'ERP / SYSTEM', slaHours: 2 },
-      { name: '9. PO APPROVAL', assignee: 'Pranay Ghosh / MD', how: 'IN-APP APPROVAL', slaHours: 2 },
-      { name: '10. ADVANCE PAYMENT DECISION', assignee: 'Bramhanand Patel', how: 'CHECKPOINT (YES/NO)', slaHours: 1 },
-      { name: '11. SEND FOR PAYMENT', assignee: 'Shyam Rao Sureshe', how: 'PAYMENT DOSSIER', slaHours: 2 },
-      { name: '12. MATERIAL COLLECTION PO', assignee: 'Shyam Rao Sureshe', how: 'IN-APP FORM / DISPATCH', slaHours: 1 },
-    ];
+    // Default fallback to 6 stages of Indent to PO
+    stagesHeader = FMS_STANDARD_PURCHASE_STAGES.map((s, idx) => ({
+      name: `${idx + 1}. ${s.name}`,
+      assignee: s.whoDefaultAssignee || s.whoRole,
+      how: s.howChannel,
+      slaHours: s.slaHours,
+    }));
   }
 
   const baseColsCount = 7; // S.No, Date, Indent No, Site, Item Details, Priority, Status

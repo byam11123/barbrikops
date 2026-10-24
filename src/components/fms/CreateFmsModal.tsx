@@ -526,6 +526,8 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
         return {
           stageId: stg.stageId,
           stageName: stg.stageName,
+          whoRole: stg.whoRole,
+          whoDefaultAssignee: stg.whoDefaultAssignee,
           assignee: stg.whoDefaultAssignee || stg.whoRole || 'Assignee',
           how: stg.howChannel || 'IN-APP FORM',
           status: idx === 0 
@@ -719,6 +721,8 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
         return {
           stageId: def.stageId,
           stageName: def.name,
+          whoRole: def.whoRole,
+          whoDefaultAssignee: def.whoDefaultAssignee,
           assignee: def.whoDefaultAssignee,
           how: def.howChannel,
           status: idx === 0 ? ('Done' as const) : idx === 1 ? ('In Progress' as const) : ('Pending' as const),

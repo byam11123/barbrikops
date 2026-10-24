@@ -189,6 +189,8 @@ export default function App() {
     setIsAuthenticated(false);
     setIsMyProfileOpen(false);
     setIsSuperAdminOpen(false);
+    setSelectedFmsDetail(null);
+    setStageActionTarget(null);
     setImpersonatorAdmin(null);
     showToast('Signed out of session.');
   };
@@ -654,6 +656,9 @@ export default function App() {
     const latestUser = usersList.find((u) => u.userId === newUser.userId) || newUser;
     setCurrentUser(latestUser);
     storageAdapter.saveAuthUser(latestUser);
+    setSelectedFmsDetail(null);
+    setStageActionTarget(null);
+    loadAllData();
     const newIsAdminOrSuper = isUserAdminOrSuperAdmin(latestUser);
     if (!newIsAdminOrSuper) {
       setViewScope('USER_ONLY');
@@ -707,7 +712,7 @@ export default function App() {
 
   const handleAdvanceCurrentStage = (
     flow: FmsInstance, 
-    decision?: 'Yes' | 'No',
+    decision?: 'Yes' | 'No' | string,
     submittedData?: Record<string, any>
   ) => {
     const updatedStages = [...flow.stages];
@@ -801,52 +806,91 @@ export default function App() {
         nextIndex = updatedStages.length; // Completes parent stages; enters Awaiting Fulfillment
       }
     } else if (flow.flowType === 'PO_TO_PAYMENT') {
-      // Stage 1: IS PAYMENT TO BE DONE FROM ACCOUNT?
-      if (currentStage.stageId === 'STG-PAY-01') {
-        if (decision === 'Yes') {
-          // Bank Account Route: Skip UPI stages (10 to 13)
-          [10, 11, 12, 13].forEach((idx) => {
-            if (updatedStages[idx]) {
-              updatedStages[idx].status = 'Skipped';
-              updatedStages[idx].notes = 'Skipped: Paid via Bank Account route';
-            }
-          });
-          nextIndex = 1;
-        } else if (decision === 'No') {
-          // UPI Route: Skip Bank stages (1 to 9)
-          for (let i = 1; i <= 9; i++) {
-            if (updatedStages[i]) {
-              updatedStages[i].status = 'Skipped';
-              updatedStages[i].notes = 'Skipped: Routed via UPI QR code payment';
-            }
-          }
-          nextIndex = 10;
+      // 7-Stage Workflow Architecture for PO_TO_PAYMENT:
+      // Phase 1: Beneficiary Setup (Stages 1-4)
+      // Phase 2: Payment Execution (Stages 5-7)
+      
+      const bankPayments = storageAdapter.getBankPayments();
+      const targetPayment = bankPayments.find(
+        (p) => (flow.paymentId && p.id === flow.paymentId) ||
+               (flow.paymentSheetNo && p.sheetNo === flow.paymentSheetNo) ||
+               (flow.indentNo && (p.sheetNo === flow.indentNo || p.billNoPo === flow.indentNo)) ||
+               (flow.poNumber && (p.billNoPo === flow.poNumber || p.sheetNo === flow.poNumber))
+      );
+      const targetPaymentId = targetPayment?.id || targetPayment?.sheetNo || flow.paymentId || flow.paymentSheetNo;
+      const targetBenSheetNo = targetPayment?.linkedBeneficiarySheetNo || flow.linkedBeneficiarySheetNo;
+
+      if (currentStage.stageId === 'STG-PAY-01' || currentIndex === 0) {
+        // Stage 1: Fill Beneficiary Details -> Advance to Stage 2 (Director Beneficiary Approval)
+        if (targetPaymentId && (submittedData?.beneficiaryName || submittedData?.accountNo)) {
+          storageAdapter.addBeneficiaryDetailsToPayment(
+            targetPaymentId,
+            {
+              beneficiaryName: String(submittedData.beneficiaryName || flow.vendorName),
+              accountNo: String(submittedData.accountNo || ''),
+              ifscCode: String(submittedData.ifscCode || ''),
+              bankName: String(submittedData.bankName || ''),
+              cancelledChequeUrl: submittedData.cancelledChequeUrl,
+            },
+            currentUser
+          );
         }
-      }
-
-      // Stage 2: IS ACCOUNT ALREADY ADDED?
-      if (currentStage.stageId === 'STG-PAY-02') {
-        if (decision === 'Yes') {
-          for (let i = 2; i <= 5; i++) {
-            if (updatedStages[i]) {
-              updatedStages[i].status = 'Skipped';
-              updatedStages[i].notes = 'Skipped: Account already verified in internet banking';
-            }
-          }
-          nextIndex = 6;
-        } else if (decision === 'No') {
-          nextIndex = 2;
+        nextIndex = 1;
+      } else if (currentStage.stageId === 'STG-PAY-02' || currentIndex === 1) {
+        // Stage 2: Director Beneficiary Approval
+        const isApproved = submittedData?.status !== 'REJECTED' && decision !== 'No';
+        if (targetBenSheetNo) {
+          storageAdapter.approveBeneficiaryRecord(targetBenSheetNo, isApproved, currentUser, submittedData?.approvalRemarks);
         }
-      }
-
-      // Stage 10: GET ONLINE PAYMENT APPROVAL / PAYMENT DONE
-      if (currentStage.stageId === 'STG-PAY-10') {
-        nextIndex = 14;
-      }
-
-      // Stage 14: MAKE PAYMENT (UPI)
-      if (currentStage.stageId === 'STG-PAY-14') {
-        nextIndex = 14;
+        if (isApproved) {
+          nextIndex = 2; // Advance to Stage 3: Bank Entry Beneficiary
+        } else {
+          // Rejection returns to Stage 1 for correction
+          if (updatedStages[0]) {
+            updatedStages[0].status = 'In Progress';
+            updatedStages[0].actualDateTime = undefined;
+          }
+          nextIndex = 0;
+        }
+      } else if (currentStage.stageId === 'STG-PAY-03' || currentIndex === 2) {
+        // Stage 3: Bank Entry Beneficiary -> Advance to Stage 4 (Netbanking Beneficiary Confirmation)
+        if (targetBenSheetNo) {
+          storageAdapter.recordBeneficiaryEntry(targetBenSheetNo, 'DONE', submittedData?.bankReferenceNumber, currentUser);
+        }
+        nextIndex = 3;
+      } else if (currentStage.stageId === 'STG-PAY-04' || currentIndex === 3) {
+        // Stage 4: Netbanking Beneficiary Confirmation (Proxy Action: Accountant or Director)
+        // Addition confirmed! Advance to Phase 2: Stage 5 (Director Payment Approval)
+        if (targetBenSheetNo) {
+          storageAdapter.finalizeBeneficiaryAddition(targetBenSheetNo, 'DONE', submittedData?.confirmationRemarks, currentUser);
+        }
+        nextIndex = 4;
+      } else if (currentStage.stageId === 'STG-PAY-05' || currentIndex === 4) {
+        // Stage 5: Director Payment Approval
+        const isApproved = submittedData?.status !== 'REJECTED' && decision !== 'No';
+        if (targetPaymentId) {
+          storageAdapter.approveBankPayment(targetPaymentId, isApproved, currentUser, submittedData?.approvalRemarks);
+        }
+        if (isApproved) {
+          nextIndex = 5; // Advance to Stage 6: Bank Payment Entry
+        } else {
+          // Rejection cancels or pauses payment
+          nextIndex = 4;
+        }
+      } else if (currentStage.stageId === 'STG-PAY-06' || currentIndex === 5) {
+        // Stage 6: Bank Payment Entry -> Advance to Stage 7 (Netbanking Payment Confirmation)
+        if (targetPaymentId) {
+          storageAdapter.recordBankPaymentEntry(targetPaymentId, 'DONE', submittedData?.bankAccountDebited, currentUser);
+        }
+        nextIndex = 6;
+      } else if (currentStage.stageId === 'STG-PAY-07' || currentIndex === 6) {
+        // Stage 7: Netbanking Payment Confirmation (Proxy Action: Accountant or Director)
+        // Captures UTR number & finalizes disbursement
+        const utr = submittedData?.utrNumber || `UTR-${Date.now().toString().slice(-6)}`;
+        if (targetPaymentId) {
+          storageAdapter.finalizeBankPaymentSettlement(targetPaymentId, 'DONE', utr, undefined, currentUser);
+        }
+        nextIndex = 7; // Completed!
       }
     } else if (flow.flowType === 'PURCHASE_TO_STORE_DISPATCH') {
       // Stage 5: IS E-WAY BILL REQUIRED?
@@ -997,9 +1041,9 @@ export default function App() {
         updatedStages[3].actualTimestamp = undefined;
         updatedStages[3].delayHours = undefined;
         updatedStages[3].timeDelayHours = undefined;
-        if (!updatedStages[3].assignee) {
-          updatedStages[3].assignee = 'Pranjal Agrawal';
-        }
+        updatedStages[3].assignee = 'Pranjal Agrawal';
+        updatedStages[3].whoDefaultAssignee = 'Pranjal Agrawal';
+        updatedStages[3].whoRole = 'DIRECTOR';
       } else {
         updatedStages[nextIndex].plannedDateTime = formatToStandardDateTime(targetDate);
         updatedStages[nextIndex].plannedTimestamp = targetDate.toISOString();
@@ -1015,6 +1059,10 @@ export default function App() {
 
     const totalDelay = updatedStages.reduce((acc, s) => acc + (s.delayHours || s.timeDelayHours || 0), 0);
 
+    const nextAssignee = isComplete
+      ? flow.poAssignTo
+      : (updatedStages[nextIndex]?.assignee || updatedStages[nextIndex]?.whoDefaultAssignee || flow.poAssignTo);
+
     const updatedFlow: FmsInstance = {
       ...flow,
       currentStageIndex: isComplete ? Math.max(0, updatedStages.length - 1) : nextIndex,
@@ -1022,6 +1070,7 @@ export default function App() {
       status: isComplete ? 'Completed' : 'In Progress',
       totalDelayHours: totalDelay,
       updatedAt: formattedNow,
+      poAssignTo: nextAssignee,
       stages: updatedStages,
       instanceDataPool: updatedDataPool,
       ...(submittedData?.vendorName ? { vendorName: String(submittedData.vendorName) } : {}),
@@ -1268,7 +1317,7 @@ export default function App() {
             indentDate: flow.indentDate || formattedNow,
             siteName: flow.siteName,
             priority: flow.priority,
-            poAssignTo: 'Shyam Rao Sureshe',
+            poAssignTo: 'Brahmanand Patel',
             currentStageId: 'STG-02',
             currentStageIndex: 1,
             totalStages: FMS_STANDARD_PURCHASE_STAGES.length,
@@ -1296,11 +1345,11 @@ export default function App() {
           };
           updatedFlowsList = [newPurchaseFlow, ...updatedFlowsList];
 
-          // Emit high-priority notification to Shyam Rao Sureshe
+          // Emit high-priority notification to Brahmanand Patel
           storageAdapter.addNotification({
-            userId: 'USR-004', // Shyam Rao Sureshe
+            userId: 'USR-002', // Brahmanand Patel
             title: `Action Required: Purchase Indent #${purchaseIndentNo}`,
-            message: `Purchase requisition triaged from Stock Check #${flow.indentNo} (${purchaseItems.length} items). Assigned to Shyam Rao Sureshe for Stage 2: GET QUOTATION & GENERATE CS.`,
+            message: `Purchase requisition triaged from Stock Check #${flow.indentNo} (${purchaseItems.length} items). Assigned to Brahmanand Patel for Stage 2: GET QUOTATION & GENERATE CS.`,
             type: 'FMS_ACTION_REQUIRED',
             linkTab: 'fms',
             linkEntityId: newPurchaseFlow.id,
@@ -1494,59 +1543,13 @@ export default function App() {
         console.warn('Bank payment record auto-queue skipped or error:', err);
       }
 
-      if (existingPayFlowIndex >= 0) {
-        const existing = updatedFlowsList[existingPayFlowIndex];
-        const updatedPayFlow: FmsInstance = {
-          ...existing,
-          poNumber: resolvedPoNumber,
-          vendorName: resolvedVendor,
-          poAmount: resolvedAmount,
-          paymentMode: resolvedMode === 'UPI' ? 'UPI' : 'BANK_ACCOUNT',
-          remarks: resolvedRemarks,
-          updatedAt: formattedNow,
-        };
-        updatedFlowsList = updatedFlowsList.map((f, idx) => (idx === existingPayFlowIndex ? updatedPayFlow : f));
-      } else {
-        const newPayFlow: FmsInstance = {
-          id: `fms-inst-pay-${flow.indentNo}`,
-          flowId: `FLOW-PAY-${flow.indentNo}-001`,
-          flowType: 'PO_TO_PAYMENT',
-          linkedFlowId: flow.flowId,
-          poNumber: resolvedPoNumber,
-          vendorName: resolvedVendor,
-          poAssignTo: FMS_PO_PAYMENT_STAGES[0]?.whoDefaultAssignee || 'Priyanka Agrawal',
-          indentNo: flow.indentNo,
-          indentDate: flow.indentDate || formattedNow,
-          poDate: formattedNow,
-          poAmount: resolvedAmount,
-          siteName: flow.siteName,
-          priority: flow.priority,
-          currentStageId: 'STG-PAY-01',
-          currentStageIndex: 0,
-          totalStages: 15,
-          status: 'In Progress',
-          createdAt: formattedNow,
-          updatedAt: formattedNow,
-          totalDelayHours: 0,
-          remarks: resolvedRemarks,
-          paymentMode: resolvedMode === 'UPI' ? 'UPI' : 'BANK_ACCOUNT',
-          stages: FMS_PO_PAYMENT_STAGES.map((s, sIdx) => ({
-            stageId: s.stageId,
-            stageName: s.name,
-            assignee: sIdx === 0 ? (FMS_PO_PAYMENT_STAGES[0]?.whoDefaultAssignee || 'Priyanka Agrawal') : s.whoDefaultAssignee,
-            how: s.howChannel,
-            status: sIdx === 0 ? 'In Progress' : 'Pending',
-            plannedDateTime: sIdx === 0 ? formattedNow : undefined,
-            formResponseRef: s.formUrl,
-          }))
-        };
-        updatedFlowsList = [newPayFlow, ...updatedFlowsList];
-      }
+      // Refresh flow list from storageAdapter to include the newly spawned 7-stage PO_TO_PAYMENT flow
+      updatedFlowsList = storageAdapter.getFmsFlows();
     }
 
-    // 3. When Accounts PO to Payment completes Stage 15 (SEND PAYMENT DETAILS TO GET MATERIAL):
+    // 3. When Accounts PO to Payment completes Stage 7 (Netbanking Payment Confirmation):
     // Automatically spawn / ensure Purchase to Store to Dispatch FMS exists!
-    if (flow.flowType === 'PO_TO_PAYMENT' && currentStage.stageId === 'STG-PAY-15') {
+    if (flow.flowType === 'PO_TO_PAYMENT' && (currentStage.stageId === 'STG-PAY-07' || currentStage.stageId === 'STG-PAY-15')) {
       const existingPsdFlow = flows.find(
         (f) => f.linkedFlowId === flow.flowId || (f.indentNo === flow.indentNo && f.flowType === 'PURCHASE_TO_STORE_DISPATCH')
       );
@@ -1726,7 +1729,7 @@ export default function App() {
   const handleCompleteFmsStage = (
     flow: FmsInstance, 
     stageIndex: number, 
-    decision?: 'Yes' | 'No',
+    decision?: 'Yes' | 'No' | string,
     submittedData?: Record<string, any>
   ) => {
     // FMS stages are strictly sequential: can ONLY action the active stage in an in-progress flow!
@@ -2156,6 +2159,9 @@ export default function App() {
           setCurrentUser(freshUser);
           setIsAuthenticated(true);
           setViewScope(isUserAdminOrSuperAdmin(freshUser) ? 'ALL_ORG' : 'USER_ONLY');
+          setSelectedFmsDetail(null);
+          setStageActionTarget(null);
+          loadAllData();
           showToast(`Welcome back, ${freshUser.name}!`);
         }}
         noticeItems={noticeBoardItems}

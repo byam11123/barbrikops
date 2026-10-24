@@ -51,6 +51,11 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
   const isAuthorized = isUserAuthorizedForVendorBanking(currentUser);
   const masterSites = storageAdapter.getMasterSites();
 
+  const isAccounts =
+    (currentUser.departmentKeys || []).includes('ACCOUNTS') ||
+    (currentUser.departmentName || '').toUpperCase().includes('ACCOUNTS') ||
+    (currentUser.role || '').toUpperCase().includes('ACCOUNTS');
+
   // File Input Refs
   const chequeFileInputRef = useRef<HTMLInputElement>(null);
   const poFileInputRef = useRef<HTMLInputElement>(null);
@@ -226,14 +231,14 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
     e.preventDefault();
     setError(null);
 
-    const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount <= 0) {
-      setError('Please enter a valid amount greater than ₹0');
+    if (!selectedVendor) {
+      setError('Vendor not found. Please ask Accounts to add the Vendor to the Master.');
       return;
     }
 
-    if (!vendorName.trim()) {
-      setError('Trade Vendor Name is required');
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      setError('Please enter a valid amount greater than ₹0');
       return;
     }
 
@@ -242,32 +247,12 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
       return;
     }
 
-    if (modeOfPayment === 'ACCOUNT') {
-      if (!beneficiaryName.trim()) {
-        setError('Legal Beneficiary Bank Account Holder Title is required');
-        return;
-      }
-      if (isMismatch && !payeeRelationship.trim()) {
-        setError('Please specify payee relationship context for name mismatch');
-        return;
-      }
-      if (!accountNo.trim()) {
-        setError('Bank Account Number is required for Bank Transfer mode');
-        return;
-      }
-      if (!ifscCode.trim()) {
-        setError('Bank IFSC Code is required for Bank Transfer mode');
-        return;
-      }
-      if ((!selectedVendor || beneficiaryStatus === 'NEEDS_ADDITION') && !cancelledChequeUrl.trim()) {
-        setError('Mandatory: Cancelled Cheque proof is strictly required for new vendor bank verification.');
-        return;
-      }
-    }
-
     const newPayment = storageAdapter.addBankPaymentRecord({
-      vendorName: vendorName.trim(),
-      beneficiaryName: modeOfPayment === 'UPI' ? vendorName.trim() : beneficiaryName.trim(),
+      vendorId: selectedVendor.id,
+      vendorName: selectedVendor.tradeName,
+      beneficiaryName: modeOfPayment === 'UPI' 
+        ? selectedVendor.tradeName 
+        : (beneficiaryName.trim() || selectedVendor.legalName || selectedVendor.tradeName),
       isNameMismatch: modeOfPayment === 'ACCOUNT' ? isMismatch : false,
       payeeRelationship: isMismatch ? payeeRelationship.trim() : undefined,
       purposeOfPayment: purpose.trim(),
@@ -280,10 +265,10 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
       plannedDate,
       billNoPo: billNoPo.trim() || undefined,
       poUpload: poUpload.trim() || undefined,
-      beneficiaryMasterStatus: modeOfPayment === 'UPI' ? 'NOT_APPLICABLE_UPI' : selectedVendor ? beneficiaryStatus : 'NEEDS_ADDITION',
-      bankName: modeOfPayment === 'ACCOUNT' ? (bankName.trim() || 'State Bank of India') : undefined,
-      accountNoMasked: modeOfPayment === 'ACCOUNT' ? (accountNo.trim() || '••••••••3352') : undefined,
-      ifscCode: modeOfPayment === 'ACCOUNT' ? (ifscCode.trim() || 'SBIN0001292') : undefined,
+      beneficiaryMasterStatus: modeOfPayment === 'UPI' ? 'NOT_APPLICABLE_UPI' : beneficiaryStatus,
+      bankName: modeOfPayment === 'ACCOUNT' && bankName.trim() ? bankName.trim() : undefined,
+      accountNoMasked: modeOfPayment === 'ACCOUNT' && accountNo.trim() ? accountNo.trim() : undefined,
+      ifscCode: modeOfPayment === 'ACCOUNT' && ifscCode.trim() ? ifscCode.trim() : undefined,
       cancelledChequeUrl: cancelledChequeUrl.trim() || undefined,
     }, currentUser);
 
@@ -382,52 +367,54 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
                     setIsAccountMissing(false);
                     setChequeMissingWarning(false);
                   }}
-                  onFocus={() => setShowSuggestions(vendorMatches.length > 0 || legacyMatches.length > 0)}
-                  className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 pr-8"
+                  onFocus={() => setShowSuggestions(true)}
+                  className={`w-full text-xs p-2.5 bg-white border rounded-xl font-semibold text-slate-900 focus:outline-none focus:ring-2 pr-8 ${
+                    selectedVendor 
+                      ? 'border-emerald-400 bg-emerald-50/20 focus:ring-emerald-500' 
+                      : vendorName.trim() && !selectedVendor 
+                      ? 'border-rose-400 focus:ring-rose-500' 
+                      : 'border-slate-300 focus:ring-indigo-500'
+                  }`}
                 />
                 <Search className="w-4 h-4 text-slate-400 absolute right-2.5 top-3" />
               </div>
+
+              {selectedVendor && (
+                <div className="mt-1.5 flex items-center justify-between px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs">
+                  <span className="font-bold text-emerald-900 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Selected Vendor: {selectedVendor.tradeName} ({selectedVendor.vendorCode})</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedVendor(null);
+                      setVendorName('');
+                      setShowSuggestions(true);
+                    }}
+                    className="text-[11px] font-bold text-rose-600 hover:text-rose-800 cursor-pointer"
+                  >
+                    Change Vendor
+                  </button>
+                </div>
+              )}
 
               {/* Suggestions Dropdown with Auto-Detection Indicators */}
               {showSuggestions && (
                 <div className="absolute left-0 right-0 z-20 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto divide-y divide-slate-100">
                   <div className="p-2 bg-slate-50 flex items-center justify-between text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                    <span>Vendor Master Matches</span>
-                    {isAuthorized && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowSuggestions(false);
-                          setIsRegisterVendorModalOpen(true);
-                        }}
-                        className="text-indigo-600 hover:text-indigo-800 lowercase font-semibold flex items-center gap-1 cursor-pointer"
-                      >
-                        <Plus className="w-3 h-3" />
-                        <span>add new vendor</span>
-                      </button>
-                    )}
+                    <span>Vendor Master Records</span>
                   </div>
 
                   {vendorMatches.length === 0 && legacyMatches.length === 0 ? (
-                    <div className="p-3 text-center text-xs text-slate-500">
-                      <div>No vendor found matching "{vendorName}"</div>
-                      {isAuthorized ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowSuggestions(false);
-                            setIsRegisterVendorModalOpen(true);
-                          }}
-                          className="mt-1.5 px-3 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>Register "{vendorName}" to Vendor Master</span>
-                        </button>
-                      ) : (
-                        <p className="text-[11px] text-amber-700 mt-1 font-medium">
-                          Note: Only authorized roles (Accounts, Director, Admin, Super Admin) can register new vendors as per PO.
-                        </p>
-                      )}
+                    <div className="p-3 text-center text-xs text-rose-700 bg-rose-50/80 font-bold space-y-1">
+                      <div className="flex items-center justify-center gap-1.5 text-rose-800">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>Vendor not found. Please ask Accounts to add the Vendor to the Master.</span>
+                      </div>
+                      <p className="text-[11px] font-normal text-rose-600">
+                        Unlisted vendor names cannot be submitted. Only verified master vendors are allowed.
+                      </p>
                     </div>
                   ) : (
                     <>
@@ -515,213 +502,217 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
               )}
             </div>
 
-            {/* Auto-Detection Warning: Missing Bank Account */}
-            {modeOfPayment === 'ACCOUNT' && isAccountMissing && (
-              <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl space-y-2">
-                <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
-                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>Missing Bank Details Warning</span>
-                </div>
-                <p className="text-[11px] text-amber-800 leading-relaxed">
-                  The vendor <span className="font-bold">{vendorName}</span> does not have a verified bank account on file. For Beneficiary Master entry, a <span className="font-bold">verified cancelled cheque</span> is mandatory.
-                </p>
-                <div className="flex items-center gap-2 pt-1">
-                  <span className="text-[11px] text-amber-900 font-semibold">
-                    You can queue a Beneficiary Addition request below with mandatory cancelled cheque upload:
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Auto-Detection Warning: Missing Cancelled Cheque */}
-            {modeOfPayment === 'ACCOUNT' && !isAccountMissing && chequeMissingWarning && (
-              <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl space-y-1.5">
-                <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>Mandatory Cancelled Cheque Missing</span>
-                </div>
-                <p className="text-[11px] text-amber-800 leading-relaxed">
-                  Although bank details are recorded, a verified cancelled cheque document is not uploaded. Financial compliance requires a cancelled cheque before disbursement.
-                </p>
-              </div>
-            )}
-
             {/* Account Title & Bank Coordinates Section */}
             {modeOfPayment === 'ACCOUNT' && (
-              <div className="space-y-3 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-                {/* Governance Lock Indicator */}
-                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                  <div className="flex items-center gap-1.5">
-                    {isBankDetailsLocked ? (
-                      <>
-                        <Lock className="w-3.5 h-3.5 text-emerald-700" />
-                        <span className="text-xs font-bold text-slate-800">
-                          Bank Coordinates Locked (Master Verified)
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <Building2 className="w-3.5 h-3.5 text-indigo-700" />
-                        <span className="text-xs font-bold text-slate-800">
-                          Bank Account Details
-                        </span>
-                      </>
-                    )}
-                  </div>
-
-                  {isBankDetailsLocked && isAuthorized ? (
-                    <button
-                      type="button"
-                      onClick={handleUnlockBankDetails}
-                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer"
-                    >
-                      Unlock to Edit (Authorized)
-                    </button>
-                  ) : isBankDetailsLocked ? (
-                    <span className="text-[10px] text-slate-500 italic">
-                      Protected from ad-hoc modification
-                    </span>
-                  ) : null}
-                </div>
-
-                {/* Name of Beneficiary */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Name of Beneficiary <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    readOnly={isBankDetailsLocked}
-                    placeholder="Exact title printed on Bank Passbook / Cheque"
-                    value={beneficiaryName}
-                    onChange={(e) => setBeneficiaryName(e.target.value)}
-                    className={`w-full text-xs p-2.5 rounded-xl font-semibold border ${
-                      isBankDetailsLocked
-                        ? 'bg-slate-100 text-slate-700 border-slate-200 cursor-not-allowed'
-                        : 'bg-white text-slate-900 border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500'
-                    }`}
-                  />
-                </div>
-
-                {/* Name Mismatch Warning Callout */}
-                {isMismatch && (
-                  <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl space-y-2">
-                    <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
-                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                      <span>Trade Name vs Bank Account Holder Mismatch Detected</span>
+              !isAccounts ? (
+                /* PURCHASER VIEW (Shyam) */
+                selectedVendor && selectedVendor.bankAccounts && selectedVendor.bankAccounts.length > 0 ? (
+                  /* Purchaser: Vendor HAS bank details -> Show readOnly fields + note */
+                  <div className="space-y-3 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
+                    <div className="flex items-center gap-1.5 pb-2 border-b border-slate-200">
+                      <Lock className="w-3.5 h-3.5 text-slate-500" />
+                      <span className="text-xs font-bold text-slate-800">
+                        Vendor Bank Details (Verified Master)
+                      </span>
                     </div>
-                    <p className="text-[11px] text-amber-800 leading-relaxed">
-                      The Trade Vendor Name (<span className="font-semibold">{vendorName}</span>) differs from Bank Holder Title (<span className="font-semibold">{beneficiaryName}</span>). Please specify relationship context below.
-                    </p>
+
                     <div>
-                      <label className="block text-[11px] font-bold text-amber-900 mb-1">
-                        Payee Relationship Context *
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Beneficiary Name
                       </label>
                       <input
                         type="text"
-                        required
-                        placeholder="e.g. Sole Proprietor Personal Account, Sister Concern Entity, Director Account"
-                        value={payeeRelationship}
-                        onChange={(e) => setPayeeRelationship(e.target.value)}
-                        className="w-full text-xs p-2 bg-white border border-amber-300 rounded-lg font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        readOnly
+                        value={beneficiaryName}
+                        className="w-full text-xs p-2.5 rounded-xl font-semibold border bg-slate-100 text-slate-700 border-slate-200 cursor-not-allowed"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Bank Name</label>
+                        <input
+                          type="text"
+                          readOnly
+                          value={bankName}
+                          className="w-full text-xs p-2 rounded-lg font-medium border bg-slate-100 text-slate-700 border-slate-200 cursor-not-allowed"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Account No</label>
+                        <input
+                          type="text"
+                          readOnly
+                          value={accountNo}
+                          className="w-full text-xs p-2 rounded-lg font-mono font-semibold border bg-slate-100 text-slate-700 border-slate-200 cursor-not-allowed"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">IFSC Code</label>
+                        <input
+                          type="text"
+                          readOnly
+                          value={ifscCode}
+                          className="w-full text-xs p-2 rounded-lg font-mono font-bold uppercase border bg-slate-100 text-slate-700 border-slate-200 cursor-not-allowed"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 bg-slate-100 border border-slate-200 rounded-xl text-slate-700 text-xs flex items-center gap-2 font-medium">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-slate-500" />
+                      <span>If the vendor requests a change of account, please ask Accounts to update the Beneficiary Master.</span>
+                    </div>
+                  </div>
+                ) : (
+                  /* Purchaser: Vendor DOES NOT have bank details -> Hide fields + show warning */
+                  <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl space-y-1.5">
+                    <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>Missing Bank Details</span>
+                    </div>
+                    <p className="text-xs text-amber-800 leading-relaxed font-medium">
+                      Missing bank details. This request will be routed to Accounts for verification.
+                    </p>
+                  </div>
+                )
+              ) : (
+                /* ACCOUNTS VIEW (Priyanka) */
+                <div className="space-y-3 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
+                  {/* Governance Lock Indicator */}
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                    <div className="flex items-center gap-1.5">
+                      {isBankDetailsLocked ? (
+                        <>
+                          <Lock className="w-3.5 h-3.5 text-emerald-700" />
+                          <span className="text-xs font-bold text-slate-800">
+                            Bank Coordinates Locked (Master Verified)
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <Building2 className="w-3.5 h-3.5 text-indigo-700" />
+                          <span className="text-xs font-bold text-slate-800">
+                            Bank Account Details
+                          </span>
+                        </>
+                      )}
+                    </div>
+
+                    {isBankDetailsLocked && (
+                      <button
+                        type="button"
+                        onClick={handleUnlockBankDetails}
+                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer"
+                      >
+                        Unlock to Edit (Accounts Authorized)
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Name of Beneficiary */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Name of Beneficiary <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      readOnly={isBankDetailsLocked}
+                      placeholder="Exact title printed on Bank Passbook / Cheque"
+                      value={beneficiaryName}
+                      onChange={(e) => setBeneficiaryName(e.target.value)}
+                      className={`w-full text-xs p-2.5 rounded-xl font-semibold border ${
+                        isBankDetailsLocked
+                          ? 'bg-slate-100 text-slate-700 border-slate-200 cursor-not-allowed'
+                          : 'bg-white text-slate-900 border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500'
+                      }`}
+                    />
+                  </div>
+
+                  {/* Name Mismatch Warning Callout */}
+                  {isMismatch && (
+                    <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl space-y-2">
+                      <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Trade Name vs Bank Account Holder Mismatch Detected</span>
+                      </div>
+                      <p className="text-[11px] text-amber-800 leading-relaxed">
+                        The Trade Vendor Name (<span className="font-semibold">{vendorName}</span>) differs from Bank Holder Title (<span className="font-semibold">{beneficiaryName}</span>). Please specify relationship context below.
+                      </p>
+                      <div>
+                        <label className="block text-[11px] font-bold text-amber-900 mb-1">
+                          Payee Relationship Context *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Sole Proprietor Personal Account, Sister Concern Entity, Director Account"
+                          value={payeeRelationship}
+                          onChange={(e) => setPayeeRelationship(e.target.value)}
+                          className="w-full text-xs p-2 bg-white border border-amber-300 rounded-lg font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Bank Details Inputs */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Bank Name</label>
+                      <input
+                        type="text"
+                        readOnly={isBankDetailsLocked}
+                        placeholder="e.g. State Bank of India"
+                        value={bankName}
+                        onChange={(e) => setBankName(e.target.value)}
+                        className={`w-full text-xs p-2 rounded-lg font-medium border ${
+                          isBankDetailsLocked
+                            ? 'bg-slate-100 text-slate-700 border-slate-200 cursor-not-allowed'
+                            : 'bg-white text-slate-900 border-slate-300'
+                        }`}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Account No</label>
+                      <input
+                        type="text"
+                        readOnly={isBankDetailsLocked}
+                        placeholder="Full account number"
+                        value={accountNo}
+                        onChange={(e) => setAccountNo(e.target.value)}
+                        className={`w-full text-xs p-2 rounded-lg font-mono font-semibold border ${
+                          isBankDetailsLocked
+                            ? 'bg-slate-100 text-slate-700 border-slate-200 cursor-not-allowed'
+                            : 'bg-white text-slate-900 border-slate-300'
+                        }`}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">IFSC Code</label>
+                      <input
+                        type="text"
+                        readOnly={isBankDetailsLocked}
+                        placeholder="e.g. SBIN0001292"
+                        value={ifscCode}
+                        onChange={(e) => setIfscCode(e.target.value.toUpperCase())}
+                        className={`w-full text-xs p-2 rounded-lg font-mono font-bold uppercase border ${
+                          isBankDetailsLocked
+                            ? 'bg-slate-100 text-slate-700 border-slate-200 cursor-not-allowed'
+                            : 'bg-white text-slate-900 border-slate-300'
+                        }`}
                       />
                     </div>
                   </div>
-                )}
 
-                {/* Bank Details Inputs */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Bank Name</label>
-                    <input
-                      type="text"
-                      readOnly={isBankDetailsLocked}
-                      placeholder="e.g. State Bank of India"
-                      value={bankName}
-                      onChange={(e) => setBankName(e.target.value)}
-                      className={`w-full text-xs p-2 rounded-lg font-medium border ${
-                        isBankDetailsLocked
-                          ? 'bg-slate-100 text-slate-700 border-slate-200 cursor-not-allowed'
-                          : 'bg-white text-slate-900 border-slate-300'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Account No</label>
-                    <input
-                      type="text"
-                      readOnly={isBankDetailsLocked}
-                      placeholder="Full account number"
-                      value={accountNo}
-                      onChange={(e) => setAccountNo(e.target.value)}
-                      className={`w-full text-xs p-2 rounded-lg font-mono font-semibold border ${
-                        isBankDetailsLocked
-                          ? 'bg-slate-100 text-slate-700 border-slate-200 cursor-not-allowed'
-                          : 'bg-white text-slate-900 border-slate-300'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">IFSC Code</label>
-                    <input
-                      type="text"
-                      readOnly={isBankDetailsLocked}
-                      placeholder="e.g. SBIN0001292"
-                      value={ifscCode}
-                      onChange={(e) => setIfscCode(e.target.value.toUpperCase())}
-                      className={`w-full text-xs p-2 rounded-lg font-mono font-bold uppercase border ${
-                        isBankDetailsLocked
-                          ? 'bg-slate-100 text-slate-700 border-slate-200 cursor-not-allowed'
-                          : 'bg-white text-slate-900 border-slate-300'
-                      }`}
-                    />
-                  </div>
-                </div>
-
-                {/* Cancelled Cheque / Beneficiary Verification View */}
-                {selectedVendor && beneficiaryStatus === 'VERIFIED' ? (
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2 text-emerald-900 font-semibold">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                      <span>Verified Active Beneficiary – No Cheque Upload Required</span>
-                    </div>
-                    {cancelledChequeUrl ? (
-                      <a
-                        href={cancelledChequeUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs font-bold text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1 cursor-pointer"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>View Cheque Proof</span>
-                        <ExternalLink className="w-3 h-3 ml-0.5" />
-                      </a>
-                    ) : (
-                      <span className="text-[11px] text-emerald-700 font-medium">Pre-verified in Master</span>
-                    )}
-                  </div>
-                ) : (
+                  {/* Cancelled Cheque / Beneficiary Verification View */}
                   <div className="space-y-2">
-                    {!selectedVendor && (
-                      <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2 text-amber-900 font-bold">
-                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                          <span>NEW VENDOR - PENDING ACCOUNTS VERIFICATION</span>
-                        </div>
-                        <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-200 text-amber-900 rounded font-mono">
-                          CHEQUE REQUIRED
-                        </span>
-                      </div>
-                    )}
-
                     <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-2">
                       <div className="flex items-center justify-between">
                         <label className="block text-[11px] font-bold text-slate-700">
                           Cancelled Cheque Document Proof <span className="text-rose-500">*</span>
                         </label>
                         <span className="text-[10px] text-amber-700 font-semibold">
-                          Mandatory for New Vendor Accounts Verification
+                          Upload cancelled cheque for beneficiary verification
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -734,7 +725,6 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
                         />
                         <input
                           type="text"
-                          required={!selectedVendor || beneficiaryStatus === 'NEEDS_ADDITION'}
                           placeholder="Upload cancelled cheque or paste URL..."
                           value={cancelledChequeUrl}
                           onChange={(e) => setCancelledChequeUrl(e.target.value)}
@@ -746,22 +736,15 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
                           className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer"
                         >
                           <Upload className="w-3.5 h-3.5" />
-                          <span>Upload Proof</span>
+                          <span>Upload Cheque</span>
                         </button>
                       </div>
                     </div>
                   </div>
-                )}
 
-                {/* Beneficiary Master Verification Toggle */}
-                <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-                  <span className="text-xs font-bold text-slate-700">Beneficiary Master Status:</span>
-                  {!selectedVendor ? (
-                    <span className="px-2.5 py-1 text-xs rounded-lg font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
-                      <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Pending Accounts Verification (New Vendor)</span>
-                    </span>
-                  ) : (
+                  {/* Beneficiary Master Verification Toggle */}
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+                    <span className="text-xs font-bold text-slate-700">Beneficiary Master Status:</span>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -786,9 +769,9 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
                         Queue Beneficiary Addition
                       </button>
                     </div>
-                  )}
+                  </div>
                 </div>
-              </div>
+              )
             )}
 
             {/* Amount & Site Selection */}
@@ -923,9 +906,9 @@ export const NewBankPaymentModal: React.FC<NewBankPaymentModalProps> = ({
               >
                 <Check className="w-4 h-4" />
                 <span>
-                  {!selectedVendor || beneficiaryStatus === 'NEEDS_ADDITION'
-                    ? 'Submit to Accounts for Verification'
-                    : 'Submit Payment Requisition'}
+                  {!isAccounts
+                    ? 'Submit Payment Request to Accounts'
+                    : 'Verify Beneficiary & Send to Director'}
                 </span>
               </button>
             </div>

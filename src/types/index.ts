@@ -609,7 +609,7 @@ export interface FmsStageExecution {
   plannedTimestamp?: string; // ISO string calculated from stageStartedAt + SLA hours
   actualTimestamp?: string;  // ISO string recorded on completion
   status: 'Pending' | 'In Progress' | 'Done' | 'Skipped' | 'Delayed' | 'Completed' | 'Rejected' | 'OVERRIDDEN' | 'Returned to Purchaser' | 'Returned for Revision' | 'Returned / On Hold';
-  decisionValue?: 'Yes' | 'No' | ''; // For checkpoint decisions
+  decisionValue?: 'Yes' | 'No' | '' | string; // For checkpoint decisions
   timeDelayHours?: number;
   delayHours?: number;
   notes?: string;
@@ -769,6 +769,10 @@ export interface FmsInstance {
   beneficiaryBankName?: string;
   beneficiaryPurpose?: string;
   cancelledChequeUrl?: string;
+  paymentId?: string;
+  paymentSheetNo?: string;
+  linkedBeneficiarySheetNo?: string;
+  vendorId?: string;
   // Module links:
   comparativeSheetId?: string;
   linkedModuleRecord?: {
@@ -986,6 +990,7 @@ export interface BankPaymentRecord {
   id: string;
   sheetNo: string;                   // BPL/BANK/YYYYMMDD/NN
   timestamp: string;                 // ISO date of request
+  vendorId?: string;                 // Relational ID linking to VendorProfileRecord.id
   vendorName: string;                // Trade Name (e.g. MAHAVIR GAS CHULHA)
   beneficiaryName: string;           // Bank Account Holder Name (e.g. KANHAIYA)
   isNameMismatch: boolean;           // Trade Name != Beneficiary Name
@@ -1040,6 +1045,7 @@ export interface BeneficiaryRecord {
   id: string;
   sheetNo: string;                   // BPL/BEN/YYYYMMDD/NN
   timestamp: string;
+  vendorId?: string;                 // Relational ID linking to VendorProfileRecord.id
   beneficiaryName: string;           // Legal Bank Title
   tradeVendorName?: string;          // Commercial Trade Name
   accountNo: string;                 // Bank Account Number

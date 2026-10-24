@@ -30,7 +30,8 @@ import {
   VendorProfileRecord,
   VendorBankAccount,
   VendorSearchWithBankingResult,
-  isUserAuthorizedForVendorBanking
+  isUserAuthorizedForVendorBanking,
+  FmsStageExecution
 } from '../types';
 
 export const INITIAL_DEPARTMENTS: DepartmentDefinition[] = [
@@ -100,7 +101,8 @@ import {
   FMS_PURCHASE_TO_STORE_DISPATCH_STAGES,
   FMS_STORE_TO_SITE_DISPATCH_STAGES,
   FMS_STANDARD_PURCHASE_STAGES,
-  FMS_CHECK_STOCK_STAGES
+  FMS_CHECK_STOCK_STAGES,
+  FMS_PO_PAYMENT_STAGES
 } from '../data/initialData';
 
 // Zod schemas for input validation
@@ -207,6 +209,7 @@ export function sanitizeForFirestore<T>(obj: T): T {
 class StorageAdapter {
   private auditLogs: AuditLogEntry[] = [];
   private listeners: Array<() => void> = [];
+  private activeUnsubscribes: Array<() => void> = [];
   private isSyncInitialized = false;
   private isQuotaExceeded = false;
 
@@ -214,7 +217,16 @@ class StorageAdapter {
     this.initStorage();
   }
 
-  private activeUnsubscribes: Array<() => void> = [];
+  public markQuotaExceeded() {
+    if (!this.isQuotaExceeded) {
+      this.isQuotaExceeded = true;
+      console.warn('[StorageAdapter] Firestore daily quota reached. Detaching remote sync and operating seamlessly with persistent local storage.');
+      this.activeUnsubscribes.forEach((unsub) => {
+        try { unsub(); } catch (_) {}
+      });
+      this.activeUnsubscribes = [];
+    }
+  }
 
   private handleFirestoreError(err: any) {
     if (!err) return;
@@ -227,14 +239,7 @@ class StorageAdapter {
       msg.includes('resource-exhausted') ||
       msg.includes('quota exceeded')
     ) {
-      if (!this.isQuotaExceeded) {
-        this.isQuotaExceeded = true;
-        console.warn('[StorageAdapter] Firestore daily write quota reached. Detaching remote sync and operating seamlessly with persistent local storage.');
-        this.activeUnsubscribes.forEach((unsub) => {
-          try { unsub(); } catch (_) {}
-        });
-        this.activeUnsubscribes = [];
-      }
+      this.markQuotaExceeded();
     }
   }
 
@@ -348,7 +353,8 @@ class StorageAdapter {
             if (!snap.empty) {
               const remoteFlows = snap.docs.map((d) => d.data() as FmsInstance);
               if (remoteFlows.length > 0) {
-                localStorage.setItem(STORAGE_KEYS.FMS, JSON.stringify(remoteFlows));
+                const merged = this.mergeFlowsWithLocal(remoteFlows);
+                localStorage.setItem(STORAGE_KEYS.FMS, JSON.stringify(merged));
                 this.notifyListeners();
               }
             }
@@ -632,7 +638,8 @@ class StorageAdapter {
       if (!fmsSnap.empty) {
         const remoteFlows = fmsSnap.docs.map((d) => d.data() as FmsInstance);
         if (remoteFlows.length > 0) {
-          localStorage.setItem(STORAGE_KEYS.FMS, JSON.stringify(remoteFlows));
+          const merged = this.mergeFlowsWithLocal(remoteFlows);
+          localStorage.setItem(STORAGE_KEYS.FMS, JSON.stringify(merged));
         }
       } else {
         const localFlows = this.getFmsFlows();
@@ -923,10 +930,79 @@ class StorageAdapter {
     }
   }
 
+  private mergeFlowsWithLocal(remoteFlows: FmsInstance[]): FmsInstance[] {
+    const rawLocal = localStorage.getItem(STORAGE_KEYS.FMS);
+    const localFlows: FmsInstance[] = rawLocal ? JSON.parse(rawLocal) : [];
+    const localMap = new Map<string, FmsInstance>();
+    localFlows.forEach((f) => {
+      if (f.id) localMap.set(f.id, f);
+      if (f.flowId) localMap.set(f.flowId, f);
+    });
+
+    const mergedMap = new Map<string, FmsInstance>();
+
+    remoteFlows.forEach((remote) => {
+      const idKey = remote.id || remote.flowId;
+      if (!idKey) return;
+
+      const local = localMap.get(remote.id) || localMap.get(remote.flowId);
+      if (!local) {
+        mergedMap.set(idKey, this.normalizeFmsFlow(remote));
+        return;
+      }
+
+      // Compare local vs remote progression
+      const localStageIdx = local.currentStageIndex ?? 0;
+      const remoteStageIdx = remote.currentStageIndex ?? 0;
+
+      const localTime = new Date(local.updatedAt || 0).getTime();
+      const remoteTime = new Date(remote.updatedAt || 0).getTime();
+
+      const localDoneCount = local.stages ? local.stages.filter(s => s.status === 'Done' || s.status === 'Completed' || s.status === 'Skipped').length : 0;
+      const remoteDoneCount = remote.stages ? remote.stages.filter(s => s.status === 'Done' || s.status === 'Completed' || s.status === 'Skipped').length : 0;
+
+      if (
+        localStageIdx > remoteStageIdx ||
+        localDoneCount > remoteDoneCount ||
+        (localStageIdx === remoteStageIdx && localDoneCount === remoteDoneCount && localTime > remoteTime)
+      ) {
+        // Keep local flow and queue background sync to remote
+        mergedMap.set(idKey, this.normalizeFmsFlow(local));
+        this.syncSingleToFirestore('fmsFlows', local, 'flowId');
+      } else {
+        mergedMap.set(idKey, this.normalizeFmsFlow(remote));
+      }
+    });
+
+    // Also retain any local flows that don't exist in remote yet
+    localFlows.forEach((local) => {
+      const idKey = local.id || local.flowId;
+      if (idKey && !mergedMap.has(local.id) && !mergedMap.has(local.flowId)) {
+        mergedMap.set(idKey, this.normalizeFmsFlow(local));
+        this.syncSingleToFirestore('fmsFlows', local, 'flowId');
+      }
+    });
+
+    return Array.from(mergedMap.values());
+  }
+
   // FMS Operations
   public normalizeFmsFlow(flow: FmsInstance): FmsInstance {
     let updatedStages = [...flow.stages];
     let changed = false;
+
+    // Ensure poAssignTo is kept strictly synced with the active stage's assignee
+    if (flow.status !== 'Completed' && updatedStages[flow.currentStageIndex]) {
+      const activeStage = updatedStages[flow.currentStageIndex];
+      const activeAssignee = activeStage.assignee || activeStage.whoDefaultAssignee;
+      if (activeAssignee && flow.poAssignTo !== activeAssignee) {
+        flow = {
+          ...flow,
+          poAssignTo: activeAssignee,
+        };
+        changed = true;
+      }
+    }
 
 
 
@@ -1053,16 +1129,22 @@ class StorageAdapter {
           const wrongName = stg.stageName !== ref.name;
           const missingAssignee = !stg.assignee;
 
-          let targetAssignee = stg.assignee || ref.whoDefaultAssignee;
-          if (ref.stageId === 'STG-02' && (stg.assignee === 'Pranjal Agrawal' || !stg.assignee)) {
+          let targetAssignee = ref.whoDefaultAssignee;
+          if (ref.stageId === 'STG-01') {
             targetAssignee = 'Brahmanand Patel';
-          } else if (ref.stageId === 'STG-03' && (stg.assignee === 'Pranjal Agrawal' || !stg.assignee)) {
+          } else if (ref.stageId === 'STG-02') {
             targetAssignee = 'Brahmanand Patel';
-          } else if (ref.stageId === 'STG-05' && (stg.assignee === 'Pranjal Agrawal' || !stg.assignee || stg.assignee !== 'Shyam Rao Sureshe')) {
+          } else if (ref.stageId === 'STG-03') {
+            targetAssignee = 'Brahmanand Patel';
+          } else if (ref.stageId === 'STG-04') {
+            targetAssignee = 'Pranjal Agrawal';
+          } else if (ref.stageId === 'STG-05') {
             targetAssignee = 'Shyam Rao Sureshe';
+          } else if (ref.stageId === 'STG-06') {
+            targetAssignee = (stg.assignee && stg.assignee !== 'Shyam Rao Sureshe' && stg.assignee !== 'Pranjal Agrawal') ? stg.assignee : 'Rajendra / Vivek';
           }
 
-          const wrongAssignee = stg.assignee !== targetAssignee || stg.whoDefaultAssignee !== ref.whoDefaultAssignee;
+          const wrongAssignee = stg.assignee !== targetAssignee || stg.whoDefaultAssignee !== ref.whoDefaultAssignee || stg.whoRole !== ref.whoRole;
 
           if ((refHasEmbed && !hasEmbed) || lacksLogic || lacksTrigger || !stg.fields || stg.fields.length === 0 || missingAssignee || wrongRole || wrongName || !stg.whoDefaultAssignee || wrongAssignee) {
             stagesUpdated = true;
@@ -1220,6 +1302,21 @@ class StorageAdapter {
         const seedPayment = INITIAL_FMS_FLOWS.filter((f) => f.flowType === 'PO_TO_PAYMENT' && !deletedIds.has(f.id) && !deletedIds.has(f.flowId));
         allFlows = [...allFlows, ...seedPayment];
       }
+
+      // Ensure all BankPaymentRecords have an active PO_TO_PAYMENT FMS flow
+      const currentBankPayments = this.getBankPayments();
+      currentBankPayments.forEach((bp) => {
+        const hasFlow = allFlows.some(
+          (f) => f.flowType === 'PO_TO_PAYMENT' &&
+                 (f.paymentSheetNo === bp.sheetNo || f.indentNo === bp.sheetNo || f.poNumber === bp.sheetNo || f.id === `fms-pay-${bp.id}`)
+        );
+        if (!hasFlow && bp.sheetNo && !deletedIds.has(`fms-pay-${bp.id}`)) {
+          try {
+            const spawned = this.buildPoToPaymentFmsInstance(bp);
+            allFlows.push(spawned);
+          } catch (_) {}
+        }
+      });
 
       // Ensure PAYMENT_TO_DISPATCH flows are merged if not yet present and not explicitly deleted
       const hasDispatchFlows = allFlows.some((f) => f.flowType === 'PAYMENT_TO_DISPATCH');
@@ -1507,7 +1604,7 @@ class StorageAdapter {
         status: 'In Progress',
         isClosed: false,
         lineItems: purchaseItems,
-        poAssignTo: 'Shyam Rao Sureshe',
+        poAssignTo: 'Brahmanand Patel',
         currentStageIndex: 1,
         currentStageId: 'STG-02',
         createdAt: nowStr,
@@ -1537,11 +1634,11 @@ class StorageAdapter {
         },
       };
 
-      // Emit high-priority action notification to Shyam Rao Sureshe
+      // Emit high-priority action notification to Brahmanand Patel
       this.addNotification({
-        userId: 'USR-004', // Shyam Rao Sureshe
+        userId: 'USR-002', // Brahmanand Patel
         title: `Action Required: Purchase Indent #${purchIndentNo}`,
-        message: `Material requisition triaged and forwarded from Central Store (${purchaseItems.length} items). Assigned to Shyam Rao Sureshe for Stage 2: GET QUOTATION & GENERATE CS.`,
+        message: `Material requisition triaged and forwarded from Central Store (${purchaseItems.length} items). Assigned to Brahmanand Patel for Stage 2: GET QUOTATION & GENERATE CS.`,
         type: 'FMS_ACTION_REQUIRED',
         linkTab: 'fms',
         linkEntityId: purchId,
@@ -2454,7 +2551,7 @@ class StorageAdapter {
       );
 
       if (savedOverride) {
-        const finalStages = sys.templateKey === 'CHECK_STOCK'
+        const finalStages = (sys.templateKey === 'CHECK_STOCK' || sys.templateKey === 'INDENT_TO_PO' || sys.templateKey === 'INDENT_PURCHASE')
           ? sys.stages
           : (savedOverride.stages && savedOverride.stages.length > 0) ? savedOverride.stages : sys.stages;
 
@@ -3245,6 +3342,189 @@ class StorageAdapter {
     this.syncToFirestore('bankPayments', records, 'id');
   }
 
+  public buildPoToPaymentFmsInstance(
+    paymentRecord: BankPaymentRecord,
+    isVerifiedBeneficiary?: boolean
+  ): FmsInstance {
+    if (isVerifiedBeneficiary === undefined) {
+      if (paymentRecord.modeOfPayment === 'UPI') {
+        isVerifiedBeneficiary = true;
+      } else if (paymentRecord.beneficiaryMasterStatus === 'VERIFIED') {
+        isVerifiedBeneficiary = true;
+      } else if (paymentRecord.vendorId) {
+        const vendor = this.getVendorProfileById(paymentRecord.vendorId);
+        isVerifiedBeneficiary = Boolean(vendor?.bankAccounts?.some((a) => a.verificationStatus === 'VERIFIED'));
+      } else {
+        const vendors = this.getVendorProfiles();
+        const vMatch = vendors.find(
+          (v) =>
+            v.tradeName?.toLowerCase().trim() === paymentRecord.vendorName?.toLowerCase().trim() ||
+            v.legalName?.toLowerCase().trim() === paymentRecord.vendorName?.toLowerCase().trim()
+        );
+        isVerifiedBeneficiary = Boolean(vMatch?.bankAccounts?.some((a) => a.verificationStatus === 'VERIFIED'));
+      }
+    }
+
+    const now = new Date();
+    const nowStr = now.toLocaleString('en-GB');
+    let runningTime = now.getTime();
+
+    // Build the 7 sequential stages with SLAs and plannedDateTime
+    const stages: FmsStageExecution[] = FMS_PO_PAYMENT_STAGES.map((stgDef, index) => {
+      const slaMs = (stgDef.slaHours || 1) * 3600 * 1000;
+      runningTime += slaMs;
+      const plannedDate = new Date(runningTime).toLocaleString('en-GB');
+
+      if (isVerifiedBeneficiary && index < 4) {
+        return {
+          stageId: stgDef.stageId,
+          stageName: stgDef.name,
+          assignee: stgDef.whoDefaultAssignee || 'Priyanka Agrawal',
+          whoRole: stgDef.whoRole,
+          whoDefaultAssignee: stgDef.whoDefaultAssignee,
+          how: stgDef.howChannel,
+          plannedDateTime: plannedDate,
+          actualDateTime: nowStr,
+          status: 'Skipped' as const,
+          notes: 'Auto-skipped: Vendor has verified beneficiary coordinates in Beneficiary Master',
+        };
+      }
+
+      if (isVerifiedBeneficiary && index === 4) {
+        return {
+          stageId: stgDef.stageId,
+          stageName: stgDef.name,
+          assignee: stgDef.whoDefaultAssignee || 'Pranjal Agrawal',
+          whoRole: stgDef.whoRole,
+          whoDefaultAssignee: stgDef.whoDefaultAssignee,
+          how: stgDef.howChannel,
+          plannedDateTime: plannedDate,
+          status: 'In Progress' as const,
+          stageStartedAt: now.toISOString(),
+          notes: `Director payment authorization for ₹${(paymentRecord.amountToBePaid || 0).toLocaleString('en-IN')}`,
+        };
+      }
+
+      if (!isVerifiedBeneficiary && index === 0) {
+        return {
+          stageId: stgDef.stageId,
+          stageName: stgDef.name,
+          assignee: stgDef.whoDefaultAssignee || 'Priyanka Agrawal',
+          whoRole: stgDef.whoRole,
+          whoDefaultAssignee: stgDef.whoDefaultAssignee,
+          how: stgDef.howChannel,
+          plannedDateTime: plannedDate,
+          status: 'In Progress' as const,
+          stageStartedAt: now.toISOString(),
+          notes: 'Awaiting Accounts beneficiary entry & cancelled cheque verification',
+        };
+      }
+
+      return {
+        stageId: stgDef.stageId,
+        stageName: stgDef.name,
+        assignee: stgDef.whoDefaultAssignee || (stgDef.whoRole === 'DIRECTOR' ? 'Pranjal Agrawal' : 'Priyanka Agrawal'),
+        whoRole: stgDef.whoRole,
+        whoDefaultAssignee: stgDef.whoDefaultAssignee,
+        how: stgDef.howChannel,
+        plannedDateTime: plannedDate,
+        status: 'Pending' as const,
+      };
+    });
+
+    const activeStageIndex = isVerifiedBeneficiary ? 4 : 0;
+    const activeStage = stages[activeStageIndex];
+    const cleanSheetNo = (paymentRecord.sheetNo || Date.now().toString()).replace(/[^a-zA-Z0-9]/g, '-');
+    const flowId = `FLOW-PAY-${cleanSheetNo}`;
+    const instanceId = `fms-pay-${paymentRecord.id || Date.now()}`;
+
+    return {
+      id: instanceId,
+      flowId: flowId,
+      flowType: 'PO_TO_PAYMENT',
+      templateKey: 'PO_TO_PAYMENT',
+      title: `[PO PAYMENT] ${paymentRecord.vendorName} - ₹${(paymentRecord.amountToBePaid || 0).toLocaleString('en-IN')}`,
+      poNumber: paymentRecord.billNoPo || paymentRecord.sheetNo,
+      requisitionNumber: paymentRecord.sheetNo,
+      indentNo: paymentRecord.sheetNo,
+      vendorName: paymentRecord.vendorName,
+      vendorId: paymentRecord.vendorId,
+      siteName: paymentRecord.site || 'Head Office / Accounts',
+      poAmount: paymentRecord.amountToBePaid,
+      poDate: paymentRecord.plannedDate || new Date().toLocaleDateString('en-GB'),
+      priority: paymentRecord.amountToBePaid > 100000 ? 'Urgent' : 'Normal',
+      paymentMode: paymentRecord.modeOfPayment === 'UPI' ? 'UPI' : 'BANK_ACCOUNT',
+      paymentId: paymentRecord.id,
+      paymentSheetNo: paymentRecord.sheetNo,
+      linkedBeneficiarySheetNo: paymentRecord.linkedBeneficiarySheetNo,
+      currentStageIndex: activeStageIndex,
+      currentStageId: activeStage.stageId,
+      totalStages: 7,
+      status: 'In Progress',
+      isClosed: false,
+      poAssignTo: activeStage.assignee || (isVerifiedBeneficiary ? 'Pranjal Agrawal' : 'Priyanka Agrawal'),
+      createdAt: paymentRecord.timestamp || nowStr,
+      updatedAt: nowStr,
+      totalDelayHours: 0,
+      remarks: paymentRecord.purposeOfPayment || 'Direct Payment Request',
+      stages,
+      instanceDataPool: {
+        paymentRecordId: paymentRecord.id,
+        sheetNo: paymentRecord.sheetNo,
+        vendorName: paymentRecord.vendorName,
+        vendorId: paymentRecord.vendorId,
+        amountToBePaid: paymentRecord.amountToBePaid,
+        beneficiaryName: paymentRecord.beneficiaryName,
+        accountNo: paymentRecord.accountNoMasked,
+        ifscCode: paymentRecord.ifscCode,
+        bankName: paymentRecord.bankName,
+        modeOfPayment: paymentRecord.modeOfPayment,
+        purposeOfPayment: paymentRecord.purposeOfPayment,
+        directPayment: true,
+      },
+    };
+  }
+
+  public createPoToPaymentFmsInstance(
+    paymentRecord: BankPaymentRecord,
+    isVerifiedBeneficiary?: boolean,
+    currentUser?: UserProfile
+  ): FmsInstance {
+    const newFlow = this.buildPoToPaymentFmsInstance(paymentRecord, isVerifiedBeneficiary);
+    const existingFlows = this.getFmsFlows();
+    const existingIndex = existingFlows.findIndex(
+      (f) =>
+        f.id === newFlow.id ||
+        f.flowId === newFlow.flowId ||
+        (paymentRecord.sheetNo && (f.paymentSheetNo === paymentRecord.sheetNo || f.indentNo === paymentRecord.sheetNo || f.poNumber === paymentRecord.sheetNo))
+    );
+
+    let updatedFlows: FmsInstance[];
+    if (existingIndex >= 0) {
+      updatedFlows = [...existingFlows];
+      updatedFlows[existingIndex] = {
+        ...existingFlows[existingIndex],
+        ...newFlow,
+        stages: existingFlows[existingIndex].stages?.length === 7 ? existingFlows[existingIndex].stages : newFlow.stages,
+      };
+    } else {
+      updatedFlows = [newFlow, ...existingFlows];
+    }
+
+    this.saveFmsFlows(updatedFlows);
+
+    this.logAudit({
+      userId: currentUser?.userId || 'SYSTEM',
+      userName: currentUser?.name || 'Workflow Engine',
+      module: 'FMS',
+      action: 'CREATE',
+      entityId: newFlow.flowId,
+      details: `Spawned 7-Stage PO_TO_PAYMENT workflow for ${paymentRecord.vendorName} (Sheet #${paymentRecord.sheetNo}, ₹${(paymentRecord.amountToBePaid || 0).toLocaleString('en-IN')})`,
+    });
+
+    return newFlow;
+  }
+
   public addBankPaymentRecord(
     data: Omit<BankPaymentRecord, 'id' | 'sheetNo' | 'timestamp' | 'approvalStatus' | 'paymentEntry' | 'paymentStatus'>,
     currentUser?: UserProfile
@@ -3294,6 +3574,13 @@ class StorageAdapter {
 
     const updated = [newRecord, ...currentList];
     this.saveBankPayments(updated);
+
+    // Silently spawn a new 7-stage PO_TO_PAYMENT FMS instance for this Bank Payment Request
+    try {
+      this.createPoToPaymentFmsInstance(newRecord, undefined, currentUser);
+    } catch (err) {
+      console.warn('[StorageAdapter] Failed to auto-spawn PO_TO_PAYMENT FMS flow for bank payment:', err);
+    }
 
     this.logAudit({
       userId: currentUser?.userId || 'USER',
@@ -3389,6 +3676,110 @@ class StorageAdapter {
         action: 'UPDATE',
         entityId: (updatedRecord as BankPaymentRecord).sheetNo,
         details: `Accountant Double-Entry Verification ${verified ? 'PASSED' : 'FAILED'} for #${(updatedRecord as BankPaymentRecord).sheetNo}`,
+      });
+    }
+
+    return updatedRecord;
+  }
+
+  public addBeneficiaryDetailsToPayment(
+    paymentId: string,
+    beneficiaryData: {
+      beneficiaryName: string;
+      accountNo: string;
+      ifscCode: string;
+      bankName: string;
+      cancelledChequeUrl?: string;
+    },
+    currentUser: UserProfile
+  ): BankPaymentRecord | null {
+    const payments = this.getBankPayments();
+    const payment = payments.find(p => p.id === paymentId || p.sheetNo === paymentId);
+    if (!payment) return null;
+
+    // 1. Create a BeneficiaryRecord with vendorId
+    const newBen = this.addBeneficiaryRecord({
+      vendorId: payment.vendorId,
+      beneficiaryName: beneficiaryData.beneficiaryName,
+      tradeVendorName: payment.vendorName,
+      accountNo: beneficiaryData.accountNo,
+      ifscCode: beneficiaryData.ifscCode.toUpperCase(),
+      bankName: beneficiaryData.bankName,
+      purpose: payment.purposeOfPayment || 'Vendor Disbursement',
+      cancelledChequeUrl: beneficiaryData.cancelledChequeUrl || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+      remark: `Added by Accounts (${currentUser.name}) for Bank Payment #${payment.sheetNo}`,
+      requestedBy: currentUser.name,
+    }, currentUser);
+
+    this.approveBeneficiaryRecord(newBen.id, true, currentUser);
+    this.recordBeneficiaryEntry(newBen.id, 'DONE', undefined, currentUser);
+    this.finalizeBeneficiaryAddition(newBen.id, 'DONE', undefined, currentUser);
+
+    // 2. Update VendorProfileRecord if vendorId is available
+    if (payment.vendorId) {
+      const vendor = this.getVendorProfileById(payment.vendorId);
+      if (vendor) {
+        const cleanAccountNo = beneficiaryData.accountNo.trim();
+        const masked = `••••••••${cleanAccountNo.slice(-4)}`;
+        const newAccount: VendorBankAccount = {
+          id: `acc-${Date.now()}`,
+          beneficiaryName: beneficiaryData.beneficiaryName,
+          tradeVendorName: vendor.tradeName,
+          bankName: beneficiaryData.bankName,
+          accountNo: cleanAccountNo,
+          accountNoMasked: masked,
+          ifscCode: beneficiaryData.ifscCode.trim().toUpperCase(),
+          accountType: 'CURRENT',
+          isPrimary: true,
+          verificationStatus: 'VERIFIED',
+          verifiedBy: currentUser.name,
+          verifiedAt: new Date().toLocaleDateString('en-GB'),
+          cancelledChequeUrl: beneficiaryData.cancelledChequeUrl,
+          linkedBeneficiarySheetNo: newBen.sheetNo,
+        };
+
+        const existingAccounts = (vendor.bankAccounts || []).map(a => ({ ...a, isPrimary: false }));
+        existingAccounts.push(newAccount);
+        this.saveVendorProfiles(
+          this.getVendorProfiles().map(v => v.id === vendor.id ? { ...v, bankAccounts: existingAccounts } : v)
+        );
+      }
+    }
+
+    // 3. Update BankPaymentRecord
+    let updatedRecord: BankPaymentRecord | null = null;
+    const cleanAccNo = beneficiaryData.accountNo.trim();
+    const updatedPayments = payments.map(p => {
+      if (p.id === paymentId || p.sheetNo === paymentId) {
+        updatedRecord = {
+          ...p,
+          beneficiaryName: beneficiaryData.beneficiaryName,
+          bankName: beneficiaryData.bankName,
+          accountNo: cleanAccNo,
+          accountNoMasked: `••••••••${cleanAccNo.slice(-4)}`,
+          ifscCode: beneficiaryData.ifscCode.trim().toUpperCase(),
+          cancelledChequeUrl: beneficiaryData.cancelledChequeUrl,
+          linkedBeneficiarySheetNo: newBen.sheetNo,
+          beneficiaryMasterStatus: 'VERIFIED',
+          verifiedByAccountant: true,
+          accountantVerificationTimestamp: new Date().toLocaleString('en-GB'),
+          reEnteredAccountNo: cleanAccNo,
+          reEnteredIfscCode: beneficiaryData.ifscCode.trim().toUpperCase(),
+        };
+        return updatedRecord;
+      }
+      return p;
+    });
+
+    if (updatedRecord) {
+      this.saveBankPayments(updatedPayments);
+      this.logAudit({
+        userId: currentUser.userId,
+        userName: currentUser.name,
+        module: 'BANKING',
+        action: 'UPDATE',
+        entityId: (updatedRecord as BankPaymentRecord).sheetNo,
+        details: `Accounts added and verified Beneficiary Details for Bank Payment #${(updatedRecord as BankPaymentRecord).sheetNo}`,
       });
     }
 

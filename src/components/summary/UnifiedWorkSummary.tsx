@@ -184,8 +184,8 @@ interface UnifiedWorkSummaryProps {
   flows: FmsInstance[];
   onCompleteChecklist: (item: ChecklistItem) => void;
   onCompleteDelegation: (task: DelegationTask) => void;
-  onAdvanceFmsStage: (flow: FmsInstance, decision?: 'Yes' | 'No') => void;
-  onCompleteFmsStage?: (flow: FmsInstance, stageIndex: number, decision?: 'Yes' | 'No') => void;
+  onAdvanceFmsStage: (flow: FmsInstance, decision?: string, submittedData?: Record<string, any>) => void;
+  onCompleteFmsStage?: (flow: FmsInstance, stageIndex: number, decision?: string, submittedData?: Record<string, any>) => void;
   onReviseDelegation: (task: DelegationTask) => void;
   onSelectFmsDetail: (flow: FmsInstance) => void;
   onNavigateTab: (tab: any) => void;
@@ -270,6 +270,15 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   // Weekly Director Digest Modal State (PC)
   const [showWeeklyDigestModal, setShowWeeklyDigestModal] = useState<boolean>(false);
   const [bankingActionRefresh, setBankingActionRefresh] = useState<number>(0);
+
+  // Inline UTR modal target for Stage 7 Payment Confirmation
+  const [utrModalTarget, setUtrModalTarget] = useState<{
+    flow: FmsInstance;
+    stageIndex: number;
+    amount: number;
+    vendorName: string;
+    utrNumber: string;
+  } | null>(null);
 
   // Split-Screen Operational Cockpit State
   const [cockpitTarget, setCockpitTarget] = useState<{
@@ -511,12 +520,23 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
     const defAssignee = normalizeUser(stageDef?.whoDefaultAssignee);
     const userName = normalizeUser(currentUser.name);
     const isBrahmanandUser = currentUser.userId === 'USR-002' || userName.includes('brahma');
+    const isPriyankaUser = currentUser.userId === 'USR-014' || userName.includes('priyanka') || (currentUser.role || '').toLowerCase().includes('account');
+    const isDirector = (currentUser.role || '').toLowerCase() === 'director' || userName.includes('pranjal');
+    const whoRoleNorm = normalizeUser(stageDef?.whoRole || stageExec?.whoRole);
+
+    // 0. Proxy Action Rule for PO_TO_PAYMENT: Stages 4 & 7 are actionable by BOTH Accountant & Director
+    const stgId = stageDef?.stageId || stageExec?.stageId;
+    if (stgId === 'STG-PAY-04' || stgId === 'STG-PAY-07') {
+      if (isPriyankaUser || isDirector) return true;
+    }
 
     // 1. Strict active stage assignee matching
     if (execAssignee) {
       const list = execAssignee.split(/[\/,]/);
       if (list.some((a: string) => a && (a === userName || a.includes(userName) || userName.includes(a)))) return true;
       if (isBrahmanandUser && list.some((a: string) => a && a.includes('brahma'))) return true;
+      if (isPriyankaUser && list.some((a: string) => a && a.includes('priyanka'))) return true;
+      if (isDirector && list.some((a: string) => a && a.includes('pranjal'))) return true;
     }
 
     // 2. Check template default assignee
@@ -524,6 +544,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       const list = defAssignee.split(/[\/,]/);
       if (list.some((a: string) => a && (a === userName || a.includes(userName) || userName.includes(a)))) return true;
       if (isBrahmanandUser && list.some((a: string) => a && a.includes('brahma'))) return true;
+      if (isPriyankaUser && list.some((a: string) => a && a.includes('priyanka'))) return true;
+      if (isDirector && list.some((a: string) => a && a.includes('pranjal'))) return true;
     }
 
     // 3. Delegation / responsible stage check
@@ -531,8 +553,17 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
 
     // 4. Role matching for Brahmanand
     if (isBrahmanandUser) {
-      const whoRole = normalizeUser(stageDef?.whoRole || stageExec?.whoRole);
-      if (whoRole.includes('purchase') || whoRole.includes('store')) return true;
+      if (whoRoleNorm.includes('purchase') || whoRoleNorm.includes('store')) return true;
+    }
+
+    // 5. Role matching for Priyanka / Accounts in PO_TO_PAYMENT
+    if (isPriyankaUser && (whoRoleNorm.includes('account') || whoRoleNorm.includes('finance'))) {
+      return true;
+    }
+
+    // 6. Role matching for Director in PO_TO_PAYMENT
+    if (isDirector && whoRoleNorm.includes('director')) {
+      return true;
     }
 
     return false;
@@ -783,8 +814,20 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   try {
     const bankingTasks = storageAdapter.getMyWorkBankingTasks(currentUser);
 
+    // Deduplicate: If an FMS PO_TO_PAYMENT flow already tracks this payment, do not generate synthetic duplicate BANKING items
+    const hasPoToPaymentFmsFlow = (sheetNo?: string, id?: string) => {
+      if (!sheetNo && !id) return false;
+      return flows.some(
+        (f) =>
+          f.flowType === 'PO_TO_PAYMENT' &&
+          ((sheetNo && (f.paymentSheetNo === sheetNo || f.indentNo === sheetNo || f.poNumber === sheetNo)) ||
+           (id && (f.paymentId === id || f.id === `fms-pay-${id}`)))
+      );
+    };
+
     // Director Queue: Pending Bank Payment Approvals
     bankingTasks.directorPendingPayments.forEach((bp) => {
+      if (hasPoToPaymentFmsFlow(bp.sheetNo, bp.id)) return;
       const isCompleted = bp.approvalStatus !== 'PENDING';
       const dateObj = parseDate(bp.plannedDate) || parseDateTimeStr(bp.plannedDate) || new Date();
       dateObj.setHours(0, 0, 0, 0);
@@ -818,6 +861,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
 
     // Accounts Queue: Approved Payments Pending Portal Entry
     bankingTasks.accountsPendingEntry.forEach((bp) => {
+      if (hasPoToPaymentFmsFlow(bp.sheetNo, bp.id)) return;
       const isCompleted = bp.paymentEntry === 'DONE';
       const dateObj = parseDate(bp.plannedDate) || new Date();
       dateObj.setHours(0, 0, 0, 0);
@@ -851,6 +895,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
 
     // Accounts Queue: Approved Payments Pending UTR Settlement
     bankingTasks.accountsPendingSettlement.forEach((bp) => {
+      if (hasPoToPaymentFmsFlow(bp.sheetNo, bp.id)) return;
       const isCompleted = bp.paymentStatus === 'DONE';
       const dateObj = parseDate(bp.plannedDate) || new Date();
       dateObj.setHours(0, 0, 0, 0);
@@ -1161,6 +1206,153 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       );
       const hasApprovalField = stageExec?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval')) ||
         stageDef?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval'));
+
+      // Specialized Inline Action Handling for 7-Stage PO_TO_PAYMENT Workflow
+      const flow = item.rawItem.flow;
+      const stageIdx = item.rawItem.stageIndex;
+      const isPoPayment = flow.flowType === 'PO_TO_PAYMENT' || stageDef?.stageId?.startsWith('STG-PAY-');
+
+      if (isPoPayment) {
+        const stgId = stageDef?.stageId || stageExec?.stageId;
+        const normName = (currentUser.name || '').toLowerCase();
+        const normRole = (currentUser.role || '').toLowerCase();
+        const isAccountant = normName.includes('priyanka') || normRole.includes('account') || isAdminOrSuperAdmin;
+        const isDirector = normName.includes('pranjal') || normRole === 'director' || isAdminOrSuperAdmin;
+
+        // Stage 1: Fill Beneficiary Details
+        if (stgId === 'STG-PAY-01' && isAccountant) {
+          return (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => onOpenStageAction ? onOpenStageAction(flow, stageIdx) : onSelectFmsDetail(flow)}
+                className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded flex items-center gap-1.5 shadow-xs cursor-pointer`}
+              >
+                <FileText className="w-3.5 h-3.5 text-indigo-200" />
+                <span>Fill Beneficiary Form</span>
+              </button>
+            </div>
+          );
+        }
+
+        // Stage 2: Director Beneficiary Approval
+        if (stgId === 'STG-PAY-02' && isDirector) {
+          return (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => onAdvanceFmsStage(flow, 'Yes', { status: 'APPROVED', approvalRemarks: 'Director beneficiary approval confirmed' })}
+                className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded flex items-center gap-1.5 shadow-xs cursor-pointer`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Approve Beneficiary</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onAdvanceFmsStage(flow, 'No', { status: 'REJECTED', approvalRemarks: 'Rejected by Director' })}
+                className={`${isMobile ? 'px-2.5 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded flex items-center gap-1 shadow-2xs cursor-pointer`}
+              >
+                <X className="w-3 h-3" />
+                <span>Reject</span>
+              </button>
+            </div>
+          );
+        }
+
+        // Stage 3: Bank Entry Beneficiary
+        if (stgId === 'STG-PAY-03' && isAccountant) {
+          return (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => onAdvanceFmsStage(flow, undefined, { beneficiaryEntryStatus: 'DONE', portalRemarks: 'Recorded on internet banking portal' })}
+                className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-blue-600 hover:bg-blue-700 text-white font-bold rounded flex items-center gap-1.5 shadow-xs cursor-pointer`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Confirm Bank Entry</span>
+              </button>
+            </div>
+          );
+        }
+
+        // Stage 4: Netbanking Beneficiary Confirmation (Proxy Action: Accountant or Director)
+        if (stgId === 'STG-PAY-04' && (isAccountant || isDirector)) {
+          return (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => onAdvanceFmsStage(flow, undefined, { additionStatus: 'DONE', confirmationRemarks: 'Beneficiary activation confirmed in Netbanking' })}
+                className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded flex items-center gap-1.5 shadow-xs cursor-pointer`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Confirm Addition Status</span>
+              </button>
+            </div>
+          );
+        }
+
+        // Stage 5: Director Payment Approval
+        if (stgId === 'STG-PAY-05' && isDirector) {
+          return (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => onAdvanceFmsStage(flow, 'Yes', { status: 'APPROVED', approvedAmount: flow.poAmount, approvalRemarks: 'Payment sanctioned by Director' })}
+                className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded flex items-center gap-1.5 shadow-xs cursor-pointer`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Approve ₹{(flow.poAmount || 0).toLocaleString('en-IN')}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onAdvanceFmsStage(flow, 'No', { status: 'REJECTED', approvalRemarks: 'Payment rejected by Director' })}
+                className={`${isMobile ? 'px-2.5 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded flex items-center gap-1 shadow-2xs cursor-pointer`}
+              >
+                <X className="w-3 h-3" />
+                <span>Reject</span>
+              </button>
+            </div>
+          );
+        }
+
+        // Stage 6: Bank Payment Entry
+        if (stgId === 'STG-PAY-06' && isAccountant) {
+          return (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => onAdvanceFmsStage(flow, undefined, { paymentEntryStatus: 'DONE', bankAccountDebited: 'HDFC Main Ops A/c' })}
+                className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-blue-600 hover:bg-blue-700 text-white font-bold rounded flex items-center gap-1.5 shadow-xs cursor-pointer`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Mark Entry Done</span>
+              </button>
+            </div>
+          );
+        }
+
+        // Stage 7: Netbanking Payment Confirmation (Proxy Action: Accountant or Director)
+        if (stgId === 'STG-PAY-07' && (isAccountant || isDirector)) {
+          return (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setUtrModalTarget({
+                  flow,
+                  stageIndex: stageIdx,
+                  amount: flow.poAmount || 0,
+                  vendorName: flow.vendorName || 'Vendor',
+                  utrNumber: `UTR-${Date.now().toString().slice(-6)}`
+                })}
+                className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded flex items-center gap-1.5 shadow-xs cursor-pointer`}
+              >
+                <Landmark className="w-3.5 h-3.5" />
+                <span>Confirm Payment & Enter UTR</span>
+              </button>
+            </div>
+          );
+        }
+      }
 
       // For all FMS stages, Execute Stage via onOpenStageAction is the primary execution path
       if (onOpenStageAction) {
@@ -3508,6 +3700,76 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
             setActiveCockpitTask(null);
           }}
         />
+      )}
+
+      {/* Inline UTR Modal for Stage 7 Payment Confirmation */}
+      {utrModalTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-emerald-100 text-emerald-800 rounded-xl">
+                  <Landmark className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Confirm Payment & Enter UTR</h3>
+                  <p className="text-xs text-slate-500">{utrModalTarget.vendorName} • ₹{utrModalTarget.amount.toLocaleString('en-IN')}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUtrModalTarget(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const targetUtr = utrModalTarget.utrNumber.trim() || `UTR-${Date.now().toString().slice(-6)}`;
+                onAdvanceFmsStage(utrModalTarget.flow, undefined, {
+                  utrNumber: targetUtr,
+                  paymentStatus: 'DONE',
+                  settlementRemarks: 'Transaction confirmed via inline action'
+                });
+                setUtrModalTarget(null);
+              }}
+              className="mt-4 space-y-3"
+            >
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Bank UTR / Transaction Reference Number <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={utrModalTarget.utrNumber}
+                  onChange={(e) => setUtrModalTarget({ ...utrModalTarget, utrNumber: e.target.value })}
+                  placeholder="e.g. UTR-981723182"
+                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl font-mono font-bold focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setUtrModalTarget(null)}
+                  className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm cursor-pointer"
+                >
+                  Submit & Complete Settlement
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* Bottom spacing to ensure all content and buttons remain accessible above any floating elements */}

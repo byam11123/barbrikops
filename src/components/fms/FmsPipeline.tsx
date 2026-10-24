@@ -322,9 +322,11 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
 
   const customTemplateForActiveFlow = activeFlow?.customTemplateId
     ? storageAdapter.getAllMasterTemplates().find((t) => t.id === activeFlow.customTemplateId || t.templateKey === activeFlow.flowType)
-    : storageAdapter.getAllMasterTemplates().find((t) => t.templateKey === activeFlow?.flowType);
+    : storageAdapter.getAllMasterTemplates().find((t) => t.templateKey === activeFlow?.flowType || (activeFlow?.templateKey && t.templateKey === activeFlow.templateKey));
 
-  const activeStageDefs: FmsStageDefinition[] = customTemplateForActiveFlow
+  const activeStageDefs: FmsStageDefinition[] = (activeFlow?.flowType === 'INDENT_PURCHASE' || activeFlow?.flowType === 'INDENT_TO_PO' || activeFlow?.templateKey === 'INDENT_TO_PO')
+    ? FMS_STANDARD_PURCHASE_STAGES
+    : customTemplateForActiveFlow
     ? customTemplateForActiveFlow.stages.map((stg, sIdx) => ({
         stageId: stg.stageId,
         stageNumber: sIdx + 1,
@@ -339,14 +341,14 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
         hasYesNoDecision: stg.logic?.gatewayType === 'CONDITIONAL_JUMP',
         fields: stg.fields,
       }))
-    : activeFlow?.stages && activeFlow.stages.length > 0 && !['CHECK_STOCK', 'PO_TO_PAYMENT', 'PURCHASE_TO_STORE_DISPATCH', 'STORE_TO_SITE_DISPATCH', 'PAYMENT_TO_DISPATCH', 'SITE_RECEIVE', 'ACCOUNTS_INVOICE_COLLECTION', 'HR_ATTENDANCE_PAYMENT', 'BREAKDOWN_REPORTING', 'EQUIPMENT_PART_REPAIR', 'DPR_REPORTING', 'INDENT_PURCHASE'].includes(activeFlow.flowType)
+    : activeFlow?.stages && activeFlow.stages.length > 0 && !['CHECK_STOCK', 'PO_TO_PAYMENT', 'PURCHASE_TO_STORE_DISPATCH', 'STORE_TO_SITE_DISPATCH', 'PAYMENT_TO_DISPATCH', 'SITE_RECEIVE', 'ACCOUNTS_INVOICE_COLLECTION', 'HR_ATTENDANCE_PAYMENT', 'BREAKDOWN_REPORTING', 'EQUIPMENT_PART_REPAIR', 'DPR_REPORTING', 'INDENT_PURCHASE', 'INDENT_TO_PO'].includes(activeFlow.flowType)
     ? activeFlow.stages.map((stg, sIdx) => ({
         stageId: stg.stageId,
         stageNumber: sIdx + 1,
         name: stg.stageName,
         what: stg.stageName,
-        whoRole: 'ASSIGNED_ROLE',
-        whoDefaultAssignee: stg.assignee || 'Assignee',
+        whoRole: stg.whoRole || 'ASSIGNED_ROLE',
+        whoDefaultAssignee: stg.whoDefaultAssignee || stg.assignee || 'Assignee',
         howChannel: stg.how || 'IN-APP FORM',
         formUrl: stg.how?.startsWith('http') ? stg.how : undefined,
         slaHours: 4,
@@ -820,12 +822,17 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
       }
     }
 
+    const nextAssignee = isComplete 
+      ? flow.poAssignTo 
+      : (updatedStages[nextIndex]?.assignee || updatedStages[nextIndex]?.whoDefaultAssignee || flow.poAssignTo);
+
     const updatedFlow: FmsInstance = {
       ...flow,
       currentStageIndex: isComplete ? updatedStages.length : nextIndex,
       currentStageId: nextStageId,
       status: isComplete ? 'Completed' : 'In Progress',
       updatedAt: now,
+      poAssignTo: nextAssignee,
       stages: updatedStages,
     };
 
@@ -1426,25 +1433,12 @@ export const FmsPipeline: React.FC<FmsPipelineProps> = ({
               how: stg.howChannel || 'IN-APP FORM',
               slaHours: stg.slaHours || 2,
             }))
-          : (filteredFlows[0]?.stages?.map((stg, sIdx) => ({
-              name: `${sIdx + 1}. ${stg.stageName}`,
-              assignee: stg.assignee || 'Assigned Officer',
-              how: stg.how || 'IN-APP FORM',
-              slaHours: 2,
-            })) || [
-              { name: '1. INDENT RECIEVE', assignee: 'Amanat Bharadwaj (Store Manager)', how: 'WHATSAPP / CALL / PHYSICAL', slaHours: 1 },
-              { name: '2. DEGRADED MATERIAL CHECK', assignee: 'Bramhanand Patel (Asst. Mgr Purchase)', how: 'PHYSICAL CHECK', slaHours: 1 },
-              { name: '3. RETURN OF DEGRADED MATERIAL FORM', assignee: 'Shyam Rao Sureshe (Purchase Exec)', how: 'IN-APP FORM', slaHours: 1 },
-              { name: '4. PURCHASE APPROVAL', assignee: 'Pranay Ghosh (Project Manager)', how: 'MANUAL SHEET / IN-APP', slaHours: 3 },
-              { name: '5. GET QUOTATION', assignee: 'Bramhanand Patel', how: 'CALL / EMAIL', slaHours: 25 },
-              { name: '6. GET APPROVAL FOR QUOTATION', assignee: 'Pranay Ghosh', how: 'IN-APP APPROVAL', slaHours: 12 },
-              { name: '7. COMPARATIVE STATEMENT', assignee: 'Bramhanand Patel', how: 'EXCEL COMPARATIVE', slaHours: 1 },
-              { name: '8. PO CREATION', assignee: 'Shyam Rao Sureshe', how: 'ERP / SYSTEM', slaHours: 2 },
-              { name: '9. PO APPROVAL', assignee: 'Pranay Ghosh / MD', how: 'IN-APP APPROVAL', slaHours: 2 },
-              { name: '10. ADVANCE PAYMENT DECISION', assignee: 'Bramhanand Patel', how: 'IN-APP CHECKPOINT', slaHours: 1 },
-              { name: '11. SEND FOR PAYMENT', assignee: 'Shyam Rao Sureshe', how: 'PAYMENT DOSSIER', slaHours: 2 },
-              { name: '12. MATERIAL COLLECTION PO', assignee: 'Shyam Rao Sureshe', how: 'IN-APP FORM / DISPATCH', slaHours: 1 },
-            ]);
+          : FMS_STANDARD_PURCHASE_STAGES.map((stg, sIdx) => ({
+              name: `${sIdx + 1}. ${stg.name}`,
+              assignee: stg.whoDefaultAssignee || stg.whoRole || 'Assigned Officer',
+              how: stg.howChannel || 'IN-APP FORM',
+              slaHours: stg.slaHours || 2,
+            }));
 
         const activeWorkflowTitle = pipelineTypeFilter === 'INDENT_PURCHASE'
           ? 'INDENT TO PO (PURCHASE DEPARTMENT FMS)'
