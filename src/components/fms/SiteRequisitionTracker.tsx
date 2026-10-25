@@ -14,7 +14,10 @@ import {
   Calendar,
   Layers,
   AlertCircle,
-  Tag
+  Tag,
+  ChevronUp,
+  ChevronDown,
+  ArrowUpDown
 } from 'lucide-react';
 import { FmsInstance, UserProfile, isFlowAccessibleToUser, FmsLineItem } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
@@ -32,6 +35,8 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
   const [selectedSite, setSelectedSite] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [selectedFlowModal, setSelectedFlowModal] = useState<FmsInstance | null>(null);
+  const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
   const masterSites = storageAdapter.getMasterSites();
 
@@ -115,6 +120,89 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
       return true;
     });
   }, [siteAndSearchFilteredFlows, selectedStatus]);
+
+  const handleSort = (key: string) => {
+    setSortConfig((prev) => {
+      if (!prev || prev.key !== key) {
+        return { key, direction: 'asc' };
+      }
+      if (prev.direction === 'asc') {
+        return { key, direction: 'desc' };
+      }
+      return null;
+    });
+  };
+
+  const sortedFlows = useMemo(() => {
+    if (!sortConfig) return filteredFlows;
+    const { key, direction } = sortConfig;
+    const sorted = [...filteredFlows].sort((a, b) => {
+      let aVal: any = '';
+      let bVal: any = '';
+
+      switch (key) {
+        case 'requisitionNumber':
+          aVal = (a.requisitionNumber || a.indentNo || '').toLowerCase();
+          bVal = (b.requisitionNumber || b.indentNo || '').toLowerCase();
+          break;
+        case 'siteName':
+          aVal = (a.siteName || '').toLowerCase();
+          bVal = (b.siteName || '').toLowerCase();
+          break;
+        case 'requestedBy':
+          aVal = (a.createdBy || a.stages?.[0]?.submittedData?.requestedBy || '').toLowerCase();
+          bVal = (b.createdBy || b.stages?.[0]?.submittedData?.requestedBy || '').toLowerCase();
+          break;
+        case 'itemsCount':
+          aVal = a.lineItems?.length || 1;
+          bVal = b.lineItems?.length || 1;
+          break;
+        case 'currentStage': {
+          const aStage = a.stages?.[a.currentStageIndex || 0]?.stageName || a.status || '';
+          const bStage = b.stages?.[b.currentStageIndex || 0]?.stageName || b.status || '';
+          aVal = aStage.toLowerCase();
+          bVal = bStage.toLowerCase();
+          break;
+        }
+        case 'assignee': {
+          const aAssignee = a.stages?.[a.currentStageIndex || 0]?.assignee || 'Unassigned';
+          const bAssignee = b.stages?.[b.currentStageIndex || 0]?.assignee || 'Unassigned';
+          aVal = aAssignee.toLowerCase();
+          bVal = bAssignee.toLowerCase();
+          break;
+        }
+        case 'plannedDate':
+          aVal = a.stages?.[a.currentStageIndex || 0]?.plannedDateTime || a.createdAt || '';
+          bVal = b.stages?.[b.currentStageIndex || 0]?.plannedDateTime || b.createdAt || '';
+          break;
+        case 'status':
+          aVal = (a.status || '').toLowerCase();
+          bVal = (b.status || '').toLowerCase();
+          break;
+        default:
+          return 0;
+      }
+
+      if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  }, [filteredFlows, sortConfig]);
+
+  const toggleSelectAll = () => {
+    if (selectedRowIds.length === sortedFlows.length && sortedFlows.length > 0) {
+      setSelectedRowIds([]);
+    } else {
+      setSelectedRowIds(sortedFlows.map((f) => f.id));
+    }
+  };
+
+  const handleToggleRow = (id: string) => {
+    setSelectedRowIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
 
   // Find linked child workflows for a selected parent flow
   const getChildWorkflows = (parentFlow: FmsInstance) => {
@@ -291,19 +379,124 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
             <table className="w-full text-left text-xs border-collapse">
               <thead className="bg-slate-50 border-b border-slate-300 text-slate-700 font-bold uppercase tracking-wider text-[11px] sticky top-0 z-20 shadow-xs">
                 <tr>
-                  <th className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300">Requisition No</th>
-                  <th className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300">Site / Location</th>
-                  <th className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300">Requested By</th>
-                  <th className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300">Items Count</th>
-                  <th className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300">Current Stage</th>
-                  <th className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300">Assignee</th>
-                  <th className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300">Planned Date / SLA</th>
-                  <th className="px-4 py-3.5 text-center sticky top-0 bg-slate-50 border-b border-slate-300">Status</th>
+                  <th className="w-10 min-w-[40px] px-3 py-3.5 sticky left-0 top-0 z-30 bg-slate-50 border-r border-slate-200 border-b border-slate-300 text-center">
+                    <input
+                      type="checkbox"
+                      checked={sortedFlows.length > 0 && selectedRowIds.length === sortedFlows.length}
+                      onChange={toggleSelectAll}
+                      className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                      title="Select / Deselect All"
+                    />
+                  </th>
+                  <th
+                    onClick={() => handleSort('requisitionNumber')}
+                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Requisition No</span>
+                      {sortConfig?.key === 'requisitionNumber' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSort('siteName')}
+                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Site / Location</span>
+                      {sortConfig?.key === 'siteName' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSort('requestedBy')}
+                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Requested By</span>
+                      {sortConfig?.key === 'requestedBy' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSort('itemsCount')}
+                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Items Count</span>
+                      {sortConfig?.key === 'itemsCount' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSort('currentStage')}
+                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Current Stage</span>
+                      {sortConfig?.key === 'currentStage' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSort('assignee')}
+                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Assignee</span>
+                      {sortConfig?.key === 'assignee' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSort('plannedDate')}
+                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Planned Date / SLA</span>
+                      {sortConfig?.key === 'plannedDate' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSort('status')}
+                    className="px-4 py-3.5 text-center sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                  >
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span>Status</span>
+                      {sortConfig?.key === 'status' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
                   <th className="px-4 py-3.5 text-right sticky top-0 bg-slate-50 border-b border-slate-300">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
-                {filteredFlows.map((flow) => {
+                {sortedFlows.map((flow) => {
                   const currentStageObj = flow.stages?.[flow.currentStageIndex || 0];
                   const currentStageName = currentStageObj?.stageName || flow.status;
                   const currentAssignee = currentStageObj?.assignee || 'Unassigned';
@@ -313,13 +506,28 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
                     flow.stages?.[0]?.submittedData?.requestedBy ||
                     'Amanat Bharadwaj';
                   const itemsCount = flow.lineItems?.length || 1;
+                  const isChecked = selectedRowIds.includes(flow.id);
 
                   return (
                     <tr
                       key={flow.id}
                       onClick={() => setSelectedFlowModal(flow)}
-                      className="hover:bg-indigo-50/50 transition-colors cursor-pointer group"
+                      className={`hover:bg-indigo-50/50 transition-colors cursor-pointer group ${isChecked ? 'bg-indigo-50/40' : ''}`}
                     >
+                      <td
+                        className={`w-10 min-w-[40px] px-3 py-3.5 sticky left-0 z-10 border-r border-slate-200/60 text-center ${
+                          isChecked ? 'bg-indigo-50' : 'bg-white group-hover:bg-indigo-50/50'
+                        }`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleRow(flow.id)}
+                          className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        />
+                      </td>
+
                       <td className="px-4 py-3.5 font-bold text-indigo-600 flex items-center gap-2">
                         <FileText className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                         <span>{flow.requisitionNumber || flow.indentNo}</span>
@@ -399,6 +607,69 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
           </div>
         )}
       </div>
+
+      {/* Bulk Action Bar */}
+      {selectedRowIds.length > 0 && (
+        <div className="sticky bottom-4 z-40 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl flex items-center justify-between gap-4 border border-slate-700 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-full bg-indigo-500 text-white text-xs font-bold">
+              {selectedRowIds.length}
+            </span>
+            <span className="text-xs font-semibold text-slate-200">
+              {selectedRowIds.length === 1 ? 'item selected' : 'items selected'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const selectedRows = sortedFlows.filter((f) => selectedRowIds.includes(f.id));
+                const headers = ['Requisition No', 'Site', 'Requested By', 'Items Count', 'Current Stage', 'Assignee', 'Planned Date', 'Status'];
+                const csvData = [
+                  headers,
+                  ...selectedRows.map((f) => [
+                    f.requisitionNumber || f.indentNo || '',
+                    f.siteName || '',
+                    f.createdBy || f.stages?.[0]?.submittedData?.requestedBy || '',
+                    (f.lineItems?.length || 1).toString(),
+                    f.stages?.[f.currentStageIndex || 0]?.stageName || f.status || '',
+                    f.stages?.[f.currentStageIndex || 0]?.assignee || 'Unassigned',
+                    f.stages?.[f.currentStageIndex || 0]?.plannedDateTime || f.createdAt || '',
+                    f.status || ''
+                  ])
+                ];
+                const csvContent = 'data:text/csv;charset=utf-8,' + csvData.map(e => e.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement('a');
+                link.setAttribute('href', encodedUri);
+                link.setAttribute('download', `Site_Requisitions_Bulk_Export_${new Date().toISOString().slice(0, 10)}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer border border-slate-700"
+            >
+              Bulk Export
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                // Bulk Assign action placeholder
+              }}
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer shadow-xs"
+            >
+              Bulk Assign
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedRowIds([])}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+            >
+              Clear Selection
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Read-Only Status Timeline Modal */}
       {selectedFlowModal && (

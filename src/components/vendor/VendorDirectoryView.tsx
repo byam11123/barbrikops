@@ -12,7 +12,10 @@ import {
   ChevronRight, 
   ShieldCheck, 
   CreditCard,
-  AlertCircle
+  AlertCircle,
+  ChevronUp,
+  ChevronDown,
+  ArrowUpDown
 } from 'lucide-react';
 import { VendorProfileRecord, UserProfile, isUserAuthorizedForVendorBanking } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
@@ -32,6 +35,8 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
   const [bankingFilter, setBankingFilter] = useState<'ALL' | 'VERIFIED' | 'MISSING' | 'PENDING'>('ALL');
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [isNewVendorModalOpen, setIsNewVendorModalOpen] = useState(false);
+  const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
   // Categories list
   const categories = useMemo(() => {
@@ -113,6 +118,70 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
       return true;
     });
   }, [vendors, categoryFilter, bankingFilter, searchQuery]);
+
+  const handleSort = (key: string) => {
+    setSortConfig((prev) => {
+      if (!prev || prev.key !== key) return { key, direction: 'asc' };
+      if (prev.direction === 'asc') return { key, direction: 'desc' };
+      return null;
+    });
+  };
+
+  const sortedVendors = useMemo(() => {
+    if (!sortConfig) return filteredVendors;
+    const { key, direction } = sortConfig;
+    return [...filteredVendors].sort((a, b) => {
+      let aVal: any = '';
+      let bVal: any = '';
+      switch (key) {
+        case 'vendorCode':
+          aVal = (a.tradeName || a.vendorCode || '').toLowerCase();
+          bVal = (b.tradeName || b.vendorCode || '').toLowerCase();
+          break;
+        case 'category':
+          aVal = (a.category || '').toLowerCase();
+          bVal = (b.category || '').toLowerCase();
+          break;
+        case 'gstin':
+          aVal = (a.gstin || a.pan || '').toLowerCase();
+          bVal = (b.gstin || b.pan || '').toLowerCase();
+          break;
+        case 'bank': {
+          const aBank = a.bankAccounts.find((acc) => acc.isPrimary) || a.bankAccounts[0];
+          const bBank = b.bankAccounts.find((acc) => acc.isPrimary) || b.bankAccounts[0];
+          aVal = (aBank?.bankName || '').toLowerCase();
+          bVal = (bBank?.bankName || '').toLowerCase();
+          break;
+        }
+        case 'bankingStatus': {
+          const aBank = a.bankAccounts.find((acc) => acc.isPrimary) || a.bankAccounts[0];
+          const bBank = b.bankAccounts.find((acc) => acc.isPrimary) || b.bankAccounts[0];
+          aVal = aBank?.verificationStatus || (a.bankAccounts.length === 0 ? 'MISSING' : 'PENDING');
+          bVal = bBank?.verificationStatus || (b.bankAccounts.length === 0 ? 'MISSING' : 'PENDING');
+          break;
+        }
+        default:
+          return 0;
+      }
+      if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredVendors, sortConfig]);
+
+  const toggleSelectAll = () => {
+    if (selectedRowIds.length === sortedVendors.length && sortedVendors.length > 0) {
+      setSelectedRowIds([]);
+    } else {
+      setSelectedRowIds(sortedVendors.map((v) => v.id));
+    }
+  };
+
+  const handleToggleRow = (id: string) => {
+    setSelectedRowIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
 
   const handleExportCsv = () => {
     const headers = [
@@ -434,18 +503,87 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                <th className="p-3.5">Vendor Code & Trade Name</th>
-                <th className="p-3.5">Category & Region</th>
-                <th className="p-3.5">Tax IDs (GSTIN / PAN)</th>
-                <th className="p-3.5">Primary Bank Details</th>
-                <th className="p-3.5 text-center">Banking Status</th>
+                <th className="w-10 min-w-[40px] p-3.5 sticky left-0 top-0 z-20 bg-slate-50 border-r border-slate-200 text-center">
+                  <input
+                    type="checkbox"
+                    checked={sortedVendors.length > 0 && selectedRowIds.length === sortedVendors.length}
+                    onChange={toggleSelectAll}
+                    className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    title="Select / Deselect All"
+                  />
+                </th>
+                <th
+                  onClick={() => handleSort('vendorCode')}
+                  className="p-3.5 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Vendor Code &amp; Trade Name</span>
+                    {sortConfig?.key === 'vendorCode' ? (
+                      sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                    )}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('category')}
+                  className="p-3.5 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Category &amp; Region</span>
+                    {sortConfig?.key === 'category' ? (
+                      sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                    )}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('gstin')}
+                  className="p-3.5 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Tax IDs (GSTIN / PAN)</span>
+                    {sortConfig?.key === 'gstin' ? (
+                      sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                    )}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('bank')}
+                  className="p-3.5 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Primary Bank Details</span>
+                    {sortConfig?.key === 'bank' ? (
+                      sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                    )}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('bankingStatus')}
+                  className="p-3.5 text-center cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>Banking Status</span>
+                    {sortConfig?.key === 'bankingStatus' ? (
+                      sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                    )}
+                  </div>
+                </th>
                 <th className="p-3.5 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredVendors.length === 0 ? (
+              {sortedVendors.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-500">
+                  <td colSpan={7} className="py-12 text-center text-slate-500">
                     <Building2 className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                     <div className="font-semibold text-slate-700">No matching vendors found</div>
                     <div className="text-[11px] text-slate-400 mt-1">
@@ -454,17 +592,31 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
                   </td>
                 </tr>
               ) : (
-                filteredVendors.map((vendor) => {
+                sortedVendors.map((vendor) => {
                   const primaryBank = vendor.bankAccounts.find((a) => a.isPrimary) || vendor.bankAccounts[0];
                   const hasBank = Boolean(primaryBank);
                   const isVerified = Boolean(primaryBank && primaryBank.verificationStatus === 'VERIFIED');
+                  const isChecked = selectedRowIds.includes(vendor.id);
 
                   return (
                     <tr
                       key={vendor.id}
                       onClick={() => setSelectedVendorId(vendor.id)}
-                      className="hover:bg-indigo-50/40 transition-colors cursor-pointer group"
+                      className={`hover:bg-indigo-50/40 transition-colors cursor-pointer group ${isChecked ? 'bg-indigo-50/40' : ''}`}
                     >
+                      <td
+                        className={`w-10 min-w-[40px] p-3.5 sticky left-0 z-10 border-r border-slate-200/60 text-center ${
+                          isChecked ? 'bg-indigo-50' : 'bg-white group-hover:bg-indigo-50/40'
+                        }`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleRow(vendor.id)}
+                          className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        />
+                      </td>
                       {/* Vendor Code & Trade Name */}
                       <td className="p-3.5">
                         <div className="flex items-center gap-2">
@@ -584,12 +736,77 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
         {/* Footer */}
         <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
           <span>
-            Showing <span className="font-bold text-slate-900">{filteredVendors.length}</span> of{' '}
+            Showing <span className="font-bold text-slate-900">{sortedVendors.length}</span> of{' '}
             <span className="font-bold text-slate-900">{vendors.length}</span> vendors
           </span>
           <span className="text-[11px]">Barbrik Project Ltd. Vendor Master Directory</span>
         </div>
       </div>
+
+      {/* Bulk Action Bar */}
+      {selectedRowIds.length > 0 && (
+        <div className="sticky bottom-4 z-40 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl flex items-center justify-between gap-4 border border-slate-700 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-full bg-indigo-500 text-white text-xs font-bold">
+              {selectedRowIds.length}
+            </span>
+            <span className="text-xs font-semibold text-slate-200">
+              {selectedRowIds.length === 1 ? 'item selected' : 'items selected'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const selected = sortedVendors.filter(v => selectedRowIds.includes(v.id));
+                const headers = ['Vendor Code', 'Trade Name', 'Legal Name', 'Category', 'GSTIN', 'PAN', 'City', 'State', 'Bank Status'];
+                const rows = selected.map(v => {
+                  const primary = v.bankAccounts.find(a => a.isPrimary) || v.bankAccounts[0];
+                  return [
+                    v.vendorCode,
+                    v.tradeName,
+                    v.legalName || '',
+                    v.category,
+                    v.gstin || '',
+                    v.pan || '',
+                    v.city || '',
+                    v.state || '',
+                    primary ? primary.verificationStatus : 'MISSING'
+                  ];
+                });
+                const csvData = [headers, ...rows];
+                const csvContent = 'data:text/csv;charset=utf-8,' + csvData.map(e => e.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement('a');
+                link.setAttribute('href', encodedUri);
+                link.setAttribute('download', `Vendor_Directory_Bulk_Export_${new Date().toISOString().slice(0, 10)}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer border border-slate-700"
+            >
+              Bulk Export
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                // Bulk Assign placeholder
+              }}
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer shadow-xs"
+            >
+              Bulk Assign
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedRowIds([])}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+            >
+              Clear Selection
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Individual Vendor Profile Drawer */}
       <VendorProfileDrawer

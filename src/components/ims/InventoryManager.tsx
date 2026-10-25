@@ -10,7 +10,9 @@ import {
   ExternalLink,
   MapPin,
   Clock,
-  ArrowRightLeft
+  ArrowRightLeft,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import { InventoryItem, InventoryMovement, UserProfile } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
@@ -39,6 +41,8 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   const [conditionFilter, setConditionFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
   const filteredItems = items.filter((item) => {
     if (locationFilter !== 'ALL' && item.location !== locationFilter) return false;
@@ -52,6 +56,76 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     }
     return true;
   });
+
+  const handleSort = (key: string) => {
+    setSortConfig((prev) => {
+      if (!prev || prev.key !== key) return { key, direction: 'asc' };
+      if (prev.direction === 'asc') return { key, direction: 'desc' };
+      return null;
+    });
+  };
+
+  const sortedItems = React.useMemo(() => {
+    if (!sortConfig) return filteredItems;
+    const { key, direction } = sortConfig;
+    return [...filteredItems].sort((a, b) => {
+      let aVal: any = '';
+      let bVal: any = '';
+      switch (key) {
+        case 'itemId':
+          aVal = (a.itemId || '').toLowerCase();
+          bVal = (b.itemId || '').toLowerCase();
+          break;
+        case 'name':
+          aVal = (a.name || '').toLowerCase();
+          bVal = (b.name || '').toLowerCase();
+          break;
+        case 'category':
+          aVal = (a.category || '').toLowerCase();
+          bVal = (b.category || '').toLowerCase();
+          break;
+        case 'location':
+          aVal = (a.location || '').toLowerCase();
+          bVal = (b.location || '').toLowerCase();
+          break;
+        case 'currentStock':
+          aVal = a.currentStock || 0;
+          bVal = b.currentStock || 0;
+          break;
+        case 'minThreshold':
+          aVal = a.minThreshold || 0;
+          bVal = b.minThreshold || 0;
+          break;
+        case 'condition':
+          aVal = (a.condition || '').toLowerCase();
+          bVal = (b.condition || '').toLowerCase();
+          break;
+        case 'lastChecked':
+          aVal = (a.lastCheckedDate || '').toLowerCase();
+          bVal = (b.lastCheckedDate || '').toLowerCase();
+          break;
+        default:
+          return 0;
+      }
+      if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredItems, sortConfig]);
+
+  const toggleSelectAll = () => {
+    if (selectedRowIds.length === sortedItems.length && sortedItems.length > 0) {
+      setSelectedRowIds([]);
+    } else {
+      setSelectedRowIds(sortedItems.map((i) => i.id));
+    }
+  };
+
+  const handleToggleRow = (id: string) => {
+    setSelectedRowIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
 
   const lowStockCount = items.filter((i) => i.currentStock <= i.minThreshold).length;
   const degradedCount = items.filter((i) => i.condition === 'Degraded/Damaged').length;
@@ -234,30 +308,150 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
 
       {/* Stock Master Table or Movement Logs */}
       {activeTab === 'STOCK' ? (
+        <>
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead className="bg-white text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
                 <tr>
-                  <th className="py-3 px-3">Item ID</th>
-                  <th className="py-3 px-4">Item Name</th>
-                  <th className="py-3 px-3">Category</th>
-                  <th className="py-3 px-3">Location</th>
-                  <th className="py-3 px-3 text-right">Current Stock</th>
-                  <th className="py-3 px-3 text-right">Min Threshold</th>
-                  <th className="py-3 px-3">Condition</th>
-                  <th className="py-3 px-3">Last Checked</th>
+                  <th className="w-10 min-w-[40px] py-3 px-3 text-center sticky left-0 z-20 bg-white border-r border-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={sortedItems.length > 0 && selectedRowIds.length === sortedItems.length}
+                      onChange={toggleSelectAll}
+                      className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                      title="Select / Deselect All"
+                    />
+                  </th>
+                  <th
+                    onClick={() => handleSort('itemId')}
+                    className="py-3 px-3 cursor-pointer hover:bg-slate-50 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Item ID</span>
+                      {sortConfig?.key === 'itemId' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSort('name')}
+                    className="py-3 px-4 cursor-pointer hover:bg-slate-50 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Item Name</span>
+                      {sortConfig?.key === 'name' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSort('category')}
+                    className="py-3 px-3 cursor-pointer hover:bg-slate-50 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Category</span>
+                      {sortConfig?.key === 'category' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSort('location')}
+                    className="py-3 px-3 cursor-pointer hover:bg-slate-50 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Location</span>
+                      {sortConfig?.key === 'location' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSort('currentStock')}
+                    className="py-3 px-3 text-right cursor-pointer hover:bg-slate-50 transition-colors select-none"
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>Current Stock</span>
+                      {sortConfig?.key === 'currentStock' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSort('minThreshold')}
+                    className="py-3 px-3 text-right cursor-pointer hover:bg-slate-50 transition-colors select-none"
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>Min Threshold</span>
+                      {sortConfig?.key === 'minThreshold' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSort('condition')}
+                    className="py-3 px-3 cursor-pointer hover:bg-slate-50 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Condition</span>
+                      {sortConfig?.key === 'condition' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleSort('lastChecked')}
+                    className="py-3 px-3 cursor-pointer hover:bg-slate-50 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Last Checked</span>
+                      {sortConfig?.key === 'lastChecked' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
                   <th className="py-3 px-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredItems.length > 0 ? (
-                  filteredItems.map((item) => {
+                {sortedItems.length > 0 ? (
+                  sortedItems.map((item) => {
                     const isLow = item.currentStock <= item.minThreshold;
                     const isDegraded = item.condition === 'Degraded/Damaged';
+                    const isChecked = selectedRowIds.includes(item.id);
 
                     return (
-                      <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                      <tr key={item.id} className={`hover:bg-slate-50 transition-colors group ${isChecked ? 'bg-indigo-50/40' : ''}`}>
+                        <td
+                          className={`w-10 min-w-[40px] py-3 px-3 text-center sticky left-0 z-10 border-r border-slate-200/60 ${
+                            isChecked ? 'bg-indigo-50' : 'bg-white group-hover:bg-slate-50'
+                          }`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggleRow(item.id)}
+                            className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          />
+                        </td>
                         <td className="py-3 px-3 font-mono font-bold text-slate-800">
                           {item.itemId}
                         </td>
@@ -324,7 +518,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                   })
                 ) : (
                   <tr>
-                    <td colSpan={9} className="py-8 text-center text-slate-500">
+                    <td colSpan={10} className="py-8 text-center text-slate-500">
                       No inventory items found matching filters.
                     </td>
                   </tr>
@@ -336,13 +530,77 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
           {/* Table Footer */}
           <div className="px-4 py-3 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
             <div>
-              Showing <span className="font-semibold text-slate-800">{filteredItems.length}</span> items ({lowStockCount} low stock alerts)
+              Showing <span className="font-semibold text-slate-800">{sortedItems.length}</span> items ({lowStockCount} low stock alerts)
             </div>
             <div className="text-[11px] font-medium text-slate-400">
               IMS Inventory Management System • Location: {locationFilter}
             </div>
           </div>
         </div>
+
+        {/* Bulk Action Bar */}
+        {selectedRowIds.length > 0 && (
+          <div className="sticky bottom-4 z-40 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl flex items-center justify-between gap-4 border border-slate-700 animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-indigo-500 text-white text-xs font-bold">
+                {selectedRowIds.length}
+              </span>
+              <span className="text-xs font-semibold text-slate-200">
+                {selectedRowIds.length === 1 ? 'item selected' : 'items selected'}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const selected = sortedItems.filter((i) => selectedRowIds.includes(i.id));
+                  const headers = ['Item ID', 'Item Name', 'Category', 'Location', 'Current Stock', 'Min Threshold', 'Condition', 'Last Checked'];
+                  const csvData = [
+                    headers,
+                    ...selected.map((i) => [
+                      i.itemId,
+                      i.name,
+                      i.category,
+                      i.location,
+                      `${i.currentStock} ${i.unit}`,
+                      `${i.minThreshold} ${i.unit}`,
+                      i.condition,
+                      i.lastCheckedDate
+                    ])
+                  ];
+                  const csvContent = 'data:text/csv;charset=utf-8,' + csvData.map(e => e.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+                  const encodedUri = encodeURI(csvContent);
+                  const link = document.createElement('a');
+                  link.setAttribute('href', encodedUri);
+                  link.setAttribute('download', `Inventory_Bulk_Export_${new Date().toISOString().slice(0, 10)}.csv`);
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer border border-slate-700"
+              >
+                Bulk Export
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  // Bulk Assign placeholder
+                }}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer shadow-xs"
+              >
+                Bulk Assign
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedRowIds([])}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+              >
+                Clear Selection
+              </button>
+            </div>
+          </div>
+        )}
+        </>
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="overflow-x-auto">

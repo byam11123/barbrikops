@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { 
   Building2, Plus, Search, CheckCircle2, Clock, 
-  Eye, EyeOff, FileText, Download, Check, X, XCircle, ShieldCheck, User
+  Eye, EyeOff, FileText, Download, Check, X, XCircle, ShieldCheck, User,
+  ChevronUp, ChevronDown, ArrowUpDown
 } from 'lucide-react';
 import { BeneficiaryRecord, UserProfile, PaymentApprovalStatus, PaymentStepStatus } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
@@ -79,6 +80,8 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
   const [localSearch, setLocalSearch] = useState('');
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [unmaskedAccounts, setUnmaskedAccounts] = useState<Record<string, boolean>>({});
+  const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
   // View Record Modal State (Read-only view when all 3 statuses are resolved)
   const [viewingRecord, setViewingRecord] = useState<BeneficiaryRecord | null>(null);
@@ -181,6 +184,84 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
 
     return true;
   });
+
+  const handleSort = (key: string) => {
+    setSortConfig((prev) => {
+      if (!prev || prev.key !== key) return { key, direction: 'asc' };
+      if (prev.direction === 'asc') return { key, direction: 'desc' };
+      return null;
+    });
+  };
+
+  const sortedBeneficiaries = React.useMemo(() => {
+    if (!sortConfig) return filteredBeneficiaries;
+    const { key, direction } = sortConfig;
+    return [...filteredBeneficiaries].sort((a, b) => {
+      let aVal: any = '';
+      let bVal: any = '';
+      switch (key) {
+        case 'sheetNo':
+          aVal = (a.sheetNo || '').toLowerCase();
+          bVal = (b.sheetNo || '').toLowerCase();
+          break;
+        case 'beneficiaryName':
+          aVal = (a.beneficiaryName || '').toLowerCase();
+          bVal = (b.beneficiaryName || '').toLowerCase();
+          break;
+        case 'tradeVendorName':
+          aVal = (a.tradeVendorName || '').toLowerCase();
+          bVal = (b.tradeVendorName || '').toLowerCase();
+          break;
+        case 'bankDetails':
+          aVal = (a.bankName || '').toLowerCase();
+          bVal = (b.bankName || '').toLowerCase();
+          break;
+        case 'ifscCode':
+          aVal = (a.ifscCode || '').toLowerCase();
+          bVal = (b.ifscCode || '').toLowerCase();
+          break;
+        case 'category':
+          aVal = (a.purpose || '').toLowerCase();
+          bVal = (b.purpose || '').toLowerCase();
+          break;
+        case 'remark':
+          aVal = (a.remark || '').toLowerCase();
+          bVal = (b.remark || '').toLowerCase();
+          break;
+        case 'approvalStatus':
+          aVal = (a.approvalStatus || '').toLowerCase();
+          bVal = (b.approvalStatus || '').toLowerCase();
+          break;
+        case 'beneficiaryEntry':
+          aVal = (a.beneficiaryEntry || '').toLowerCase();
+          bVal = (b.beneficiaryEntry || '').toLowerCase();
+          break;
+        case 'additionStatus':
+          aVal = (a.additionStatus || '').toLowerCase();
+          bVal = (b.additionStatus || '').toLowerCase();
+          break;
+        default:
+          return 0;
+      }
+      if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredBeneficiaries, sortConfig]);
+
+  const toggleSelectAll = () => {
+    if (selectedRowIds.length === sortedBeneficiaries.length && sortedBeneficiaries.length > 0) {
+      setSelectedRowIds([]);
+    } else {
+      setSelectedRowIds(sortedBeneficiaries.map((b) => b.id));
+    }
+  };
+
+  const handleToggleRow = (id: string) => {
+    setSelectedRowIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
 
   // Metric counts
   const pendingCount = beneficiaries.filter(b => b.approvalStatus === 'PENDING').length;
@@ -390,34 +471,198 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
           <table className="w-full text-left text-xs text-slate-700">
             <thead className="sticky top-0 z-20 bg-slate-100 text-slate-900 font-bold uppercase tracking-wider text-[11px] border-b border-slate-300 shadow-xs">
               <tr>
-                {visibleColumns.includes('sheetNo') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 pl-5">Sheet Ref</th>}
-                {visibleColumns.includes('beneficiaryName') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Name of Beneficiary</th>}
-                {visibleColumns.includes('tradeVendorName') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Vendor Name</th>}
-                {visibleColumns.includes('bankDetails') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Bank Name &amp; A/C</th>}
-                {visibleColumns.includes('ifscCode') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">IFSC Code</th>}
-                {visibleColumns.includes('category') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Purpose</th>}
+                <th className="w-10 min-w-[40px] px-3 py-3.5 sticky left-0 top-0 z-30 bg-slate-100 border-r border-slate-200 border-b border-slate-300 text-center">
+                  <input
+                    type="checkbox"
+                    checked={sortedBeneficiaries.length > 0 && selectedRowIds.length === sortedBeneficiaries.length}
+                    onChange={toggleSelectAll}
+                    className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    title="Select / Deselect All"
+                  />
+                </th>
+                {visibleColumns.includes('sheetNo') && (
+                  <th
+                    onClick={() => handleSort('sheetNo')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 pl-5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Sheet Ref</span>
+                      {sortConfig?.key === 'sheetNo' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.includes('beneficiaryName') && (
+                  <th
+                    onClick={() => handleSort('beneficiaryName')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Name of Beneficiary</span>
+                      {sortConfig?.key === 'beneficiaryName' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.includes('tradeVendorName') && (
+                  <th
+                    onClick={() => handleSort('tradeVendorName')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Vendor Name</span>
+                      {sortConfig?.key === 'tradeVendorName' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.includes('bankDetails') && (
+                  <th
+                    onClick={() => handleSort('bankDetails')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Bank Name &amp; A/C</span>
+                      {sortConfig?.key === 'bankDetails' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.includes('ifscCode') && (
+                  <th
+                    onClick={() => handleSort('ifscCode')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>IFSC Code</span>
+                      {sortConfig?.key === 'ifscCode' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.includes('category') && (
+                  <th
+                    onClick={() => handleSort('category')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Purpose</span>
+                      {sortConfig?.key === 'category' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
                 {visibleColumns.includes('proof') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Cheque / Proof</th>}
-                {visibleColumns.includes('remark') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Remark</th>}
-                {visibleColumns.includes('approvalStatus') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Approval Status</th>}
-                {visibleColumns.includes('beneficiaryEntry') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Beneficiary Entry Status</th>}
-                {visibleColumns.includes('additionStatus') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Addition Status</th>}
+                {visibleColumns.includes('remark') && (
+                  <th
+                    onClick={() => handleSort('remark')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Remark</span>
+                      {sortConfig?.key === 'remark' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.includes('approvalStatus') && (
+                  <th
+                    onClick={() => handleSort('approvalStatus')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Approval Status</span>
+                      {sortConfig?.key === 'approvalStatus' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.includes('beneficiaryEntry') && (
+                  <th
+                    onClick={() => handleSort('beneficiaryEntry')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Beneficiary Entry Status</span>
+                      {sortConfig?.key === 'beneficiaryEntry' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.includes('additionStatus') && (
+                  <th
+                    onClick={() => handleSort('additionStatus')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Addition Status</span>
+                      {sortConfig?.key === 'additionStatus' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
                 {visibleColumns.includes('actions') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 text-right pr-5">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredBeneficiaries.length === 0 ? (
+              {sortedBeneficiaries.length === 0 ? (
                 <tr>
-                  <td colSpan={visibleColumns.length} className="p-10 text-center text-slate-400 font-medium">
+                  <td colSpan={visibleColumns.length + 1} className="p-10 text-center text-slate-400 font-medium">
                     No beneficiary records match your search query or filters.
                   </td>
                 </tr>
               ) : (
-                filteredBeneficiaries.map((b) => {
+                sortedBeneficiaries.map((b) => {
                   const isRejected = b.approvalStatus === 'REJECTED';
                   const isEntryCancelled = b.beneficiaryEntry === 'CANCELLED';
+                  const isChecked = selectedRowIds.includes(b.id);
 
                   return (
-                    <tr key={b.id} className="hover:bg-indigo-50/40 transition-colors">
+                    <tr key={b.id} className={`hover:bg-indigo-50/40 transition-colors group ${isChecked ? 'bg-indigo-50/40' : ''}`}>
+                      {/* Sticky left checkbox column */}
+                      <td
+                        className={`w-10 min-w-[40px] px-3 py-3.5 sticky left-0 z-10 border-r border-slate-200/60 text-center ${
+                          isChecked ? 'bg-indigo-50' : 'bg-white group-hover:bg-indigo-50/50'
+                        }`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleRow(b.id)}
+                          className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        />
+                      </td>
                       {/* 1. Sheet Ref */}
                       {visibleColumns.includes('sheetNo') && (
                         <td className="p-3.5 pl-5 font-mono font-bold text-slate-900">
@@ -650,6 +895,63 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Bulk Action Bar */}
+      {selectedRowIds.length > 0 && (
+        <div className="sticky bottom-4 z-40 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl flex items-center justify-between gap-4 border border-slate-700 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-full bg-indigo-500 text-white text-xs font-bold">
+              {selectedRowIds.length}
+            </span>
+            <span className="text-xs font-semibold text-slate-200">
+              {selectedRowIds.length === 1 ? 'item selected' : 'items selected'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const selected = sortedBeneficiaries.filter(b => selectedRowIds.includes(b.id));
+                const rows = [
+                  ['Sheet Ref', 'Name of Beneficiary', 'Vendor Name', 'Bank Name', 'Account No', 'IFSC Code', 'Purpose', 'Approval Status', 'Beneficiary Entry Status', 'Addition Status'],
+                  ...selected.map(b => [
+                    b.sheetNo,
+                    b.beneficiaryName,
+                    b.tradeVendorName || '—',
+                    b.bankName,
+                    b.accountNo,
+                    b.ifscCode,
+                    b.purpose || '—',
+                    b.approvalStatus,
+                    b.beneficiaryEntry,
+                    b.additionStatus
+                  ])
+                ];
+                downloadCsv('Beneficiary_Master_Bulk_Export', rows);
+              }}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer border border-slate-700"
+            >
+              Bulk Export
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                // Bulk Assign placeholder
+              }}
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer shadow-xs"
+            >
+              Bulk Assign
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedRowIds([])}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+            >
+              Clear Selection
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Creation Modal */}
       <NewBeneficiaryModal

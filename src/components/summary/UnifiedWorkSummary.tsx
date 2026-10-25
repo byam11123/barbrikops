@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Calendar, 
   AlertTriangle, 
@@ -41,7 +41,10 @@ import {
   Layers,
   Landmark,
   ListFilter,
-  MoreVertical
+  MoreVertical,
+  ChevronUp,
+  ChevronDown,
+  ArrowUpDown
 } from 'lucide-react';
 import { downloadCsv } from '../../utils/csvExporter';
 import { CustomSelect } from '../common/CustomSelect';
@@ -821,6 +824,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   const [pageSize, setPageSize] = useState<number>(25);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
   // Modal state for adding Process Coordinator Remark
   const [remarkModalTarget, setRemarkModalTarget] = useState<{
@@ -1401,12 +1405,60 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
     return true;
   });
 
+  const handleSort = (key: string) => {
+    setSortConfig((prev) => {
+      if (!prev || prev.key !== key) return { key, direction: 'asc' };
+      if (prev.direction === 'asc') return { key, direction: 'desc' };
+      return null;
+    });
+  };
+
+  const sortedItems = useMemo(() => {
+    if (!sortConfig) return displayedItems;
+    const { key, direction } = sortConfig;
+    return [...displayedItems].sort((a, b) => {
+      let aVal: any = '';
+      let bVal: any = '';
+      switch (key) {
+        case 'referenceCode':
+          aVal = (a.referenceCode || '').toLowerCase();
+          bVal = (b.referenceCode || '').toLowerCase();
+          break;
+        case 'title':
+          aVal = (a.title || '').toLowerCase();
+          bVal = (b.title || '').toLowerCase();
+          break;
+        case 'status':
+          aVal = (a.status || '').toLowerCase();
+          bVal = (b.status || '').toLowerCase();
+          break;
+        case 'plannedDate':
+          aVal = (a.plannedDateTimeStr || a.targetDateStr || '').toLowerCase();
+          bVal = (b.plannedDateTimeStr || b.targetDateStr || '').toLowerCase();
+          break;
+        case 'actualDate':
+          aVal = (a.actualDateTimeStr || '').toLowerCase();
+          bVal = (b.actualDateTimeStr || '').toLowerCase();
+          break;
+        case 'delay':
+          aVal = a.delayHours || 0;
+          bVal = b.delayHours || 0;
+          break;
+        default:
+          return 0;
+      }
+      if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [displayedItems, sortConfig]);
+
   // Pagination Math for 1000+ Scale Operations
-  const totalItems = displayedItems.length;
+  const totalItems = sortedItems.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const validPage = Math.min(currentPage, totalPages);
   const startIndex = (validPage - 1) * pageSize;
-  const paginatedItems = displayedItems.slice(startIndex, startIndex + pageSize);
+  const paginatedItems = sortedItems.slice(startIndex, startIndex + pageSize);
 
   const isItemActionable = (item: UnifiedItem): boolean => {
     if (item.isCompleted) return false;
@@ -1433,7 +1485,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
     if (selectedBatchIds.length === selectable.length && selectable.length > 0) {
       setSelectedBatchIds([]);
     } else {
-      setSelectedBatchIds(selectable.map((i) => i.id));
+      setSelectedBatchIds(selectable.map((i: UnifiedItem) => i.id));
     }
   };
 
@@ -1448,7 +1500,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
     const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
     const formattedDateTime = now.toLocaleString('en-GB');
 
-    paginatedItems.forEach((item) => {
+    paginatedItems.forEach((item: UnifiedItem) => {
       if (selectedBatchIds.includes(item.id) && isItemActionable(item)) {
         if (item.sourceModule === 'CHECKLIST') {
           onCompleteChecklist({
@@ -2314,21 +2366,49 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         <div className="bg-indigo-950 text-white p-3 px-4 rounded-xl shadow-lg border border-indigo-700/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
           <div className="flex items-center gap-2 text-xs font-bold">
             <CheckSquare className="w-4 h-4 text-indigo-300" />
-            <span>{selectedBatchIds.length} Requisitions Checked for Mass Action</span>
+            <span>{selectedBatchIds.length} {selectedBatchIds.length === 1 ? 'item selected' : 'items selected'}</span>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <button
+              onClick={() => {
+                const selectedItems = displayedItems.filter((i: UnifiedItem) => selectedBatchIds.includes(i.id));
+                const headers = ['Ref Code', 'Title', 'Module', 'Status', 'Planned Date', 'Actual Date', 'Assignee'];
+                const rows = selectedItems.map((i: UnifiedItem) => [
+                  i.referenceCode,
+                  i.title,
+                  i.sourceModule,
+                  i.status,
+                  i.plannedDateTimeStr || i.targetDateStr,
+                  i.actualDateTimeStr || '—',
+                  i.assigneeName || '—'
+                ]);
+                const timestamp = new Date().toISOString().slice(0, 10);
+                downloadCsv(`My_Work_Bulk_Export_${timestamp}.csv`, headers, rows);
+              }}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer border border-slate-700"
+            >
+              Bulk Export
+            </button>
+            <button
+              onClick={() => {
+                // Placeholder Bulk Assign
+              }}
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer shadow-xs"
+            >
+              Bulk Assign
+            </button>
             <button
               onClick={handleExecuteBatchApprove}
-              className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition-colors"
+              className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition-colors cursor-pointer"
             >
               <CheckCircle2 className="w-3.5 h-3.5" />
-              Mass Approve Checked ({selectedBatchIds.length})
+              Mass Approve ({selectedBatchIds.length})
             </button>
             <button
               onClick={() => setSelectedBatchIds([])}
-              className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold border border-white/20"
+              className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold border border-white/20 cursor-pointer"
             >
-              Cancel Selection
+              Clear Selection
             </button>
           </div>
         </div>
@@ -2337,7 +2417,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       {/* 1. Dedicated Mobile Native Feed (md:hidden) — perfect phone layout, touch targets, and full stage actions */}
       <div className="md:hidden space-y-3">
         {paginatedItems.length > 0 ? (
-          paginatedItems.map((item) => {
+          paginatedItems.map((item: UnifiedItem) => {
             const isChecked = selectedBatchIds.includes(item.id);
             const delayHrs = item.delayHours || 0;
             const isDelayActive = delayHrs > 0;
@@ -2545,7 +2625,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       {viewFormat === 'CARD' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {paginatedItems.length > 0 ? (
-            paginatedItems.map((item) => {
+            paginatedItems.map((item: UnifiedItem) => {
               const isChecked = selectedBatchIds.includes(item.id);
               const delayHrs = item.delayHours || 0;
               const isDelayActive = delayHrs > 0;
@@ -2750,32 +2830,92 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                 <th className="py-2.5 px-3 text-left whitespace-nowrap sticky left-[36px] top-0 z-30 bg-slate-100 border-r border-slate-200 border-b border-slate-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)] w-36 min-w-[140px] max-w-[140px]">
                   Quick Action
                 </th>
-                <th className="py-2.5 px-3 min-w-[250px] sticky top-0 bg-slate-100 border-b border-slate-300">Context / Reference</th>
-                <th className="py-2.5 px-3 min-w-[220px] sticky top-0 bg-slate-100 border-b border-slate-300">Task / Stage Description</th>
-                <th className="py-2.5 px-2 text-center whitespace-nowrap sticky top-0 bg-slate-100 border-b border-slate-300">Status</th>
-                <th className="py-2.5 px-2 whitespace-nowrap sticky top-0 bg-slate-100 border-b border-slate-300">
+                <th
+                  onClick={() => handleSort('referenceCode')}
+                  className="py-2.5 px-3 min-w-[250px] sticky top-0 bg-slate-100 border-b border-slate-300 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Context / Reference</span>
+                    {sortConfig?.key === 'referenceCode' ? (
+                      sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                    )}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('title')}
+                  className="py-2.5 px-3 min-w-[220px] sticky top-0 bg-slate-100 border-b border-slate-300 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Task / Stage Description</span>
+                    {sortConfig?.key === 'title' ? (
+                      sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                    )}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('status')}
+                  className="py-2.5 px-2 text-center whitespace-nowrap sticky top-0 bg-slate-100 border-b border-slate-300 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>Status</span>
+                    {sortConfig?.key === 'status' ? (
+                      sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                    )}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('plannedDate')}
+                  className="py-2.5 px-2 whitespace-nowrap sticky top-0 bg-slate-100 border-b border-slate-300 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                >
                   <span className="flex items-center gap-1">
                     <Calendar className="w-3.5 h-3.5 text-slate-500" />
                     <span>Planned</span>
+                    {sortConfig?.key === 'plannedDate' ? (
+                      sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                    )}
                   </span>
                 </th>
-                <th className="py-2.5 px-2 whitespace-nowrap sticky top-0 bg-slate-100 border-b border-slate-300">
+                <th
+                  onClick={() => handleSort('actualDate')}
+                  className="py-2.5 px-2 whitespace-nowrap sticky top-0 bg-slate-100 border-b border-slate-300 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                >
                   <span className="flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5 text-slate-500" />
                     <span>Actual</span>
+                    {sortConfig?.key === 'actualDate' ? (
+                      sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                    )}
                   </span>
                 </th>
-                <th className="py-2.5 px-2 whitespace-nowrap sticky top-0 bg-slate-100 border-b border-slate-300">
+                <th
+                  onClick={() => handleSort('delay')}
+                  className="py-2.5 px-2 whitespace-nowrap sticky top-0 bg-slate-100 border-b border-slate-300 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                >
                   <span className="flex items-center gap-1">
                     <AlertTriangle className="w-3.5 h-3.5 text-slate-500" />
                     <span>Delay</span>
+                    {sortConfig?.key === 'delay' ? (
+                      sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                    )}
                   </span>
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {paginatedItems.length > 0 ? (
-                paginatedItems.map((item, itemIdx) => {
+                paginatedItems.map((item: UnifiedItem, itemIdx: number) => {
                   const isChecked = selectedBatchIds.includes(item.id);
                   return (
                     <tr key={item.id} className={`group/row hover:bg-slate-50 transition-colors ${isChecked ? 'bg-indigo-50/50' : ''}`}>

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Landmark, Plus, Search, Filter, AlertTriangle, CheckCircle2, Clock, 
-  ExternalLink, ShieldCheck, ShieldAlert, Eye, RefreshCw, Download, FileText, Check, X, XCircle
+  ExternalLink, ShieldCheck, ShieldAlert, Eye, RefreshCw, Download, FileText, Check, X, XCircle,
+  ChevronUp, ChevronDown, ArrowUpDown
 } from 'lucide-react';
 import { BankPaymentRecord, UserProfile, isUserDirector } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
@@ -48,6 +49,8 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<BankPaymentRecord | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
   // Attachment Preview Modal State
   const [previewDoc, setPreviewDoc] = useState<{
@@ -159,6 +162,80 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
 
     return true;
   });
+
+  const handleSort = (key: string) => {
+    setSortConfig((prev) => {
+      if (!prev || prev.key !== key) return { key, direction: 'asc' };
+      if (prev.direction === 'asc') return { key, direction: 'desc' };
+      return null;
+    });
+  };
+
+  const sortedPayments = React.useMemo(() => {
+    if (!sortConfig) return filteredPayments;
+    const { key, direction } = sortConfig;
+    return [...filteredPayments].sort((a, b) => {
+      let aVal: any = '';
+      let bVal: any = '';
+      switch (key) {
+        case 'sheetNo':
+          aVal = (a.sheetNo || '').toLowerCase();
+          bVal = (b.sheetNo || '').toLowerCase();
+          break;
+        case 'vendorName':
+          aVal = (a.vendorName || '').toLowerCase();
+          bVal = (b.vendorName || '').toLowerCase();
+          break;
+        case 'beneficiaryName':
+          aVal = (a.beneficiaryName || '').toLowerCase();
+          bVal = (b.beneficiaryName || '').toLowerCase();
+          break;
+        case 'amount':
+          aVal = a.amountToBePaid || 0;
+          bVal = b.amountToBePaid || 0;
+          break;
+        case 'mode':
+          aVal = (a.modeOfPayment || '').toLowerCase();
+          bVal = (b.modeOfPayment || '').toLowerCase();
+          break;
+        case 'site':
+          aVal = (a.site || '').toLowerCase();
+          bVal = (b.site || '').toLowerCase();
+          break;
+        case 'approvalStatus':
+          aVal = (a.approvalStatus || '').toLowerCase();
+          bVal = (b.approvalStatus || '').toLowerCase();
+          break;
+        case 'paymentEntry':
+          aVal = (a.paymentEntry || '').toLowerCase();
+          bVal = (b.paymentEntry || '').toLowerCase();
+          break;
+        case 'paymentStatus':
+          aVal = (a.paymentStatus || '').toLowerCase();
+          bVal = (b.paymentStatus || '').toLowerCase();
+          break;
+        default:
+          return 0;
+      }
+      if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredPayments, sortConfig]);
+
+  const toggleSelectAll = () => {
+    if (selectedRowIds.length === sortedPayments.length && sortedPayments.length > 0) {
+      setSelectedRowIds([]);
+    } else {
+      setSelectedRowIds(sortedPayments.map((p) => p.id));
+    }
+  };
+
+  const handleToggleRow = (id: string) => {
+    setSelectedRowIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
 
   // KPI calculations
   const pendingApprovalList = payments.filter(p => p.approvalStatus === 'PENDING');
@@ -402,33 +479,183 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
           <table className="w-full text-left text-xs text-slate-700">
             <thead className="sticky top-0 z-20 bg-slate-100 text-slate-900 font-bold uppercase tracking-wider text-[11px] border-b border-slate-300 shadow-xs">
               <tr>
-                {visibleColumns.includes('sheetNo') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 pl-5">Sheet Ref</th>}
-                {visibleColumns.includes('vendorName') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Vendor Name</th>}
-                {visibleColumns.includes('beneficiaryName') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Name of Beneficiary</th>}
-                {visibleColumns.includes('amount') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Amount (₹)</th>}
-                {visibleColumns.includes('mode') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Mode</th>}
-                {visibleColumns.includes('site') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Site</th>}
+                <th className="w-10 min-w-[40px] px-3 py-3.5 sticky left-0 top-0 z-30 bg-slate-100 border-r border-slate-200 border-b border-slate-300 text-center">
+                  <input
+                    type="checkbox"
+                    checked={sortedPayments.length > 0 && selectedRowIds.length === sortedPayments.length}
+                    onChange={toggleSelectAll}
+                    className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    title="Select / Deselect All"
+                  />
+                </th>
+                {visibleColumns.includes('sheetNo') && (
+                  <th
+                    onClick={() => handleSort('sheetNo')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 pl-5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Sheet Ref</span>
+                      {sortConfig?.key === 'sheetNo' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.includes('vendorName') && (
+                  <th
+                    onClick={() => handleSort('vendorName')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Vendor Name</span>
+                      {sortConfig?.key === 'vendorName' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.includes('beneficiaryName') && (
+                  <th
+                    onClick={() => handleSort('beneficiaryName')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Name of Beneficiary</span>
+                      {sortConfig?.key === 'beneficiaryName' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.includes('amount') && (
+                  <th
+                    onClick={() => handleSort('amount')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Amount (₹)</span>
+                      {sortConfig?.key === 'amount' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.includes('mode') && (
+                  <th
+                    onClick={() => handleSort('mode')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Mode</span>
+                      {sortConfig?.key === 'mode' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.includes('site') && (
+                  <th
+                    onClick={() => handleSort('site')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Site</span>
+                      {sortConfig?.key === 'site' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
                 {visibleColumns.includes('proof') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Cheque / Proof</th>}
-                {visibleColumns.includes('approvalStatus') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Approval Status</th>}
-                {visibleColumns.includes('paymentEntry') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Bank Entry Status</th>}
-                {visibleColumns.includes('paymentStatus') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Payment Status</th>}
+                {visibleColumns.includes('approvalStatus') && (
+                  <th
+                    onClick={() => handleSort('approvalStatus')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Approval Status</span>
+                      {sortConfig?.key === 'approvalStatus' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.includes('paymentEntry') && (
+                  <th
+                    onClick={() => handleSort('paymentEntry')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Bank Entry Status</span>
+                      {sortConfig?.key === 'paymentEntry' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.includes('paymentStatus') && (
+                  <th
+                    onClick={() => handleSort('paymentStatus')}
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Payment Status</span>
+                      {sortConfig?.key === 'paymentStatus' ? (
+                        sortConfig.direction === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-indigo-600" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
                 {visibleColumns.includes('actions') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 text-right pr-5">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredPayments.length === 0 ? (
+              {sortedPayments.length === 0 ? (
                 <tr>
-                  <td colSpan={visibleColumns.length} className="p-10 text-center text-slate-400 font-medium">
+                  <td colSpan={visibleColumns.length + 1} className="p-10 text-center text-slate-400 font-medium">
                     No bank payment records match your filters.
                   </td>
                 </tr>
               ) : (
-                filteredPayments.map((p) => (
-                  <tr
-                    key={p.id}
-                    onClick={() => handleRowClick(p)}
-                    className="hover:bg-indigo-50/50 transition-colors cursor-pointer"
-                  >
+                sortedPayments.map((p) => {
+                  const isChecked = selectedRowIds.includes(p.id);
+                  return (
+                    <tr
+                      key={p.id}
+                      onClick={() => handleRowClick(p)}
+                      className={`hover:bg-indigo-50/50 transition-colors cursor-pointer group ${isChecked ? 'bg-indigo-50/40' : ''}`}
+                    >
+                      <td
+                        className={`w-10 min-w-[40px] px-3 py-3.5 sticky left-0 z-10 border-r border-slate-200/60 text-center ${
+                          isChecked ? 'bg-indigo-50' : 'bg-white group-hover:bg-indigo-50/50'
+                        }`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleRow(p.id)}
+                          className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        />
+                      </td>
                     {visibleColumns.includes('sheetNo') && (
                       <td className="p-3.5 pl-5 font-mono font-bold text-slate-900">
                         <span className="px-2 py-1 bg-slate-100 border border-slate-200 rounded-md text-indigo-700">
@@ -648,12 +875,69 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                       </td>
                     )}
                   </tr>
-                ))
-              )}
+                );
+              }))}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Bulk Action Bar */}
+      {selectedRowIds.length > 0 && (
+        <div className="sticky bottom-4 z-40 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl flex items-center justify-between gap-4 border border-slate-700 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-full bg-indigo-500 text-white text-xs font-bold">
+              {selectedRowIds.length}
+            </span>
+            <span className="text-xs font-semibold text-slate-200">
+              {selectedRowIds.length === 1 ? 'item selected' : 'items selected'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const selected = sortedPayments.filter(p => selectedRowIds.includes(p.id));
+                const rows = [
+                  ['Sheet Ref', 'Date', 'Vendor Name', 'Name of Beneficiary', 'Amount (₹)', 'Mode', 'Site', 'Approval Status', 'Bank Entry', 'Payment Status'],
+                  ...selected.map(p => [
+                    p.sheetNo,
+                    p.timestamp,
+                    p.vendorName,
+                    p.beneficiaryName,
+                    p.amountToBePaid,
+                    p.modeOfPayment,
+                    p.site,
+                    p.approvalStatus,
+                    p.paymentEntry,
+                    p.paymentStatus
+                  ])
+                ];
+                downloadCsv('Bank_Payments_Bulk_Export', rows);
+              }}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer border border-slate-700"
+            >
+              Bulk Export
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                // Bulk Assign placeholder
+              }}
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer shadow-xs"
+            >
+              Bulk Assign
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedRowIds([])}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+            >
+              Clear Selection
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Creation Modal */}
       <NewBankPaymentModal
