@@ -38,6 +38,9 @@ import { SuperAdminModal } from './components/user/SuperAdminModal';
 import { SuperAdminGovernanceView } from './components/user/SuperAdminGovernanceView';
 import { GlobalSearchModal } from './components/common/GlobalSearchModal';
 import { SiteRequisitionTracker } from './components/fms/SiteRequisitionTracker';
+import { StnLedgerView } from './components/store/StnLedgerView';
+import { GrnLedgerView } from './components/store/GrnLedgerView';
+import { CreditLedgerView } from './components/banking/CreditLedgerView';
 import { Plus } from 'lucide-react';
 
 import { 
@@ -57,13 +60,20 @@ import {
   isUserAdminOrSuperAdmin,
   hasModulePermission,
   getUserModulePermission,
-  AppNotification
+  AppNotification,
+  StnRecord,
+  GrnRecord,
+  CreditLedgerRecord
 } from './types';
 import { 
   getBrowserNotificationPermission, 
   requestBrowserNotificationPermission, 
   sendBrowserDesktopNotification,
-  dispatchWebhookNotification
+  dispatchWebhookNotification,
+  isSelfAssigned,
+  evaluateStageSlaStatus,
+  clearNotificationsForStage,
+  groupWorkflowNotifications
 } from './services/notificationService';
 import { addWorkingSlaHours, formatToStandardDateTime, DEFAULT_WORK_SHIFT_CONFIG } from './services/workShiftService';
 import { 
@@ -134,7 +144,7 @@ export default function App() {
   const [inventoryMovements, setInventoryMovements] = useState<InventoryMovement[]>([]);
   const [registryConfig, setRegistryConfig] = useState<CentralRegistryConfig>(storageAdapter.getRegistryConfig());
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
-  const [notifications, setNotifications] = useState<AppNotification[]>(() => storageAdapter.getNotifications());
+  const [notifications, setNotifications] = useState<AppNotification[]>(() => groupWorkflowNotifications(storageAdapter.getNotifications()));
   const [desktopPermission, setDesktopPermission] = useState<NotificationPermission>(() => getBrowserNotificationPermission());
 
   // Modals
@@ -198,18 +208,18 @@ export default function App() {
   // Notification handlers (Channels 1 & 2)
   const handleMarkNotificationRead = (id: string) => {
     storageAdapter.markNotificationRead(id);
-    setNotifications(storageAdapter.getNotifications());
+    setNotifications(groupWorkflowNotifications(storageAdapter.getNotifications()));
   };
 
   const handleMarkAllNotificationsRead = () => {
     storageAdapter.markAllNotificationsRead(currentUser.userId);
-    setNotifications(storageAdapter.getNotifications());
+    setNotifications(groupWorkflowNotifications(storageAdapter.getNotifications()));
     showToast('All notifications marked as read.');
   };
 
   const handleClearAllNotifications = () => {
     storageAdapter.clearAllNotifications(currentUser.userId);
-    setNotifications(storageAdapter.getNotifications());
+    setNotifications(groupWorkflowNotifications(storageAdapter.getNotifications()));
     showToast('Cleared notifications.');
   };
 
@@ -445,7 +455,7 @@ export default function App() {
     setRegistryConfig(storageAdapter.getRegistryConfig());
     setAuditLogs(storageAdapter.getAuditLogs());
     setUsersList(storageAdapter.getUsers());
-    setNotifications(storageAdapter.getNotifications());
+    setNotifications(groupWorkflowNotifications(storageAdapter.getNotifications()));
 
     // Asynchronous Firestore sync
     const synced = await storageAdapter.loadFromFirestore();
@@ -457,7 +467,7 @@ export default function App() {
       setInventoryMovements(storageAdapter.getInventoryMovements());
       setUsersList(storageAdapter.getUsers());
       setNoticeBoardItems(storageAdapter.getNoticeBoard());
-      setNotifications(storageAdapter.getNotifications());
+      setNotifications(groupWorkflowNotifications(storageAdapter.getNotifications()));
     }
   };
 
@@ -472,7 +482,7 @@ export default function App() {
       setInventoryMovements(storageAdapter.getInventoryMovements());
       setUsersList(storageAdapter.getUsers());
       setNoticeBoardItems(storageAdapter.getNoticeBoard());
-      setNotifications(storageAdapter.getNotifications());
+      setNotifications(groupWorkflowNotifications(storageAdapter.getNotifications()));
     });
     return () => unsubscribe();
   }, []);
@@ -502,77 +512,102 @@ export default function App() {
       currentFlows.forEach((flow) => {
         if (flow.status !== 'In Progress') return;
         const currentStage = flow.stages[flow.currentStageIndex];
-        if (!currentStage || !currentStage.plannedDateTime) return;
+        if (!currentStage || currentStage.status !== 'In Progress') return;
 
-        // Parse plannedDateTime "DD/MM/YYYY, HH:MM:SS" or similar
-        const parts = currentStage.plannedDateTime.split(/[/, :]+/);
-        if (parts.length >= 3) {
-          const day = parseInt(parts[0], 10);
-          const month = parseInt(parts[1], 10) - 1;
-          const year = parseInt(parts[2], 10);
-          const hour = parts[3] ? parseInt(parts[3], 10) : 18;
-          const minute = parts[4] ? parseInt(parts[4], 10) : 0;
-          const plannedTime = new Date(year, month, day, hour, minute).getTime();
+        const stageDefs = flow.flowType === 'CHECK_STOCK'
+          ? FMS_CHECK_STOCK_STAGES
+          : flow.flowType === 'PO_TO_PAYMENT' 
+          ? FMS_PO_PAYMENT_STAGES 
+          : flow.flowType === 'PAYMENT_TO_DISPATCH'
+          ? FMS_PAYMENT_TO_DISPATCH_STAGES
+          : flow.flowType === 'PURCHASE_TO_STORE_DISPATCH'
+          ? FMS_PURCHASE_TO_STORE_DISPATCH_STAGES
+          : flow.flowType === 'STORE_TO_SITE_DISPATCH'
+          ? FMS_STORE_TO_SITE_DISPATCH_STAGES
+          : flow.flowType === 'SITE_RECEIVE'
+          ? FMS_SITE_RECEIVE_STAGES
+          : FMS_STANDARD_PURCHASE_STAGES;
 
-          if (now > plannedTime) {
-            const notifKey = `sla-breach-${flow.flowId}-${currentStage.stageId}`;
-            const freshNotifs = storageAdapter.getNotifications();
-            const todayStr = new Date().toLocaleDateString('en-GB');
-            const alreadyNotified = freshNotifs.some(
-              (n) => n.data?.slaKey === notifKey && n.timestamp.includes(todayStr)
-            );
+        const def = stageDefs.find((s) => s.stageId === currentStage.stageId);
+        const defaultSlaHours = typeof def?.slaHours === 'number' && def.slaHours > 0 ? def.slaHours : 2;
 
-            if (!alreadyNotified) {
-              const matchedUser = resolveTargetUser(currentStage.assignee);
-              const targetUserId = matchedUser ? matchedUser.userId : 'ALL';
-              const notifTitle = `SLA Delay: ${flow.poNumber || flow.indentNo} (${currentStage.stageName})`;
-              const notifMessage = `Stage ${flow.currentStageIndex + 1} assigned to ${currentStage.assignee || 'Operations'} is running behind schedule.`;
+        const slaEval = evaluateStageSlaStatus(currentStage, defaultSlaHours, now);
+        if (slaEval.status === 'OK') return;
 
-              storageAdapter.addNotification({
-                userId: targetUserId,
-                title: notifTitle,
-                message: notifMessage,
-                type: 'SLA_BREACH',
-                linkTab: 'fms',
-                linkEntityId: flow.id,
-                data: { slaKey: notifKey, flowId: flow.flowId, stageId: currentStage.stageId }
-              });
-              notifsAdded = true;
+        const isOverdue = slaEval.status === 'OVERDUE';
+        const notifType = isOverdue ? 'SLA_BREACH' : 'SLA_WARNING';
+        const notifKey = `sla-${isOverdue ? 'overdue' : 'warning'}-${flow.flowId}-${currentStage.stageId}`;
+        const freshNotifs = storageAdapter.getNotifications();
+        const todayStr = new Date().toLocaleDateString('en-GB');
+        const alreadyNotified = freshNotifs.some(
+          (n) => n.data?.slaKey === notifKey && n.timestamp.includes(todayStr)
+        );
 
-              if (targetUserId === currentUser.userId || isSuperAdmin) {
-                sendBrowserDesktopNotification({
-                  title: notifTitle,
-                  body: notifMessage,
-                  onClick: () => {
-                    handleTabChange('fms');
-                    setSelectedFmsDetail(flow);
-                  }
-                });
+        if (!alreadyNotified) {
+          let updatedNotifs = freshNotifs;
+          if (isOverdue) {
+            // Clear prior warning for this stage if upgraded to overdue
+            const warningKey = `sla-warning-${flow.flowId}-${currentStage.stageId}`;
+            updatedNotifs = updatedNotifs.filter((n) => n.data?.slaKey !== warningKey);
+          }
+
+          const matchedUser = resolveTargetUser(currentStage.assignee);
+          const targetUserId = matchedUser ? matchedUser.userId : 'ALL';
+          const notifTitle = isOverdue
+            ? `SLA Overdue: ${flow.poNumber || flow.indentNo} (${currentStage.stageName})`
+            : `SLA Warning: ${flow.poNumber || flow.indentNo} (${currentStage.stageName})`;
+          const notifMessage = isOverdue
+            ? `Stage ${flow.currentStageIndex + 1} (${currentStage.stageName}) assigned to ${currentStage.assignee || 'Operations'} is strictly past planned deadline.`
+            : `Stage ${flow.currentStageIndex + 1} (${currentStage.stageName}) has reached 80% of allocated SLA duration. Please expedite.`;
+
+          const newNotif: AppNotification = {
+            id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            userId: targetUserId,
+            title: notifTitle,
+            message: notifMessage,
+            type: notifType,
+            timestamp: new Date().toLocaleString('en-GB'),
+            read: false,
+            linkTab: 'fms',
+            linkEntityId: flow.id,
+            data: { slaKey: notifKey, flowId: flow.flowId, stageId: currentStage.stageId, stageIndex: flow.currentStageIndex }
+          };
+
+          storageAdapter.saveNotifications([newNotif, ...updatedNotifs]);
+          notifsAdded = true;
+
+          if (targetUserId === currentUser.userId || isSuperAdmin) {
+            sendBrowserDesktopNotification({
+              title: notifTitle,
+              body: notifMessage,
+              onClick: () => {
+                handleTabChange('fms');
+                setSelectedFmsDetail(flow);
               }
+            });
+          }
 
-              if (registryConfig.notificationSettings?.webhookUrl && (registryConfig.notificationSettings.enableSlaBreachAlerts ?? true)) {
-                dispatchWebhookNotification(registryConfig.notificationSettings.webhookUrl, {
-                  event: 'FMS_SLA_BREACH',
-                  title: notifTitle,
-                  message: notifMessage,
-                  timestamp: new Date().toISOString(),
-                  entityId: flow.flowId,
-                  data: {
-                    flowId: flow.flowId,
-                    indentNo: flow.indentNo,
-                    stageName: currentStage.stageName,
-                    assignee: currentStage.assignee,
-                    plannedDateTime: currentStage.plannedDateTime,
-                  }
-                });
+          if (registryConfig.notificationSettings?.webhookUrl && (registryConfig.notificationSettings.enableSlaBreachAlerts ?? true)) {
+            dispatchWebhookNotification(registryConfig.notificationSettings.webhookUrl, {
+              event: isOverdue ? 'FMS_SLA_BREACH' : 'FMS_SLA_WARNING',
+              title: notifTitle,
+              message: notifMessage,
+              timestamp: new Date().toISOString(),
+              entityId: flow.flowId,
+              data: {
+                flowId: flow.flowId,
+                indentNo: flow.indentNo,
+                stageName: currentStage.stageName,
+                assignee: currentStage.assignee,
+                plannedDateTime: currentStage.plannedDateTime,
               }
-            }
+            });
           }
         }
       });
 
       if (notifsAdded) {
-        setNotifications(storageAdapter.getNotifications());
+        setNotifications(groupWorkflowNotifications(storageAdapter.getNotifications()));
       }
     };
 
@@ -598,6 +633,9 @@ export default function App() {
   };
 
   const handleTabChange = (tab: NavTab) => {
+    setSelectedFmsDetail(null);
+    setStageActionTarget(null);
+
     if (tab === 'profile') {
       setActiveTab('profile');
       return;
@@ -720,6 +758,17 @@ export default function App() {
     const currentStage = updatedStages[currentIndex];
 
     if (!currentStage) return;
+
+    // Auto-Clear Notifications: When a stage is completed, automatically mark all 'Overdue' or 'Action Required' notifications for that specific stage as Read/cleared
+    const currentNotifs = storageAdapter.getNotifications();
+    const clearedNotifs = clearNotificationsForStage(
+      currentNotifs,
+      { flowId: flow.flowId, id: flow.id, indentNo: flow.indentNo, poNumber: flow.poNumber },
+      { stageId: currentStage.stageId, stageIndex: currentIndex, stageName: currentStage.stageName }
+    );
+    if (clearedNotifs.length !== currentNotifs.length) {
+      storageAdapter.saveNotifications(clearedNotifs);
+    }
 
     const now = new Date();
     const formattedNow = now.toLocaleString('en-GB');
@@ -1455,16 +1504,18 @@ export default function App() {
           };
           updatedFlowsList = [newPurchaseFlow, ...updatedFlowsList];
 
-          // Emit high-priority notification to Brahmanand Patel
-          storageAdapter.addNotification({
-            userId: 'USR-002', // Brahmanand Patel
-            title: `Action Required: Purchase Indent #${purchaseIndentNo}`,
-            message: `Purchase requisition triaged from Stock Check #${flow.indentNo} (${purchaseItems.length} items). Assigned to Brahmanand Patel for Stage 2: GET QUOTATION & GENERATE CS.`,
-            type: 'FMS_ACTION_REQUIRED',
-            linkTab: 'fms',
-            linkEntityId: newPurchaseFlow.id,
-            data: { flowId: newPurchaseFlow.flowId, stageIndex: 1 }
-          });
+          // Emit high-priority notification to Brahmanand Patel (only if not self-assigned)
+          if (!isSelfAssigned(currentUser, 'Brahmanand Patel')) {
+            storageAdapter.addNotification({
+              userId: 'USR-002', // Brahmanand Patel
+              title: `Action Required: Purchase Indent #${purchaseIndentNo}`,
+              message: `Purchase requisition triaged from Stock Check #${flow.indentNo} (${purchaseItems.length} items). Assigned to Brahmanand Patel for Stage 2: GET QUOTATION & GENERATE CS.`,
+              type: 'FMS_ACTION_REQUIRED',
+              linkTab: 'fms',
+              linkEntityId: newPurchaseFlow.id,
+              data: { flowId: newPurchaseFlow.flowId, stageIndex: 1 }
+            });
+          }
 
           generatedSubFlows.push({
             type: 'PURCHASE',
@@ -1596,6 +1647,36 @@ export default function App() {
       }
     }
 
+    // 3b. When Shyam completes Stage 4/5 (Generate PO) in INDENT_TO_PO / INDENT_PURCHASE and PaymentTerms === 'CREDIT':
+    const isPoStage = (
+      (flow.flowType === 'INDENT_PURCHASE' || flow.flowType === 'INDENT_TO_PO') &&
+      (currentStage.stageId === 'STG-05' || currentStage.stageId === 'STG-IND-05' || currentIndex === 4 || ((currentStage.stageName || '').toLowerCase().includes('generate') && (currentStage.stageName || '').toLowerCase().includes('po')))
+    );
+    const flowTerms = String(submittedData?.paymentTerms || flow.paymentTerms || flow.instanceDataPool?.paymentTerms || '').toUpperCase();
+    const isCreditOrder = flowTerms.includes('CREDIT') || (!flowTerms.includes('ADVANCE') && Boolean(flow.poNumber || submittedData?.poNumber));
+
+    if (isPoStage && isCreditOrder) {
+      const poNum = submittedData?.poNumber || flow.poNumber || `BPL/PO/${flow.indentNo}`;
+      const venName = submittedData?.vendorName || flow.vendorName || 'Awarded Vendor';
+      const amt = Number(submittedData?.poAmount || flow.poAmount || 0);
+
+      try {
+        storageAdapter.addOrUpdateCreditLedgerRecord({
+          id: `credit-${flow.id || flow.flowId}`,
+          poNumber: String(poNum),
+          poDate: submittedData?.poDate || formattedNow.split(' ')[0],
+          vendorName: String(venName),
+          indentNo: flow.indentNo,
+          poAmount: amt > 0 ? amt : 185000,
+          status: 'AWAITING_GRN',
+          linkedFlowId: flow.flowId || flow.id,
+        });
+        showToast(`Credit obligation recorded in Credit Ledger for PO #${poNum} (Awaiting GRN)`);
+      } catch (cErr) {
+        console.error('Failed to record credit ledger record:', cErr);
+      }
+    }
+
     // 4. When Indent Purchase Stage 10 approves advance payment (decision = 'Yes')
     // OR Stage 11 / STG-IND-05 completes "PO GENERATION & BANK PAYMENT":
     // Automatically link / ensure Accounts PO-to-Payment FMS exists AND create Bank Payment Record!
@@ -1708,15 +1789,17 @@ export default function App() {
         updatedFlowsList = [newPsdFlow, ...updatedFlowsList];
         showToast(`Material collected! Purchase to Store Dispatch Flow created for Brahmanand Patel (Indent #${parentFlow.indentNo}).`);
 
-        storageAdapter.addNotification({
-          userId: 'USR-002', // Brahmanand Patel
-          title: `Action Required: GRN & Quality Check #${newPsdFlow.flowId}`,
-          message: `Consignment arriving from ${venName} (PO #${poNum}). Physical inspection & GRN entry required.`,
-          type: 'FMS_ACTION_REQUIRED',
-          linkTab: 'fms',
-          linkEntityId: newPsdFlow.id,
-          data: { flowId: newPsdFlow.flowId, stageIndex: 0 }
-        });
+        if (!isSelfAssigned(currentUser, 'Brahmanand Patel')) {
+          storageAdapter.addNotification({
+            userId: 'USR-002', // Brahmanand Patel
+            title: `Action Required: GRN & Quality Check #${newPsdFlow.flowId}`,
+            message: `Consignment arriving from ${venName} (PO #${poNum}). Physical inspection & GRN entry required.`,
+            type: 'FMS_ACTION_REQUIRED',
+            linkTab: 'fms',
+            linkEntityId: newPsdFlow.id,
+            data: { flowId: newPsdFlow.flowId, stageIndex: 0 }
+          });
+        }
       }
     };
 
@@ -1766,15 +1849,17 @@ export default function App() {
         updatedFlowsList = [newSiteRecFlow, ...updatedFlowsList];
         showToast(`Consignment dispatched! Site GRN Receive workflow spawned for ${parentDispatchFlow.siteName} (Assigned to Aman Kumar).`);
 
-        storageAdapter.addNotification({
-          userId: 'USR-001', // Aman Kumar / Site Store
-          title: `Action Required: Site GRN Receipt #${newSiteRecFlow.flowId}`,
-          message: `Consignment in transit from Central Store to ${parentDispatchFlow.siteName}. Verify physical delivery and upload stamped challan.`,
-          type: 'FMS_ACTION_REQUIRED',
-          linkTab: 'fms',
-          linkEntityId: newSiteRecFlow.id,
-          data: { flowId: newSiteRecFlow.flowId, stageIndex: 0 }
-        });
+        if (!isSelfAssigned(currentUser, 'Aman Kumar')) {
+          storageAdapter.addNotification({
+            userId: 'USR-001', // Aman Kumar / Site Store
+            title: `Action Required: Site GRN Receipt #${newSiteRecFlow.flowId}`,
+            message: `Consignment in transit from Central Store to ${parentDispatchFlow.siteName}. Verify physical delivery and upload stamped challan.`,
+            type: 'FMS_ACTION_REQUIRED',
+            linkTab: 'fms',
+            linkEntityId: newSiteRecFlow.id,
+            data: { flowId: newSiteRecFlow.flowId, stageIndex: 0 }
+          });
+        }
       }
     };
 
@@ -1835,7 +1920,35 @@ export default function App() {
         console.error('Failed to log inventory receipt movement:', movErr);
       }
 
-      // 3. If RejectedQty > 0, trigger a return task
+      // 3. Sync to Standalone GRN Ledger
+      try {
+        const grnRecord: GrnRecord = {
+          id: `grn-${flow.id || flow.flowId}`,
+          grnNumber: submittedData?.grnNumber || flow.instanceDataPool?.grnNumber || `BPL/GRN/2026/${flow.indentNo || Date.now().toString().slice(-4)}`,
+          date: submittedData?.receivedDate || formattedNow.split(' ')[0],
+          vendorName: flow.vendorName || 'Vendor Consignment',
+          poNumber: flow.poNumber || `BPL/PO/${flow.indentNo}`,
+          items: itemsList.map((it: any, i: number) => ({
+            id: it.id || `grn-item-${i}`,
+            itemDescription: it.item_description || it.itemDescription || 'Material Item',
+            qty: Number(it.accepted_qty ?? it.quantity ?? it.qty ?? 1),
+            unit: it.unit || 'Nos',
+            acceptedQty: Number(it.accepted_qty ?? it.quantity ?? it.qty ?? 1),
+            rejectedQty: Number(it.rejected_qty ?? 0),
+            rejectionReason: it.rejection_reason || ''
+          })),
+          totalAcceptedQty,
+          totalRejectedQty,
+          receivedBy: currentUser.name || 'Brahmanand Patel',
+          linkedFlowId: flow.flowId || flow.id,
+          status: 'COMPLETED'
+        };
+        storageAdapter.addOrUpdateGrnRecord(grnRecord);
+      } catch (grnErr) {
+        console.error('Failed to sync GRN record to ledger:', grnErr);
+      }
+
+      // 4. If RejectedQty > 0, trigger a return task
       if (totalRejectedQty > 0) {
         const returnTask: DelegationTask = {
           id: `task_rej_${Date.now()}`,
@@ -1856,7 +1969,7 @@ export default function App() {
         showToast(`Return task created for Brahmanand Patel: ${totalRejectedQty} rejected item(s).`);
       }
 
-      // 4. If Credit PO, completing Stage 1 triggers PO_TO_PAYMENT using AcceptedQty amount
+      // 5. If Credit PO, completing Stage 1 triggers PO_TO_PAYMENT using AcceptedQty amount
       const rawTerms = String(flow.paymentTerms || flow.instanceDataPool?.paymentTerms || '').toUpperCase();
       const isCredit = rawTerms.includes('CREDIT') || (!rawTerms.includes('ADVANCE'));
 
@@ -1894,6 +2007,22 @@ export default function App() {
           }
         } catch (bpErr) {
           console.error('Failed to update bank payment to READY_FOR_PAYMENT:', bpErr);
+        }
+
+        // Update Credit Ledger record to GRN_COMPLETED
+        try {
+          const creditRecords = storageAdapter.getCreditLedgerRecords();
+          const matchedCredit = creditRecords.find(
+            (c) => c.linkedFlowId === flow.flowId || c.linkedFlowId === flow.parentFlowId || c.indentNo === flow.indentNo || (flow.poNumber && c.poNumber === flow.poNumber)
+          );
+          if (matchedCredit) {
+            storageAdapter.addOrUpdateCreditLedgerRecord({
+              ...matchedCredit,
+              status: 'GRN_COMPLETED',
+            });
+          }
+        } catch (cErr) {
+          console.error('Failed to update Credit Ledger to GRN_COMPLETED:', cErr);
         }
 
         // Spawn PO_TO_PAYMENT for Accounts if not already created
@@ -1943,8 +2072,76 @@ export default function App() {
           };
 
           updatedFlowsList = [newPayFlow, ...updatedFlowsList];
+
+          // Update Credit Ledger to PAYMENT_INITIATED
+          try {
+            const creditRecords = storageAdapter.getCreditLedgerRecords();
+            const matchedCredit = creditRecords.find(
+              (c) => c.linkedFlowId === flow.flowId || c.linkedFlowId === flow.parentFlowId || c.indentNo === flow.indentNo || (flow.poNumber && c.poNumber === flow.poNumber)
+            );
+            if (matchedCredit) {
+              storageAdapter.addOrUpdateCreditLedgerRecord({
+                ...matchedCredit,
+                status: 'PAYMENT_INITIATED',
+              });
+            } else {
+              storageAdapter.addOrUpdateCreditLedgerRecord({
+                id: `credit-${flow.id || flow.flowId}`,
+                poNumber: poNum,
+                poDate: flow.indentDate || formattedNow.split(' ')[0],
+                vendorName: flow.vendorName || 'Awarded Vendor',
+                indentNo: flow.indentNo,
+                poAmount: payableAmount > 0 ? payableAmount : (flow.poAmount || 0),
+                status: 'PAYMENT_INITIATED',
+                linkedFlowId: flow.flowId || flow.id,
+              });
+            }
+          } catch (cErr) {
+            console.error('Failed to update Credit Ledger to PAYMENT_INITIATED:', cErr);
+          }
+
           showToast(`GRN Verification Completed! Credit Payment Requisition spawned in Accounts Inbox for ₹${payableAmount}.`);
         }
+      }
+    }
+
+    // STN Preparation Stage Completion: Sync to STN Ledger
+    if (
+      (flow.flowType === 'STORE_TO_SITE_DISPATCH' && (currentStage.stageId === 'STG-SSD-02' || currentIndex === 1 || (currentStage.stageName || '').toLowerCase().includes('prepare stn'))) ||
+      (flow.flowType === 'PURCHASE_TO_STORE_DISPATCH' && (currentStage.stageId === 'STG-PSD-03' || currentIndex === 2 || (currentStage.stageName || '').toLowerCase().includes('prepare stn')))
+    ) {
+      try {
+        const rawItems = Array.isArray(submittedData?.stnItemsTable)
+          ? submittedData.stnItemsTable
+          : (flow.lineItems || []);
+
+        let sumQty = 0;
+        const mappedItems: FmsLineItem[] = rawItems.map((it: any, idx: number) => {
+          const q = Number(it.quantity || it.qty || it.accepted_qty || 1);
+          sumQty += q;
+          return {
+            id: it.id || `stn-item-${idx}`,
+            itemDescription: it.item_description || it.itemDescription || 'Material Item',
+            qty: q,
+            unit: it.unit || 'Nos'
+          };
+        });
+
+        const stnRecord: StnRecord = {
+          id: `stn-${flow.id || flow.flowId}`,
+          stnNumber: submittedData?.stnNumber || flow.instanceDataPool?.stnNumber || `BPL/STN/2026/${flow.indentNo || Date.now().toString().slice(-4)}`,
+          date: submittedData?.stnDate || formattedNow.split(' ')[0],
+          sourceLocation: 'Central Store',
+          destinationLocation: flow.siteName || 'Project Site',
+          items: mappedItems.length > 0 ? mappedItems : (flow.lineItems || []),
+          totalQty: sumQty > 0 ? sumQty : (flow.lineItems || []).reduce((acc, it) => acc + (Number(it.qty) || 1), 0),
+          dispatchedBy: currentUser.name || 'Store Manager',
+          linkedFlowId: flow.flowId || flow.id,
+          status: 'DISPATCHED'
+        };
+        storageAdapter.addOrUpdateStnRecord(stnRecord);
+      } catch (stnErr) {
+        console.error('Failed to sync STN record to ledger:', stnErr);
       }
     }
 
@@ -2022,7 +2219,7 @@ export default function App() {
 
     // Channel 1 & Channel 2: Emit in-app and desktop notifications
     const nextStage = !isComplete ? updatedFlow.stages[nextIndex] : null;
-    const targetAssignee = nextStage?.assignee;
+    const targetAssignee = nextStage?.assignee || nextStage?.whoDefaultAssignee;
     const targetUser = usersList.find((u) => u.name === targetAssignee);
     const notifTargetUserId = targetUser ? targetUser.userId : 'ALL';
 
@@ -2033,28 +2230,56 @@ export default function App() {
       ? `Flow ${updatedFlow.flowId} has completed all operational stages.`
       : `${currentUser.name} advanced stage. Assigned to ${targetAssignee || 'Operations'}.`;
 
-    storageAdapter.addNotification({
-      userId: notifTargetUserId,
-      title: notifTitle,
-      message: notifMessage,
-      type: isComplete ? 'STAGE_ADVANCED' : 'FMS_ACTION_REQUIRED',
-      linkTab: 'fms',
-      linkEntityId: updatedFlow.id,
-      data: { flowId: updatedFlow.flowId, stageIndex: nextIndex }
-    });
-    setNotifications(storageAdapter.getNotifications());
+    if (!isComplete && nextStage) {
+      // Stop 'Self-Assignment' Spam: If user completes a stage and next stage is assigned to themselves, do NOT send Action Required
+      const isSelf = isSelfAssigned(currentUser, targetAssignee, targetUser);
+      if (!isSelf) {
+        storageAdapter.addNotification({
+          userId: notifTargetUserId,
+          title: notifTitle,
+          message: notifMessage,
+          type: 'FMS_ACTION_REQUIRED',
+          linkTab: 'fms',
+          linkEntityId: updatedFlow.id,
+          data: { flowId: updatedFlow.flowId, stageIndex: nextIndex, stageId: nextStage.stageId }
+        });
 
-    // Channel 2: Desktop push notification (sent to current device if matching target user or super admin)
-    if (notifTargetUserId === currentUser.userId || isSuperAdmin) {
-      sendBrowserDesktopNotification({
-        title: notifTitle,
-        body: notifMessage,
-        onClick: () => {
-          handleTabChange('fms');
-          setSelectedFmsDetail(updatedFlow);
+        // Desktop push notification (only sent if not self-assigned and recipient is targeted)
+        if (notifTargetUserId === currentUser.userId || isSuperAdmin) {
+          sendBrowserDesktopNotification({
+            title: notifTitle,
+            body: notifMessage,
+            onClick: () => {
+              handleTabChange('fms');
+              setSelectedFmsDetail(updatedFlow);
+            }
+          });
         }
+      }
+    } else if (isComplete) {
+      storageAdapter.addNotification({
+        userId: notifTargetUserId,
+        title: notifTitle,
+        message: notifMessage,
+        type: 'STAGE_ADVANCED',
+        linkTab: 'fms',
+        linkEntityId: updatedFlow.id,
+        data: { flowId: updatedFlow.flowId, stageIndex: nextIndex }
       });
+
+      if (notifTargetUserId === currentUser.userId || isSuperAdmin) {
+        sendBrowserDesktopNotification({
+          title: notifTitle,
+          body: notifMessage,
+          onClick: () => {
+            handleTabChange('fms');
+            setSelectedFmsDetail(updatedFlow);
+          }
+        });
+      }
     }
+
+    setNotifications(groupWorkflowNotifications(storageAdapter.getNotifications()));
 
     // Webhook dispatch if configured
     if (registryConfig.notificationSettings?.webhookUrl && (registryConfig.notificationSettings.enableFmsAlerts ?? true)) {
@@ -2567,7 +2792,7 @@ export default function App() {
         } : undefined}
         onOpenMobileMenu={() => setIsMobileDrawerOpen(true)}
         onOpenMyProfile={() => handleTabChange('profile')}
-        onOpenSuperAdmin={isAdminOrSuperAdmin ? () => setActiveTab('super-admin') : undefined}
+        onOpenSuperAdmin={isAdminOrSuperAdmin ? () => handleTabChange('super-admin') : undefined}
         onLogout={handleLogout}
         onOpenGlobalSearch={() => setIsGlobalSearchOpen(true)}
         notifications={notifications.filter((n) => {
@@ -2833,6 +3058,45 @@ export default function App() {
               />
             )}
 
+            {activeTab === 'stn-ledger' && (isSuperAdmin || hasModulePermission(currentUser, 'stn-ledger', 'view')) && (
+              <StnLedgerView
+                currentUser={currentUser}
+                onRefresh={() => {
+                  setAuditLogs(storageAdapter.getAuditLogs());
+                }}
+                onSelectFlowDetail={(flowId) => {
+                  const target = flows.find((f) => f.flowId === flowId || f.id === flowId);
+                  if (target) setSelectedFmsDetail(target);
+                }}
+              />
+            )}
+
+            {activeTab === 'grn-ledger' && (isSuperAdmin || hasModulePermission(currentUser, 'grn-ledger', 'view')) && (
+              <GrnLedgerView
+                currentUser={currentUser}
+                onRefresh={() => {
+                  setAuditLogs(storageAdapter.getAuditLogs());
+                }}
+                onSelectFlowDetail={(flowId) => {
+                  const target = flows.find((f) => f.flowId === flowId || f.id === flowId);
+                  if (target) setSelectedFmsDetail(target);
+                }}
+              />
+            )}
+
+            {activeTab === 'credit-ledger' && (isSuperAdmin || hasModulePermission(currentUser, 'credit-ledger', 'view')) && (
+              <CreditLedgerView
+                currentUser={currentUser}
+                onRefresh={() => {
+                  setAuditLogs(storageAdapter.getAuditLogs());
+                }}
+                onSelectFlowDetail={(flowId) => {
+                  const target = flows.find((f) => f.flowId === flowId || f.id === flowId);
+                  if (target) setSelectedFmsDetail(target);
+                }}
+              />
+            )}
+
             {activeTab === 'registry' && (isSuperAdmin || hasModulePermission(currentUser, 'registry', 'view')) && (
               <CentralRegistryView
                 config={registryConfig}
@@ -3059,7 +3323,7 @@ export default function App() {
         onLogout={handleLogout}
         onNavigateToScoreboard={() => {
           setIsMyProfileOpen(false);
-          setActiveTab('mis');
+          handleTabChange('mis');
         }}
         fmsFlows={flows}
         delegationTasks={delegationTasks}
@@ -3089,7 +3353,7 @@ export default function App() {
         inventoryItems={inventoryItems}
         usersList={usersList}
         noticeBoardItems={noticeBoardItems}
-        onNavigateTab={(tab) => setActiveTab(tab)}
+        onNavigateTab={(tab) => handleTabChange(tab)}
         onSelectFlowDetail={(flow) => setSelectedFmsDetail(flow)}
         onSelectInventoryItem={(item) => {
           setPreselectedInventoryItem(item);

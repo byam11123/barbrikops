@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Calendar, 
   AlertTriangle, 
@@ -40,7 +40,8 @@ import {
   FileSpreadsheet,
   Layers,
   Landmark,
-  ListFilter
+  ListFilter,
+  MoreVertical
 } from 'lucide-react';
 import { downloadCsv } from '../../utils/csvExporter';
 import { CustomSelect } from '../common/CustomSelect';
@@ -102,6 +103,8 @@ export interface UnifiedItem {
   processRemarks?: ProcessRemark[];
   lastNudgeTimestamp?: string;
   assigneeName?: string;
+  whoRole?: string;
+  slaHours?: number;
 }
 
 
@@ -177,6 +180,434 @@ export function formatDelayVariance(delayHours: number): string {
     return `${baseTime} (${days} D)`;
   }
   return baseTime;
+}
+
+export interface ContextSummaryField {
+  label: string;
+  value: string;
+  tooltip?: string;
+}
+
+export function getItemRefNo(item: UnifiedItem): string {
+  if (item.sourceModule === 'FMS') {
+    const flow = item.rawItem?.flow;
+    if (flow) {
+      return flow.indentNo || flow.poNumber || flow.requisitionNumber || flow.flowId || item.referenceCode;
+    }
+  } else if (item.sourceModule === 'CHECKLIST') {
+    const chk = item.rawItem;
+    return chk?.taskId ? `CHK #${chk.taskId}` : item.referenceCode;
+  } else if (item.sourceModule === 'DELEGATION') {
+    const del = item.rawItem;
+    return del?.taskId ? `TASK #${del.taskId}` : item.referenceCode;
+  } else if (item.sourceModule === 'BANKING') {
+    const bp = item.rawItem?.bankPayment || item.rawItem;
+    return bp?.sheetNo || item.referenceCode;
+  }
+  return item.referenceCode;
+}
+
+function extractItemNames(flow: any): string[] {
+  if (!flow) return [];
+  const lineItems = flow.lineItems || flow.items || flow.instanceDataPool?.lineItems || [];
+  if (Array.isArray(lineItems) && lineItems.length > 0) {
+    return lineItems
+      .map((it: any) => it.itemDescription || it.itemName || it.name || it.description)
+      .filter(Boolean);
+  }
+  return [];
+}
+
+export interface ContextDisplayData {
+  category: 'PAYMENT' | 'STORE_PURCHASE';
+  vendorName?: string;
+  amount?: string;
+  purpose?: string;
+  items?: string;
+  fullItemsTooltip?: string;
+  site?: string;
+  refNo: string;
+}
+
+export function getContextData(item: UnifiedItem): ContextDisplayData {
+  const raw = item.rawItem;
+  const flow = raw?.flow;
+  const bp = raw?.bankPayment || (item.sourceModule === 'BANKING' ? raw : undefined);
+  const chk = item.sourceModule === 'CHECKLIST' ? raw : undefined;
+  const del = item.sourceModule === 'DELEGATION' ? raw : undefined;
+
+  const flowType = flow?.flowType || flow?.templateKey || '';
+
+  const isPaymentFinance =
+    item.sourceModule === 'BANKING' ||
+    flowType === 'PO_TO_PAYMENT' ||
+    flowType === 'BENEFICIARY_APPROVAL' ||
+    flowType === 'BANK_PAYMENT' ||
+    flowType === 'PAYMENT_TO_DISPATCH' ||
+    Boolean(bp?.amountToBePaid || flow?.amountToBePaid || flow?.poAmount);
+
+  if (isPaymentFinance) {
+    const vendorName =
+      bp?.vendorName ||
+      bp?.tradeVendorName ||
+      bp?.beneficiaryName ||
+      flow?.vendorName ||
+      flow?.beneficiaryName ||
+      flow?.selectedVendor ||
+      flow?.instanceDataPool?.vendorName ||
+      flow?.instanceDataPool?.beneficiaryName ||
+      'M/S Vendor';
+
+    const rawAmt =
+      bp?.amountToBePaid ??
+      flow?.poAmount ??
+      flow?.amountToBePaid ??
+      flow?.paymentAmount ??
+      flow?.instanceDataPool?.poAmount ??
+      flow?.instanceDataPool?.amountToBePaid;
+
+    const amount =
+      typeof rawAmt === 'number'
+        ? `₹${rawAmt.toLocaleString('en-IN')}`
+        : (rawAmt ? `₹${rawAmt}` : (flow?.poNumber ? 'As per PO' : ''));
+
+    const rawPurpose =
+      bp?.purposeOfPayment ||
+      bp?.beneficiaryPurpose ||
+      bp?.remark ||
+      flow?.beneficiaryPurpose ||
+      flow?.purposeOfPayment ||
+      flow?.remarks ||
+      flow?.instanceDataPool?.purposeOfPayment ||
+      flow?.instanceDataPool?.purpose ||
+      (flow?.indentNo ? `Advance payment for Indent #${flow.indentNo}` : '');
+
+    const purpose = rawPurpose
+      ? (rawPurpose.toLowerCase().startsWith('purpose:') ? rawPurpose : `Purpose: ${rawPurpose}`)
+      : '';
+
+    const rawPoRef =
+      bp?.billNoPo ||
+      flow?.poNumber ||
+      flow?.billNoPo ||
+      bp?.sheetNo ||
+      flow?.beneficiarySheetNo ||
+      flow?.paymentSheetNo ||
+      flow?.indentNo ||
+      item.referenceCode;
+
+    const poRef = rawPoRef.startsWith('PO Ref:') || rawPoRef.startsWith('Ref:')
+      ? rawPoRef
+      : rawPoRef.includes('/PO/') || rawPoRef.startsWith('PO-')
+      ? `PO Ref: ${rawPoRef}`
+      : `Ref: ${rawPoRef}`;
+
+    return {
+      category: 'PAYMENT',
+      vendorName,
+      amount,
+      purpose,
+      refNo: poRef,
+      site: bp?.site || flow?.siteName,
+    };
+  }
+
+  // Store/Purchase/Checklist flows
+  let itemsStr = '';
+  let fullItemsTooltip = '';
+  let siteName = 'Central HQ';
+  let refStr = item.referenceCode;
+
+  if (chk) {
+    itemsStr = chk.task || (chk.department ? `${chk.department} Operations` : 'Checklist Items');
+    siteName = chk.site ? `Site: ${chk.site}` : 'Site: Central Store';
+    refStr = chk.taskId ? `CHK #${chk.taskId}` : item.referenceCode;
+  } else if (del) {
+    itemsStr = del.task || 'Delegated Task';
+    siteName = del.site ? `Site: ${del.site}` : 'Site: Head Office';
+    refStr = del.taskId ? `TASK #${del.taskId}` : item.referenceCode;
+  } else if (flow) {
+    const names = extractItemNames(flow);
+    fullItemsTooltip = names.join(', ');
+    if (names.length > 2) {
+      itemsStr = `${names.slice(0, 2).join(', ')} +${names.length - 2} more`;
+    } else if (names.length > 0) {
+      itemsStr = names.join(', ');
+    } else {
+      itemsStr = flow.remarks || 'Store Material';
+    }
+
+    const baseSite = flow.destinationSite || flow.toSite || flow.siteName || 'RAIPUR OFFICE';
+    const vehicleNo =
+      flow.vehicleNo ||
+      flow.vehicleNumber ||
+      flow.transportDetails?.vehicleNo ||
+      flow.instanceDataPool?.vehicleNo;
+
+    siteName = vehicleNo ? `Site: ${baseSite} • Vehicle: ${vehicleNo}` : `Site: ${baseSite}`;
+    refStr = flow.indentNo || flow.poNumber || flow.requisitionNumber || flow.flowId || item.referenceCode;
+  }
+
+  const finalItems = itemsStr.startsWith('Items:') ? itemsStr : `Items: ${itemsStr}`;
+  const finalRef = refStr.startsWith('Ref:') ? refStr : `Ref: ${refStr}`;
+
+  return {
+    category: 'STORE_PURCHASE',
+    items: finalItems,
+    fullItemsTooltip,
+    site: siteName,
+    refNo: finalRef,
+  };
+}
+
+export function getContextSummary(item: UnifiedItem): ContextSummaryField[] {
+  // 4. For CHECKLIST items:
+  // Show Dept: [Department / Store Name]
+  // Show Freq: [Frequency (e.g., Weekly, Daily)]
+  if (item.sourceModule === 'CHECKLIST') {
+    const chk = item.rawItem;
+    const dept = chk?.department || 'Store';
+    const freq = chk?.frequency === 'W'
+      ? 'Weekly'
+      : chk?.frequency === 'M'
+      ? 'Monthly'
+      : chk?.frequency === 'D'
+      ? 'Daily'
+      : (chk?.frequency || 'Daily');
+    return [
+      { label: 'Dept', value: dept },
+      { label: 'Freq', value: freq },
+    ];
+  }
+
+  // 2. For PO_TO_PAYMENT / BANK_PAYMENT / BENEFICIARY_APPROVAL (BANKING module):
+  if (item.sourceModule === 'BANKING') {
+    const bp = item.rawItem?.bankPayment || item.rawItem;
+    const vendor = bp?.vendorName || bp?.tradeVendorName || bp?.beneficiaryName || 'Vendor';
+    const amountVal = bp?.amountToBePaid;
+    const amount = typeof amountVal === 'number'
+      ? `₹${amountVal.toLocaleString('en-IN')}`
+      : (amountVal ? `₹${amountVal}` : '');
+    const purpose = bp?.purposeOfPayment || bp?.beneficiaryPurpose || '';
+    const poRef = bp?.billNoPo || bp?.sheetNo || bp?.poNumber || item.referenceCode;
+
+    const fields: ContextSummaryField[] = [];
+    if (vendor) fields.push({ label: 'Vendor', value: vendor });
+    if (amount && purpose) {
+      fields.push({
+        label: 'Amount',
+        value: `${amount}  Show Purpose:${purpose}`,
+        tooltip: `Amount: ${amount} | Purpose: ${purpose}`,
+      });
+    } else if (amount) {
+      fields.push({ label: 'Amount', value: amount });
+    } else if (purpose) {
+      fields.push({ label: 'Purpose', value: purpose });
+    }
+    if (poRef) fields.push({ label: 'PO Ref', value: poRef });
+    return fields;
+  }
+
+  // FMS flows & tasks
+  if (item.sourceModule === 'FMS') {
+    const flow = item.rawItem?.flow;
+    const stage = item.rawItem?.stage;
+    const flowType = flow?.flowType || flow?.templateKey || '';
+
+    // 2. For PO_TO_PAYMENT / BANK_PAYMENT / BENEFICIARY_APPROVAL:
+    // Show Vendor: [Vendor Name]
+    // Show Amount: [₹ Amount formatted]  Show Purpose:[Purpose]
+    // Show PO Ref: [PO Number or Sheet Ref]
+    if (
+      flowType === 'PO_TO_PAYMENT' ||
+      flowType === 'BENEFICIARY_APPROVAL' ||
+      flowType === 'BANK_PAYMENT' ||
+      flowType === 'PAYMENT_TO_DISPATCH'
+    ) {
+      const vendor =
+        flow?.vendorName ||
+        flow?.beneficiaryName ||
+        flow?.selectedVendor ||
+        flow?.instanceDataPool?.vendorName ||
+        flow?.instanceDataPool?.beneficiaryName ||
+        'Vendor';
+      const rawAmt =
+        flow?.poAmount ||
+        flow?.amountToBePaid ||
+        flow?.paymentAmount ||
+        flow?.instanceDataPool?.poAmount ||
+        flow?.instanceDataPool?.amountToBePaid ||
+        flow?.instanceDataPool?.amount;
+      const amount =
+        typeof rawAmt === 'number'
+          ? `₹${rawAmt.toLocaleString('en-IN')}`
+          : (rawAmt ? `₹${rawAmt}` : (flow?.poNumber ? 'As per PO' : ''));
+      const purpose =
+        flow?.beneficiaryPurpose ||
+        flow?.purposeOfPayment ||
+        flow?.remarks ||
+        flow?.instanceDataPool?.purposeOfPayment ||
+        flow?.instanceDataPool?.purpose ||
+        '';
+      const poRef =
+        flow?.poNumber ||
+        flow?.billNoPo ||
+        flow?.beneficiarySheetNo ||
+        flow?.paymentSheetNo ||
+        flow?.indentNo ||
+        item.referenceCode;
+
+      const fields: ContextSummaryField[] = [];
+      if (vendor) fields.push({ label: 'Vendor', value: vendor });
+      if (amount && purpose) {
+        fields.push({
+          label: 'Amount',
+          value: `${amount}  Show Purpose:${purpose}`,
+          tooltip: `Amount: ${amount} | Purpose: ${purpose}`,
+        });
+      } else if (amount) {
+        fields.push({ label: 'Amount', value: amount });
+      } else if (purpose) {
+        fields.push({ label: 'Purpose', value: purpose });
+      }
+      if (poRef) fields.push({ label: 'PO Ref', value: poRef });
+      return fields;
+    }
+
+    // 3. For STORE_TO_SITE_DISPATCH / PURCHASE_TO_STORE_DISPATCH / SITE_RECEIVE:
+    // Show Items: [First 2 item names]
+    // Show Vehicle: [Vehicle Number (if available in payload)]
+    // Show Site: [Destination Site]
+    if (
+      flowType === 'STORE_TO_SITE_DISPATCH' ||
+      flowType === 'PURCHASE_TO_STORE_DISPATCH' ||
+      flowType === 'SITE_RECEIVE'
+    ) {
+      const names = extractItemNames(flow);
+      const itemsStr =
+        names.length > 2
+          ? `${names.slice(0, 2).join(', ')} +${names.length - 2} more`
+          : names.slice(0, 2).join(', ') || flow?.remarks || 'Dispatched Items';
+      const fullTooltip = names.join(', ');
+
+      let vehicleNo =
+        flow?.vehicleNo ||
+        flow?.vehicleNumber ||
+        flow?.vehicle ||
+        flow?.transportDetails?.vehicleNo ||
+        flow?.instanceDataPool?.vehicleNo ||
+        flow?.instanceDataPool?.vehicleNumber ||
+        flow?.instanceDataPool?.transportVehicle;
+
+      if (!vehicleNo && flow?.stages) {
+        for (const stg of flow.stages) {
+          if (stg.fields) {
+            const vField = stg.fields.find(
+              (f: any) =>
+                (f.fieldId && f.fieldId.toLowerCase().includes('vehicle')) ||
+                (f.label && f.label.toLowerCase().includes('vehicle'))
+            );
+            if (vField && vField.value) {
+              vehicleNo = String(vField.value);
+              break;
+            }
+          }
+        }
+      }
+
+      const destSite = flow?.destinationSite || flow?.toSite || flow?.siteName || 'Destination Site';
+
+      const fields: ContextSummaryField[] = [
+        { label: 'Items', value: itemsStr, tooltip: fullTooltip || itemsStr },
+      ];
+      if (vehicleNo) {
+        fields.push({ label: 'Vehicle', value: vehicleNo });
+      }
+      fields.push({ label: 'Site', value: destSite });
+      return fields;
+    }
+
+    // 1. For CHECK_STOCK / INDENT_TO_PO (Purchase/Store):
+    // Show Items: [First 2 item names + 'X more']
+    // Show Site: [Site Name]
+    if (
+      flowType === 'CHECK_STOCK' ||
+      flowType === 'INDENT_TO_PO' ||
+      flowType === 'INDENT_PURCHASE' ||
+      flow?.indentNo?.endsWith('-PUR') ||
+      flow?.flowId?.includes('-PUR')
+    ) {
+      const names = extractItemNames(flow);
+      const fullTooltip = names.join(', ');
+      let itemsStr = '';
+      if (names.length > 2) {
+        itemsStr = `${names.slice(0, 2).join(', ')} +${names.length - 2} more`;
+      } else if (names.length > 0) {
+        itemsStr = names.join(', ');
+      } else {
+        itemsStr = flow?.remarks || 'General Requisition';
+      }
+      const site = flow?.siteName || 'Central Site';
+
+      return [
+        { label: 'Items', value: itemsStr, tooltip: fullTooltip || itemsStr },
+        { label: 'Site', value: site },
+      ];
+    }
+  }
+
+  // 5. Default Fallback:
+  // If no specific type matches, just show the Site: and Date:.
+  const raw = item.rawItem;
+  const flow = raw?.flow;
+  const stage = raw?.stage;
+  const fallbackSite = flow?.siteName || raw?.site || 'Central HQ';
+  const fallbackDate = (
+    stage?.plannedDateTime ||
+    flow?.plannedDateTime ||
+    flow?.indentDate ||
+    raw?.latestRevision ||
+    raw?.firstDate ||
+    raw?.plannedDate ||
+    item.targetDateStr
+  )?.split(' ')[0] || '';
+
+  const fallbackFields: ContextSummaryField[] = [{ label: 'Site', value: fallbackSite }];
+  if (fallbackDate) {
+    fallbackFields.push({ label: 'Date', value: fallbackDate });
+  }
+  return fallbackFields;
+}
+
+export function getItemContext(item: UnifiedItem): {
+  refNo: string;
+  itemsSummary: string;
+  fullItemsTooltip: string;
+  siteName: string;
+  dateStr: string;
+} {
+  const refNo = getItemRefNo(item);
+  const flow = item.rawItem?.flow;
+  const stage = item.rawItem?.stage;
+  const names = extractItemNames(flow);
+  let itemsSummary = '';
+  const fullItemsTooltip = names.join(', ');
+  if (names.length > 2) {
+    itemsSummary = `${names.slice(0, 2).join(', ')} +${names.length - 2} more`;
+  } else if (names.length > 0) {
+    itemsSummary = names.join(', ');
+  } else if (flow?.remarks && flow.remarks.length < 50) {
+    itemsSummary = flow.remarks;
+  }
+  const siteName = flow?.siteName || item.rawItem?.site || 'Central HQ';
+  const dateStr = (
+    stage?.plannedDateTime ||
+    flow?.plannedDateTime ||
+    flow?.indentDate ||
+    item.targetDateStr
+  )?.split(' ')[0] || '';
+
+  return { refNo, itemsSummary, fullItemsTooltip, siteName, dateStr };
 }
 
 interface UnifiedWorkSummaryProps {
@@ -404,6 +835,21 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   // Modal state for Process Coordinator Task Context Inspection (Ritu Sahu View Action)
   const [viewDetailItem, setViewDetailItem] = useState<UnifiedItem | null>(null);
 
+  // Kebab menu state for secondary actions dropdown
+  const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleDocumentClick = () => {
+      setActiveActionMenuId(null);
+    };
+    if (activeActionMenuId) {
+      document.addEventListener('click', handleDocumentClick);
+    }
+    return () => {
+      document.removeEventListener('click', handleDocumentClick);
+    };
+  }, [activeActionMenuId]);
+
   // Split-Screen Operational Cockpit Active Task
   const [activeCockpitTask, setActiveCockpitTask] = useState<{
     task: UnifiedItem;
@@ -533,7 +979,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       sourceId: chk.id,
       referenceCode: `CHK #${chk.taskId}`,
       title: chk.task,
-      subtitle: `${chk.department} • Assignee: ${chk.name} (${chk.email}) • Freq: ${chk.frequency === 'W' ? 'Weekly' : chk.frequency === 'M' ? 'Monthly' : 'Daily'}`,
+      subtitle: '',
       targetDateStr: chk.plannedDate,
       plannedDateTimeStr: chk.plannedDate ? `${chk.plannedDate} 10:00 AM` : '—',
       actualDateTimeStr: isCompleted ? (chk.actualDate || `${todayStr} 04:30 PM`) : '—',
@@ -550,6 +996,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       processRemarks: chk.processRemarks || [],
       lastNudgeTimestamp: chk.lastNudgeTimestamp,
       assigneeName: chk.name,
+      whoRole: chk.department || 'STORE IN-CHARGE',
+      slaHours: typeof (chk as any).slaHours === 'number' ? (chk as any).slaHours : (chk.frequency === 'D' ? 8 : chk.frequency === 'W' ? 40 : 24),
     });
   });
 
@@ -575,7 +1023,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       sourceId: del.id,
       referenceCode: `TASK #${del.taskId}`,
       title: del.task,
-      subtitle: `Delegated Task • Assignee: ${del.name} (${del.rolePhone}) • Revisions: ${del.totalRevisions}`,
+      subtitle: '',
       targetDateStr: del.latestRevision,
       plannedDateTimeStr: del.latestRevision ? `${del.latestRevision} 05:00 PM` : '—',
       actualDateTimeStr: isCompleted ? (del.completedAt || `${todayStr} 05:00 PM`) : '—',
@@ -592,6 +1040,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       processRemarks: del.processRemarks || [],
       lastNudgeTimestamp: del.lastNudgeTimestamp,
       assigneeName: del.name,
+      whoRole: 'ASSIGNEE',
+      slaHours: typeof (del as any).slaHours === 'number' ? (del as any).slaHours : 24,
     });
   });
 
@@ -717,11 +1167,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           isDueThisWeek = true;
         }
 
-        const refCode = flow.flowType === 'CHECK_STOCK'
-          ? (flow.requisitionNumber ? `Check Stock #${flow.requisitionNumber}` : `Stock Check #${flow.indentNo}`)
-          : flow.flowType === 'PO_TO_PAYMENT'
-          ? (flow.poNumber ? `PO #${flow.poNumber}` : `Accounts PO #${flow.indentNo}`)
-          : `FMS #${flow.indentNo}`;
+        const refCode = flow.indentNo || flow.poNumber || flow.requisitionNumber || flow.flowId;
 
         const isPendingStage = stage.status === 'Pending' || !isCurrentActiveStage;
         const stageDelay = isPendingStage
@@ -736,9 +1182,9 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           id: `unified-fms-${flow.id}-stg-${idx}`,
           sourceModule: 'FMS',
           sourceId: flow.id,
-          referenceCode: `${refCode} (Stg ${idx + 1})`,
-          title: `${stage.stageName} — ${flow.siteName} Site`,
-          subtitle: `FMS Flow: ${flow.flowId} • Role: ${stage.whoRole || def.whoRole} • Assignee: ${stage.assignee || def.whoDefaultAssignee}`,
+          referenceCode: refCode,
+          title: stage.stageName,
+          subtitle: '',
           targetDateStr: stage.plannedDateTime || flow.indentDate || flow.poDate || flow.dprDate || todayStr,
           plannedDateTimeStr,
           actualDateTimeStr: stage.actualDateTime || (isCompleted ? `${todayStr} 12:00 PM` : '—'),
@@ -756,6 +1202,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           processRemarks: stage.processRemarks || [],
           lastNudgeTimestamp: stage.lastNudgeTimestamp,
           assigneeName: stage.assignee || def.whoDefaultAssignee,
+          whoRole: stage.whoRole || def.whoRole || 'Operations',
+          slaHours: typeof stage.slaHours === 'number' ? stage.slaHours : (typeof def?.slaHours === 'number' ? def.slaHours : 4),
         });
       }
     });
@@ -792,8 +1240,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         sourceModule: 'BANKING',
         sourceId: bp.id,
         referenceCode: bp.sheetNo,
-        title: `Authorize Payment: ${bp.vendorName} (₹${bp.amountToBePaid.toLocaleString('en-IN')})`,
-        subtitle: `Bank Request • Site: ${bp.site} • Mode: ${bp.modeOfPayment} • Beneficiary: ${bp.beneficiaryName}`,
+        title: 'Director Payment Approval',
+        subtitle: '',
         targetDateStr: bp.plannedDate,
         plannedDateTimeStr: `${bp.plannedDate} 05:00 PM`,
         actualDateTimeStr: bp.approvalTimestamp || '—',
@@ -807,7 +1255,9 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         priority: bp.amountToBePaid > 100000 ? 'Urgent' : 'Normal',
         channelOrFreq: bp.modeOfPayment,
         rawItem: { bankPayment: bp, taskType: 'DIRECTOR_PAYMENT_APPROVAL' },
-        assigneeName: 'Director Pranjal Agrawal',
+        assigneeName: 'Pranjal Agrawal',
+        whoRole: 'DIRECTOR',
+        slaHours: 4,
       });
     });
 
@@ -826,8 +1276,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         sourceModule: 'BANKING',
         sourceId: bp.id,
         referenceCode: bp.sheetNo,
-        title: `Bank Portal Entry: ${bp.vendorName} (₹${bp.amountToBePaid.toLocaleString('en-IN')})`,
-        subtitle: `Accounts Task • A/C: ${bp.accountNoMasked || 'Verified Bank'} • Ref: ${bp.billNoPo || bp.sheetNo}`,
+        title: 'Bank Portal Entry',
+        subtitle: '',
         targetDateStr: bp.plannedDate,
         plannedDateTimeStr: `${bp.plannedDate} 02:00 PM`,
         actualDateTimeStr: bp.paymentEntryTimestamp || '—',
@@ -842,6 +1292,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         channelOrFreq: 'BANK ERP ENTRY',
         rawItem: { bankPayment: bp, taskType: 'ACCOUNTS_PORTAL_ENTRY' },
         assigneeName: 'Accounts Team',
+        whoRole: 'ACCOUNTS',
+        slaHours: 2,
       });
     });
 
@@ -860,8 +1312,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         sourceModule: 'BANKING',
         sourceId: bp.id,
         referenceCode: bp.sheetNo,
-        title: `Disburse & Record UTR: ${bp.vendorName} (₹${bp.amountToBePaid.toLocaleString('en-IN')})`,
-        subtitle: `Settlement • Bank: ${bp.bankName || 'HDFC/SBI'} • Mode: ${bp.modeOfPayment}`,
+        title: 'Disburse & Record UTR',
+        subtitle: '',
         targetDateStr: bp.plannedDate,
         plannedDateTimeStr: `${bp.plannedDate} 06:00 PM`,
         actualDateTimeStr: bp.paymentDoneTimestamp || '—',
@@ -876,6 +1328,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         channelOrFreq: 'BANK UTR RELEASE',
         rawItem: { bankPayment: bp, taskType: 'ACCOUNTS_UTR_SETTLEMENT' },
         assigneeName: 'Accounts Team',
+        whoRole: 'ACCOUNTS',
+        slaHours: 2,
       });
     });
 
@@ -887,8 +1341,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         sourceModule: 'BANKING',
         sourceId: ben.id,
         referenceCode: ben.sheetNo,
-        title: `Approve Beneficiary: ${ben.beneficiaryName} (${ben.bankName})`,
-        subtitle: `Vendor: ${ben.tradeVendorName || ben.beneficiaryName} • IFSC: ${ben.ifscCode}`,
+        title: 'Beneficiary Verification & Approval',
+        subtitle: '',
         targetDateStr: todayStr,
         plannedDateTimeStr: `${todayStr} 04:00 PM`,
         delayHours: 0,
@@ -900,7 +1354,9 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         priority: 'Urgent',
         channelOrFreq: 'BENEFICIARY VERIFICATION',
         rawItem: { beneficiary: ben, taskType: 'DIRECTOR_BENEFICIARY_APPROVAL' },
-        assigneeName: 'Director Pranjal Agrawal',
+        assigneeName: 'Pranjal Agrawal',
+        whoRole: 'DIRECTOR',
+        slaHours: 4,
       });
     });
   } catch (err) {
@@ -2282,7 +2738,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
             <table className="w-full text-left text-xs border-collapse">
             <thead className="sticky top-0 z-10 bg-slate-100/95 backdrop-blur-xs text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px] shadow-2xs">
               <tr>
-                <th className="py-2.5 px-2 w-8 text-center">
+                <th className="py-2.5 px-2 w-9 min-w-[36px] max-w-[36px] text-center sticky left-0 top-0 z-30 bg-slate-100 border-r border-slate-200">
                   <input
                     type="checkbox"
                     checked={selectedBatchIds.length === paginatedItems.length && paginatedItems.length > 0}
@@ -2291,9 +2747,11 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                     title="Select all on this page for batch action"
                   />
                 </th>
-                <th className="py-2.5 px-2 whitespace-nowrap">Module</th>
-                <th className="py-2.5 px-2 whitespace-nowrap">Reference</th>
-                <th className="py-2.5 px-3">Task / Stage Description</th>
+                <th className="py-2.5 px-3 text-left whitespace-nowrap sticky left-[36px] top-0 z-30 bg-slate-100 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)] w-36 min-w-[140px] max-w-[140px]">
+                  Quick Action
+                </th>
+                <th className="py-2.5 px-3 min-w-[250px]">Context / Reference</th>
+                <th className="py-2.5 px-3 min-w-[220px]">Task / Stage Description</th>
                 <th className="py-2.5 px-2 text-center whitespace-nowrap">Status</th>
                 <th className="py-2.5 px-2 whitespace-nowrap">
                   <span className="flex items-center gap-1">
@@ -2313,17 +2771,18 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                     <span>Delay</span>
                   </span>
                 </th>
-                <th className="py-2.5 px-3 text-right whitespace-nowrap">Quick Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {paginatedItems.length > 0 ? (
-                paginatedItems.map((item) => {
+                paginatedItems.map((item, itemIdx) => {
                   const isChecked = selectedBatchIds.includes(item.id);
                   return (
-                    <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${isChecked ? 'bg-indigo-50/50' : ''}`}>
-                      {/* Checkbox for Batch Select */}
-                      <td className="py-2.5 px-2 text-center">
+                    <tr key={item.id} className={`group/row hover:bg-slate-50 transition-colors ${isChecked ? 'bg-indigo-50/50' : ''}`}>
+                      {/* 1. Checkbox for Batch Select (Sticky left) */}
+                      <td className={`py-2.5 px-2 w-9 min-w-[36px] max-w-[36px] text-center sticky left-0 z-10 border-r border-slate-200/60 ${
+                        isChecked ? 'bg-indigo-50' : 'bg-white group-hover/row:bg-slate-50'
+                      }`}>
                         <input
                           type="checkbox"
                           disabled={!isItemActionable(item)}
@@ -2333,66 +2792,411 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                         />
                       </td>
 
-                      {/* Module Badge */}
-                      <td className="py-2.5 px-2 whitespace-nowrap">
-                        <span
-                          className={`px-2 py-0.5 rounded font-bold text-[10px] flex items-center gap-1 w-max ${
-                            item.sourceModule === 'FMS'
-                              ? 'bg-amber-100 text-amber-800'
-                              : item.sourceModule === 'CHECKLIST'
-                              ? 'bg-blue-100 text-blue-800'
-                              : item.sourceModule === 'BANKING'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-purple-100 text-purple-800'
-                          }`}
-                        >
-                          {item.sourceModule === 'FMS' && <GitBranch className="w-3 h-3" />}
-                          {item.sourceModule === 'CHECKLIST' && <CheckSquare className="w-3 h-3" />}
-                          {item.sourceModule === 'DELEGATION' && <ListTodo className="w-3 h-3" />}
-                          {item.sourceModule === 'BANKING' && <Landmark className="w-3 h-3" />}
-                          <span>{item.sourceModule}</span>
-                        </span>
+                      {/* 2. Quick Action Button (Sticky left) - Compact Fixed Width */}
+                      <td className={`py-2 px-2 text-left whitespace-nowrap sticky left-[36px] z-10 border-r border-slate-200/80 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)] w-36 min-w-[140px] max-w-[140px] ${
+                        isChecked ? 'bg-indigo-50' : 'bg-white group-hover/row:bg-slate-50'
+                      }`}>
+                        <div className="flex items-center justify-between gap-1 w-full">
+                          {/* PRIMARY ACTION (Only the most important action) */}
+                          <div className="min-w-0 flex-1">
+                            {/* CHECKLIST: Mark Done / Reopen */}
+                            {item.sourceModule === 'CHECKLIST' && (item.isMine || isAdminOrSuperAdmin || pcDeskActive) && (
+                              item.isCompleted ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const now = new Date();
+                                    onCompleteChecklist({
+                                      ...item.rawItem,
+                                      status: 'Pending',
+                                      actualDate: undefined,
+                                      updatedAt: now.toLocaleString('en-GB')
+                                    });
+                                  }}
+                                  className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded text-[11px] transition-colors cursor-pointer truncate max-w-full"
+                                >
+                                  Reopen
+                                </button>
+                              ) : (item.isDueToday || item.isOverdue || isAdminOrSuperAdmin || pcDeskActive) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const now = new Date();
+                                    const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+                                    onCompleteChecklist({
+                                      ...item.rawItem,
+                                      status: 'Done',
+                                      actualDate: formattedDate,
+                                      updatedAt: now.toLocaleString('en-GB')
+                                    });
+                                  }}
+                                  className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-[11px] shadow-2xs transition-colors cursor-pointer truncate max-w-full"
+                                >
+                                  Mark Done
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 font-medium px-1.5 py-0.5 bg-slate-50 border border-slate-200 rounded truncate block text-center" title={`Scheduled ${item.plannedDateTimeStr?.split(' ')[0] || item.targetDateStr}`}>
+                                  Scheduled
+                                </span>
+                              )
+                            )}
+
+                            {/* DELEGATION: Complete / Reopen */}
+                            {item.sourceModule === 'DELEGATION' && (item.isMine || isAdminOrSuperAdmin || pcDeskActive) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const now = new Date();
+                                  const formattedDateTime = now.toLocaleString('en-GB');
+                                  const isDone = item.isCompleted;
+                                  onCompleteDelegation({
+                                    ...item.rawItem,
+                                    status: isDone ? 'Pending' : 'Completed',
+                                    completedAt: isDone ? undefined : formattedDateTime
+                                  });
+                                }}
+                                className={`px-2 py-1 font-bold rounded text-[11px] shadow-2xs transition-colors cursor-pointer truncate max-w-full ${
+                                  item.isCompleted 
+                                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' 
+                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                }`}
+                              >
+                                {item.isCompleted ? 'Reopen' : 'Complete'}
+                              </button>
+                            )}
+
+                            {/* FMS: Execute Stage / Approve / Reject */}
+                            {item.sourceModule === 'FMS' && (() => {
+                              if (!isItemActionable(item)) {
+                                return !item.isCompleted && (item.rawItem.flow.status === 'In Progress' || item.rawItem.flow.status === 'Pending') ? (
+                                  <span className="text-[10px] text-slate-400 font-mono italic truncate block">
+                                    Awaiting S{item.rawItem.flow.currentStageIndex + 1}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 font-medium block">
+                                    Done
+                                  </span>
+                                );
+                              }
+
+                              const stageExec = item.rawItem.stage;
+                              const stageDef = item.rawItem.def;
+                              const isResponsible = isUserResponsibleForStage(stageDef, stageExec, currentUser);
+
+                              if (!isResponsible) {
+                                return (
+                                  <button
+                                    type="button"
+                                    disabled
+                                    className="px-2 py-1 bg-slate-100 text-slate-400 border border-slate-200 font-medium rounded text-[11px] flex items-center gap-1 cursor-not-allowed truncate max-w-full"
+                                    title="Assigned to another user"
+                                  >
+                                    <Lock className="w-3 h-3 shrink-0" />
+                                    <span className="truncate">Locked</span>
+                                  </button>
+                                );
+                              }
+
+                              const hasApprovalField = stageExec?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval')) ||
+                                stageDef?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval'));
+
+                              if (onOpenStageAction) {
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex)}
+                                    className={`px-2 py-1 font-bold rounded text-[11px] flex items-center gap-1 transition-colors cursor-pointer border shadow-2xs truncate max-w-full ${
+                                      hasApprovalField
+                                        ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                                        : 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-700'
+                                    }`}
+                                    title={hasApprovalField ? 'Review & Take Approval Decision' : 'Execute Stage'}
+                                  >
+                                    {hasApprovalField ? (
+                                      <>
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                        <span className="truncate">Approve</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <FileText className="w-3.5 h-3.5 text-indigo-100 shrink-0" />
+                                        <span className="truncate">Execute</span>
+                                      </>
+                                    )}
+                                  </button>
+                                );
+                              }
+                              return null;
+                            })()}
+
+                            {/* BANKING: Direct Action */}
+                            {item.sourceModule === 'BANKING' && (
+                              <div className="truncate max-w-full">
+                                {renderItemQuickActions(item, false)}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* SECONDARY ACTIONS: Kebab Menu Dropdown (⋮) */}
+                          <div className="relative shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveActionMenuId(activeActionMenuId === item.id ? null : item.id);
+                              }}
+                              className={`p-1 rounded text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer ${
+                                activeActionMenuId === item.id ? 'bg-slate-200 text-slate-900' : ''
+                              }`}
+                              title="More options"
+                            >
+                              <MoreVertical className="w-3.5 h-3.5" />
+                            </button>
+
+                            {activeActionMenuId === item.id && (
+                              <div
+                                onClick={(e) => e.stopPropagation()}
+                                className={`absolute left-0 w-48 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1 text-slate-800 text-xs animate-in fade-in duration-100 ${
+                                  itemIdx >= paginatedItems.length - 2 && paginatedItems.length > 2
+                                    ? 'bottom-full mb-1'
+                                    : 'top-full mt-1'
+                                }`}
+                              >
+                                {/* 1. Split Cockpit for Checklists */}
+                                {item.sourceModule === 'CHECKLIST' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setActiveActionMenuId(null);
+                                      handleOpenSplitCockpit(item);
+                                    }}
+                                    className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-indigo-50 text-indigo-700 font-semibold text-left transition-colors cursor-pointer"
+                                  >
+                                    <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                                    <span>Open Cockpit</span>
+                                  </button>
+                                )}
+
+                                {/* 2. View Task Details */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveActionMenuId(null);
+                                    if (item.sourceModule === 'FMS') {
+                                      onSelectFmsDetail(item.rawItem.flow);
+                                    } else if (item.sourceModule === 'BANKING') {
+                                      onNavigateTab('bankPayments');
+                                    } else {
+                                      setViewDetailItem(item);
+                                    }
+                                  }}
+                                  className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-slate-50 text-slate-700 text-left transition-colors cursor-pointer"
+                                >
+                                  <Eye className="w-3.5 h-3.5 text-slate-500" />
+                                  <span>View Details</span>
+                                </button>
+
+                                {/* 3. External Form for FMS */}
+                                {item.sourceModule === 'FMS' && item.rawItem.def?.formUrl && (
+                                  <a
+                                    href={item.rawItem.def.formUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    onClick={() => setActiveActionMenuId(null)}
+                                    className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-purple-50 text-purple-700 text-left transition-colors"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5 text-purple-600" />
+                                    <span>External Form</span>
+                                  </a>
+                                )}
+
+                                {/* 4. Revise Task for Delegation */}
+                                {item.sourceModule === 'DELEGATION' && (item.isMine || isAdminOrSuperAdmin || pcDeskActive) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setActiveActionMenuId(null);
+                                      onReviseDelegation(item.rawItem);
+                                    }}
+                                    className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-slate-50 text-slate-700 text-left transition-colors cursor-pointer"
+                                  >
+                                    <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+                                    <span>Revise Task</span>
+                                  </button>
+                                )}
+
+                                {/* 5. Process Coordinator Remark */}
+                                {canCoordinate && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setActiveActionMenuId(null);
+                                      const targetId = item.sourceModule === 'FMS'
+                                        ? item.rawItem.flow.id
+                                        : item.sourceId;
+                                      const stgIdx = item.sourceModule === 'FMS' ? item.rawItem.stageIndex : undefined;
+                                      setRemarkModalTarget({
+                                        item,
+                                        module: item.sourceModule,
+                                        targetId,
+                                        stageIndex: stgIdx,
+                                      });
+                                      setRemarkText('');
+                                    }}
+                                    className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-purple-50 text-purple-700 text-left transition-colors cursor-pointer"
+                                  >
+                                    <MessageSquare className="w-3.5 h-3.5 text-purple-500" />
+                                    <span>Add Process Note</span>
+                                  </button>
+                                )}
+
+                                {/* 6. Follow-up Nudge */}
+                                {canCoordinate && onNudgeItem && !item.isCompleted && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setActiveActionMenuId(null);
+                                      const targetId = item.sourceModule === 'FMS'
+                                        ? item.rawItem.flow.id
+                                        : item.sourceId;
+                                      const stgIdx = item.sourceModule === 'FMS' ? item.rawItem.stageIndex : undefined;
+                                      onNudgeItem(item.sourceModule, targetId, stgIdx);
+                                    }}
+                                    className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-amber-50 text-amber-700 text-left transition-colors cursor-pointer"
+                                  >
+                                    <Bell className="w-3.5 h-3.5 text-amber-500" />
+                                    <span>Send Nudge</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </td>
 
-                      {/* Reference Code */}
-                      <td className="py-2.5 px-2 font-mono font-bold text-slate-800 whitespace-nowrap">
-                        {item.referenceCode}
+                      {/* 3. Context / Reference Column */}
+                      <td className="py-2.5 px-3 min-w-[250px] max-w-[340px]">
+                        {(() => {
+                          const data = getContextData(item);
+                          if (data.category === 'PAYMENT') {
+                            return (
+                              <div className="flex flex-col gap-1">
+                                {/* Top Line: Vendor Name in bold */}
+                                <div className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight break-words">
+                                  {data.vendorName}
+                                </div>
+
+                                {/* Second Line: Amount in distinct green */}
+                                {data.amount && (
+                                  <div className="font-bold text-emerald-600 text-xs sm:text-[13px] leading-tight">
+                                    {data.amount}
+                                  </div>
+                                )}
+
+                                {/* Third Line: Purpose in normal text (Do not truncate) */}
+                                {data.purpose && (
+                                  <div className="text-slate-600 text-xs leading-snug whitespace-normal break-words">
+                                    {data.purpose}
+                                  </div>
+                                )}
+
+                                {/* Fourth Line: Ref No in small, muted text */}
+                                <div className="text-[10px] text-slate-400 font-mono leading-tight">
+                                  {data.refNo}
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          // Store/Purchase/Checklist flows
+                          return (
+                            <div className="flex flex-col gap-1">
+                              {/* Top Line: Items */}
+                              <div className="text-xs text-slate-900 leading-snug break-words" title={data.fullItemsTooltip}>
+                                <span className="font-semibold text-slate-900">{data.items}</span>
+                              </div>
+
+                              {/* Second Line: Site */}
+                              <div className="text-[11px] text-slate-600 leading-tight">
+                                <span className="font-medium text-slate-700">{data.site}</span>
+                              </div>
+
+                              {/* Third Line: Ref No in small, muted text */}
+                              <div className="text-[10px] text-slate-400 font-mono leading-tight">
+                                {data.refNo}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </td>
 
-                      {/* Title & Subtitle + Process Coordinator Remarks */}
-                      <td className="py-2.5 px-3 min-w-0">
-                        <div className={`font-semibold text-slate-900 ${item.isCompleted ? 'line-through text-slate-400' : ''}`}>
-                          {item.title}
-                        </div>
-                        <div className="text-[11px] text-slate-500 mt-0.5">
-                          {item.subtitle}
-                        </div>
+                      {/* 4. Task / Stage Description Column (WHAT, WHO, and Target SLA) */}
+                      <td className="py-2.5 px-3 min-w-[220px]">
+                        <div className="flex flex-col gap-1">
+                          {/* WHAT (Stage Name): Bold, prominent text */}
+                          <div className={`font-bold text-slate-900 text-xs sm:text-[13px] leading-tight ${item.isCompleted ? 'line-through text-slate-400' : ''}`}>
+                            {item.title}
+                          </div>
 
-                        {/* Process Coordinator Remarks Badge */}
-                        {item.processRemarks && item.processRemarks.length > 0 && (
-                          <div className="mt-1.5 p-1.5 rounded bg-purple-50 border border-purple-200 text-[11px] text-purple-900 flex items-start gap-1.5">
-                            <MessageSquare className="w-3.5 h-3.5 text-purple-600 shrink-0 mt-0.5" />
-                            <div>
-                              <span className="font-bold text-purple-950">Process Note ({item.processRemarks[0].authorName}):</span>{' '}
-                              <span className="font-semibold text-purple-800">[{item.processRemarks[0].category.replace('_', ' ')}]</span>{' '}
-                              {item.processRemarks[0].remarkText}
-                              <span className="text-[10px] text-purple-500 block font-mono mt-0.5">
-                                Logged: {item.processRemarks[0].timestamp}
+                          {/* WHO (Assignee / Role): Small badge or muted text */}
+                          {(item.assigneeName || item.whoRole) && (
+                            <div className="text-xs text-slate-500 flex items-center gap-1 leading-tight">
+                              <User className="w-3 h-3 text-slate-400 shrink-0" />
+                              <span className="truncate">
+                                {item.assigneeName ? `Assignee: ${item.assigneeName}` : `Role: ${item.whoRole}`}
                               </span>
                             </div>
-                          </div>
-                        )}
+                          )}
 
-                        {/* Last Nudge Timestamp */}
-                        {item.lastNudgeTimestamp && (
-                          <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded w-max border border-amber-200">
-                            <Bell className="w-3 h-3 text-amber-600" />
-                            <span>Followed up / Nudged: {item.lastNudgeTimestamp}</span>
-                          </div>
-                        )}
+                          {/* Target SLA Badge */}
+                          {(() => {
+                            const sla = typeof item.slaHours === 'number'
+                              ? item.slaHours
+                              : typeof item.rawItem?.stage?.slaHours === 'number'
+                              ? item.rawItem.stage.slaHours
+                              : typeof item.rawItem?.def?.slaHours === 'number'
+                              ? item.rawItem.def.slaHours
+                              : null;
+
+                            if (sla && sla > 0) {
+                              return (
+                                <div className="text-xs font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded w-fit flex items-center gap-1 leading-tight">
+                                  <Clock className="w-3 h-3 text-amber-500 shrink-0" />
+                                  <span>Target SLA: {sla} {sla === 1 ? 'Hour' : 'Hours'}</span>
+                                </div>
+                              );
+                            }
+                            return (
+                              <div className="text-xs font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded w-fit flex items-center gap-1 leading-tight">
+                                <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                                <span>SLA: No Limit</span>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Process Coordinator Remarks Badge */}
+                          {item.processRemarks && item.processRemarks.length > 0 && (
+                            <div className="mt-1.5 p-1.5 rounded bg-purple-50 border border-purple-200 text-[11px] text-purple-900 flex items-start gap-1.5">
+                              <MessageSquare className="w-3.5 h-3.5 text-purple-600 shrink-0 mt-0.5" />
+                              <div>
+                                <span className="font-bold text-purple-950">Process Note ({item.processRemarks[0].authorName}):</span>{' '}
+                                <span className="font-semibold text-purple-800">[{item.processRemarks[0].category.replace('_', ' ')}]</span>{' '}
+                                {item.processRemarks[0].remarkText}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Last Nudge Timestamp */}
+                          {item.lastNudgeTimestamp && (
+                            <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded w-max border border-amber-200">
+                              <Bell className="w-3 h-3 text-amber-600" />
+                              <span>Followed up / Nudged: {item.lastNudgeTimestamp}</span>
+                            </div>
+                          )}
+                        </div>
                       </td>
 
-                      {/* Status Column Badge */}
+                      {/* 6. Status Column Badge */}
                       <td className="py-2.5 px-2 text-center whitespace-nowrap">
                         {item.isCompleted ? (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
@@ -2413,17 +3217,17 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                         )}
                       </td>
 
-                      {/* Planned Date/Time */}
+                      {/* 7. Planned Date/Time */}
                       <td className="py-2.5 px-2 font-mono text-slate-800 whitespace-nowrap">
                         {item.plannedDateTimeStr || item.targetDateStr}
                       </td>
 
-                      {/* Actual Date/Time - styled normally */}
+                      {/* 8. Actual Date/Time - styled normally */}
                       <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap">
                         {item.actualDateTimeStr || '—'}
                       </td>
 
-                      {/* Delay Variance - show ONLY precision duration if delayed, with body highlights */}
+                      {/* 9. Delay Variance - show ONLY precision duration if delayed, with body highlights */}
                       {(() => {
                         const delayHrs = item.delayHours || 0;
                         const isDelayActive = delayHrs > 0;
@@ -2441,232 +3245,12 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                           </td>
                         );
                       })()}
-
-                      {/* Quick Action Button */}
-                      <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* CHECKLIST: Mark Done / Reopen only for assigned user, and Mark Done visible ONLY for Due Today or Overdue */}
-                          {item.sourceModule === 'CHECKLIST' && (item.isMine || isAdminOrSuperAdmin || pcDeskActive) && (
-                            item.isCompleted ? (
-                              <button
-                                onClick={() => {
-                                  const now = new Date();
-                                  onCompleteChecklist({
-                                    ...item.rawItem,
-                                    status: 'Pending',
-                                    actualDate: undefined,
-                                    updatedAt: now.toLocaleString('en-GB')
-                                  });
-                                }}
-                                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded text-[11px] transition-colors cursor-pointer"
-                              >
-                                Reopen
-                              </button>
-                            ) : (item.isDueToday || item.isOverdue || isAdminOrSuperAdmin || pcDeskActive) ? (
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenSplitCockpit(item)}
-                                  className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded text-[11px] flex items-center gap-1 border border-indigo-200 transition-colors cursor-pointer"
-                                  title="Open in Split-Screen Operational Cockpit"
-                                >
-                                  <Layers className="w-3 h-3 text-indigo-600" />
-                                  <span>Cockpit</span>
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    const now = new Date();
-                                    const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
-                                    onCompleteChecklist({
-                                      ...item.rawItem,
-                                      status: 'Done',
-                                      actualDate: formattedDate,
-                                      updatedAt: now.toLocaleString('en-GB')
-                                    });
-                                  }}
-                                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded text-[11px] transition-colors cursor-pointer"
-                                >
-                                  Mark Done
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-[10px] text-slate-400 font-medium px-2 py-1 bg-slate-50 border border-slate-200 rounded">
-                                Scheduled {item.plannedDateTimeStr?.split(' ')[0] || item.targetDateStr}
-                              </span>
-                            )
-                          )}
-
-                          {/* DELEGATION: Complete / Reopen / Revise only for assigned user */}
-                          {item.sourceModule === 'DELEGATION' && (item.isMine || isAdminOrSuperAdmin || pcDeskActive) && (
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => {
-                                  const now = new Date();
-                                  const formattedDateTime = now.toLocaleString('en-GB');
-                                  const isDone = item.isCompleted;
-                                  onCompleteDelegation({
-                                    ...item.rawItem,
-                                    status: isDone ? 'Pending' : 'Completed',
-                                    completedAt: isDone ? undefined : formattedDateTime
-                                  });
-                                }}
-                                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded text-[11px] transition-colors cursor-pointer"
-                              >
-                                {item.isCompleted ? 'Reopen' : 'Complete'}
-                              </button>
-                              <button
-                                onClick={() => onReviseDelegation(item.rawItem)}
-                                className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium rounded text-[11px] transition-colors cursor-pointer"
-                              >
-                                Revise
-                              </button>
-                            </div>
-                          )}
-
-                          {/* FMS: Advance / Yes / No only for assigned user of active stage */}
-                          {item.sourceModule === 'FMS' && (
-                            <div className="flex items-center gap-1">
-                              {item.rawItem.def?.formUrl && isItemActionable(item) && (
-                                <a
-                                  href={item.rawItem.def.formUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 font-semibold rounded text-[11px] flex items-center gap-1 transition-colors"
-                                >
-                                  <ExternalLink className="w-3 h-3" /> Form
-                                </a>
-                              )}
-                              {(() => {
-                                if (!isItemActionable(item)) {
-                                  return !item.isCompleted && (item.rawItem.flow.status === 'In Progress' || item.rawItem.flow.status === 'Pending') ? (
-                                    <span className="text-[10px] text-slate-400 font-mono italic pr-1">
-                                      Awaiting Stg {item.rawItem.flow.currentStageIndex + 1}
-                                    </span>
-                                  ) : null;
-                                }
-
-                                const stageExec = item.rawItem.stage;
-                                const stageDef = item.rawItem.def;
-                                const isResponsible = isUserResponsibleForStage(stageDef, stageExec, currentUser);
-
-                                if (!isResponsible) {
-                                  return (
-                                    <button
-                                      type="button"
-                                      disabled
-                                      className="px-2.5 py-1 bg-slate-100 text-slate-400 border border-slate-200 font-medium rounded text-[11px] flex items-center gap-1 cursor-not-allowed"
-                                      title="Only the assigned user can execute this stage"
-                                    >
-                                      <Lock className="w-3.5 h-3.5" />
-                                      <span>View Details</span>
-                                    </button>
-                                  );
-                                }
-                                const hasApprovalField = stageExec?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval')) ||
-                                  stageDef?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval'));
-
-                                // Canonical modal execution: ALWAYS open StageActionModal for actionable FMS tasks
-                                if (onOpenStageAction) {
-                                  return (
-                                    <button
-                                      type="button"
-                                      onClick={() => onOpenStageAction(item.rawItem.flow, item.rawItem.stageIndex)}
-                                      className={`px-2.5 py-1 font-bold rounded text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer border shadow-2xs ${
-                                        hasApprovalField
-                                          ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
-                                          : 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-700 shadow-xs'
-                                      }`}
-                                      title={hasApprovalField ? 'Review & Take Approval Decision' : 'Execute Stage in Form Modal'}
-                                    >
-                                      {hasApprovalField ? (
-                                        <>
-                                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> <span>Approve / Reject</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <FileText className="w-3.5 h-3.5 text-indigo-100" /> <span>Execute Stage</span>
-                                        </>
-                                      )}
-                                    </button>
-                                  );
-                                }
-
-                                return null;
-                              })()}
-                            </div>
-                          )}
-
-                          {/* BANKING: Direct One-Click Action for Matrix Table */}
-                          {item.sourceModule === 'BANKING' && (
-                            <div className="flex items-center gap-1">
-                              {renderItemQuickActions(item, false)}
-                            </div>
-                          )}
-
-                          {/* Single Context View Button (Available to ALL users to inspect progress and stages) */}
-                          <button
-                            onClick={() => {
-                              if (item.sourceModule === 'FMS') {
-                                onSelectFmsDetail(item.rawItem.flow);
-                              } else if (item.sourceModule === 'BANKING') {
-                                onNavigateTab('bankPayments');
-                              } else {
-                                setViewDetailItem(item);
-                              }
-                            }}
-                            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer"
-                            title="View task detail & status"
-                          >
-                            <Eye className="w-4 h-4 text-slate-600" />
-                          </button>
-
-                          {/* Process Note Remark Button - Super Admin & Administrative User */}
-                          {canCoordinate && (
-                            <button
-                              onClick={() => {
-                                const targetId = item.sourceModule === 'FMS'
-                                  ? item.rawItem.flow.id
-                                  : item.sourceId;
-                                const stgIdx = item.sourceModule === 'FMS' ? item.rawItem.stageIndex : undefined;
-                                setRemarkModalTarget({
-                                  item,
-                                  module: item.sourceModule,
-                                  targetId,
-                                  stageIndex: stgIdx,
-                                });
-                                setRemarkText('');
-                              }}
-                              className="p-1.5 hover:bg-purple-50 text-slate-400 hover:text-purple-700 rounded-lg transition-colors"
-                              title="Add Process Coordinator Remark"
-                            >
-                              <MessageSquare className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-
-                          {/* Optional Nudge Button for open items - Super Admin & Administrative User */}
-                          {canCoordinate && onNudgeItem && !item.isCompleted && (
-                            <button
-                              onClick={() => {
-                                const targetId = item.sourceModule === 'FMS'
-                                  ? item.rawItem.flow.id
-                                  : item.sourceId;
-                                const stgIdx = item.sourceModule === 'FMS' ? item.rawItem.stageIndex : undefined;
-                                onNudgeItem(item.sourceModule, targetId, stgIdx);
-                              }}
-                              className="p-1.5 hover:bg-amber-50 text-slate-400 hover:text-amber-600 rounded-lg transition-colors"
-                              title="Send follow-up nudge to assignee"
-                            >
-                              <Bell className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-500">
+                  <td colSpan={8} className="py-12 text-center text-slate-500">
                     <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
                     <p className="font-semibold text-slate-800 text-sm">
                       No items found in {selectedCondition.replace('_', ' ')}

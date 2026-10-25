@@ -31,7 +31,10 @@ import {
   VendorBankAccount,
   VendorSearchWithBankingResult,
   isUserAuthorizedForVendorBanking,
-  FmsStageExecution
+  FmsStageExecution,
+  StnRecord,
+  GrnRecord,
+  CreditLedgerRecord
 } from '../types';
 
 export const INITIAL_DEPARTMENTS: DepartmentDefinition[] = [
@@ -180,6 +183,9 @@ const RAW_STORAGE_KEYS = {
   BENEFICIARIES: 'barbrik_ops_beneficiaries_v1',
   IBT: 'barbrik_ops_ibt_v1',
   VENDOR_PROFILES: 'barbrik_ops_vendor_profiles_v1',
+  STN_LEDGER: 'barbrik_ops_stn_ledger_v1',
+  GRN_LEDGER: 'barbrik_ops_grn_ledger_v1',
+  CREDIT_LEDGER: 'barbrik_ops_credit_ledger_v1',
 };
 
 const STORAGE_KEYS = new Proxy(RAW_STORAGE_KEYS, {
@@ -2930,7 +2936,16 @@ class StorageAdapter {
 
   public markNotificationRead(id: string) {
     const existing = this.getNotifications();
-    const updated = existing.map((n) => (n.id === id ? { ...n, read: true } : n));
+    const updated = existing.map((n) => {
+      if (n.id === id) return { ...n, read: true };
+      if (id.startsWith('grouped-')) {
+        const flowKey = id.replace('grouped-', '');
+        if (n.data?.flowId === flowKey || n.linkEntityId === flowKey || (n.title && n.title.includes(flowKey))) {
+          return { ...n, read: true };
+        }
+      }
+      return n;
+    });
     this.saveNotifications(updated);
   }
 
@@ -4773,6 +4788,294 @@ class StorageAdapter {
 
     results.sort((a, b) => b.matchScore - a.matchScore);
     return results.slice(0, 8);
+  }
+
+  // ============================================================================
+  // STN (Stock Transfer Note) & GRN (Goods Receipt Note) LEDGER METHODS
+  // ============================================================================
+
+  public getStnRecords(): StnRecord[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.STN_LEDGER);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      const initialStns = this.extractStnRecordsFromFlows();
+      if (initialStns.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.STN_LEDGER, JSON.stringify(initialStns));
+        return initialStns;
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  public saveStnRecords(records: StnRecord[]) {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(STORAGE_KEYS.STN_LEDGER, JSON.stringify(records));
+    this.syncToFirestore('stnLedger', records, 'id');
+    this.notifyListeners();
+  }
+
+  public addOrUpdateStnRecord(record: StnRecord): StnRecord {
+    const list = this.getStnRecords();
+    const idx = list.findIndex(r => r.id === record.id || r.stnNumber === record.stnNumber || (record.linkedFlowId && r.linkedFlowId === record.linkedFlowId));
+    let updated: StnRecord[];
+    if (idx >= 0) {
+      updated = [...list];
+      updated[idx] = { ...list[idx], ...record };
+    } else {
+      updated = [record, ...list];
+    }
+    this.saveStnRecords(updated);
+    return record;
+  }
+
+  public extractStnRecordsFromFlows(): StnRecord[] {
+    const flows = this.getFmsFlows();
+    const records: StnRecord[] = [];
+    flows.forEach((flow, fIdx) => {
+      const stnStage = flow.stages?.find(
+        s => (s.stageName || '').toLowerCase().includes('prepare stn') || (s.stageName || '').toLowerCase().includes('stock transfer note')
+      );
+      const isDispatchFlow = flow.flowType === 'STORE_TO_SITE_DISPATCH' || flow.flowType === 'PURCHASE_TO_STORE_DISPATCH' || flow.indentNo?.includes('-DISP');
+      if (stnStage || isDispatchFlow) {
+        const isDone = stnStage?.status === 'Done' || stnStage?.status === 'Completed' || flow.status === 'Completed';
+        const stnNo = stnStage?.submittedData?.stnNumber || flow.instanceDataPool?.stnNumber || `BPL/STN/2026/${String(fIdx + 1).padStart(3, '0')}`;
+        const totalQty = (flow.lineItems || []).reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
+        records.push({
+          id: `stn-${flow.id || flow.flowId}`,
+          stnNumber: String(stnNo),
+          date: stnStage?.actualDateTime || flow.indentDate || flow.createdAt.slice(0, 10),
+          sourceLocation: flow.instanceDataPool?.sourceLocation || 'Central Store (Raipur)',
+          destinationLocation: flow.siteName || 'Project Site',
+          items: flow.lineItems || [],
+          totalQty: totalQty > 0 ? totalQty : 1,
+          dispatchedBy: stnStage?.doerName || stnStage?.assignee || 'Amanat Bharadwaj',
+          linkedFlowId: flow.flowId || flow.id,
+          status: isDone ? 'DISPATCHED' : 'DRAFT',
+        });
+      }
+    });
+
+    if (records.length === 0) {
+      records.push({
+        id: 'stn-seed-001',
+        stnNumber: 'BPL/STN/2026/001',
+        date: '24/10/2026',
+        sourceLocation: 'Central Store (Raipur)',
+        destinationLocation: 'Siladehi Site',
+        items: [
+          { id: 'item-1', itemDescription: 'Tyre 1100 X 20 Apollo Mine Lug', qty: 4, unit: 'Nos' },
+          { id: 'item-2', itemDescription: 'Hydraulic Oil Servo Pride 15W40', qty: 200, unit: 'Ltr' }
+        ],
+        totalQty: 204,
+        dispatchedBy: 'Amanat Bharadwaj',
+        linkedFlowId: 'FLOW-DISP-20261024-001',
+        status: 'DISPATCHED'
+      });
+    }
+
+    return records;
+  }
+
+  public getGrnRecords(): GrnRecord[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.GRN_LEDGER);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      const initialGrns = this.extractGrnRecordsFromFlows();
+      if (initialGrns.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.GRN_LEDGER, JSON.stringify(initialGrns));
+        return initialGrns;
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  public saveGrnRecords(records: GrnRecord[]) {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(STORAGE_KEYS.GRN_LEDGER, JSON.stringify(records));
+    this.syncToFirestore('grnLedger', records, 'id');
+    this.notifyListeners();
+  }
+
+  public addOrUpdateGrnRecord(record: GrnRecord): GrnRecord {
+    const list = this.getGrnRecords();
+    const idx = list.findIndex(r => r.id === record.id || r.grnNumber === record.grnNumber || (record.linkedFlowId && r.linkedFlowId === record.linkedFlowId));
+    let updated: GrnRecord[];
+    if (idx >= 0) {
+      updated = [...list];
+      updated[idx] = { ...list[idx], ...record };
+    } else {
+      updated = [record, ...list];
+    }
+    this.saveGrnRecords(updated);
+    return record;
+  }
+
+  public extractGrnRecordsFromFlows(): GrnRecord[] {
+    const flows = this.getFmsFlows();
+    const records: GrnRecord[] = [];
+    flows.forEach((flow, fIdx) => {
+      const grnStage = flow.stages?.find(
+        s => (s.stageName || '').toLowerCase().includes('grn') || (s.stageName || '').toLowerCase().includes('quality check')
+      );
+      const isPurchaseFlow = flow.flowType === 'PURCHASE_TO_STORE_DISPATCH' || flow.flowType === 'INDENT_TO_PO' || flow.indentNo?.includes('-PUR');
+      if (grnStage || (isPurchaseFlow && flow.currentStageIndex > 0)) {
+        const isDone = grnStage?.status === 'Done' || grnStage?.status === 'Completed' || flow.status === 'Completed';
+        const grnNo = grnStage?.submittedData?.grnNumber || flow.instanceDataPool?.grnNumber || `BPL/GRN/2026/${String(fIdx + 1).padStart(3, '0')}`;
+        let acceptedQty = 0;
+        let rejectedQty = 0;
+        if (Array.isArray(grnStage?.submittedData?.itemsTable)) {
+          grnStage.submittedData.itemsTable.forEach((it: any) => {
+            acceptedQty += Number(it.accepted_qty || it.received_qty || 0);
+            rejectedQty += Number(it.rejected_qty || 0);
+          });
+        } else {
+          acceptedQty = (flow.lineItems || []).reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
+        }
+
+        records.push({
+          id: `grn-${flow.id || flow.flowId}`,
+          grnNumber: String(grnNo),
+          date: grnStage?.actualDateTime || flow.indentDate || flow.createdAt.slice(0, 10),
+          vendorName: flow.vendorName || flow.instanceDataPool?.selectedL1Vendor || 'M/S ULTRA TECH CEMENT LTD',
+          poNumber: flow.poNumber || flow.requisitionNumber || flow.indentNo || `PO/2026/${String(fIdx + 1).padStart(3, '0')}`,
+          items: flow.lineItems || [],
+          totalAcceptedQty: acceptedQty > 0 ? acceptedQty : 50,
+          totalRejectedQty: rejectedQty,
+          receivedBy: grnStage?.doerName || grnStage?.assignee || 'Brahmanand Patel',
+          linkedFlowId: flow.flowId || flow.id,
+          status: isDone ? (rejectedQty > 0 ? 'PENDING_VERIFICATION' : 'COMPLETED') : 'PENDING_VERIFICATION',
+        });
+      }
+    });
+
+    if (records.length === 0) {
+      records.push({
+        id: 'grn-seed-001',
+        grnNumber: 'BPL/GRN/2026/001',
+        date: '24/10/2026',
+        vendorName: 'M/S ULTRA TECH CEMENT LTD',
+        poNumber: 'RAO/PO/752-001',
+        items: [
+          { id: 'item-grn-1', itemDescription: 'OPC 53 Grade Cement', qty: 500, unit: 'Bags' }
+        ],
+        totalAcceptedQty: 500,
+        totalRejectedQty: 0,
+        receivedBy: 'Brahmanand Patel',
+        linkedFlowId: 'FLOW-REC-102-001',
+        status: 'COMPLETED'
+      });
+    }
+
+    return records;
+  }
+
+  public getCreditLedgerRecords(): CreditLedgerRecord[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.CREDIT_LEDGER);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      const initialCredits = this.extractCreditLedgerRecordsFromFlows();
+      if (initialCredits.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.CREDIT_LEDGER, JSON.stringify(initialCredits));
+        return initialCredits;
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  public saveCreditLedgerRecords(records: CreditLedgerRecord[]) {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(STORAGE_KEYS.CREDIT_LEDGER, JSON.stringify(records));
+    this.syncToFirestore('creditLedger', records, 'id');
+    this.notifyListeners();
+  }
+
+  public addOrUpdateCreditLedgerRecord(record: CreditLedgerRecord): CreditLedgerRecord {
+    const list = this.getCreditLedgerRecords();
+    const idx = list.findIndex(r => r.id === record.id || r.poNumber === record.poNumber || (record.linkedFlowId && r.linkedFlowId === record.linkedFlowId));
+    let updated: CreditLedgerRecord[];
+    if (idx >= 0) {
+      updated = [...list];
+      updated[idx] = { ...list[idx], ...record };
+    } else {
+      updated = [record, ...list];
+    }
+    this.saveCreditLedgerRecords(updated);
+    return record;
+  }
+
+  public extractCreditLedgerRecordsFromFlows(): CreditLedgerRecord[] {
+    const flows = this.getFmsFlows();
+    const records: CreditLedgerRecord[] = [];
+    flows.forEach((flow, fIdx) => {
+      const terms = String(flow.paymentTerms || flow.instanceDataPool?.paymentTerms || '').toUpperCase();
+      const isCredit = terms.includes('CREDIT') || (!terms.includes('ADVANCE') && Boolean(flow.poNumber));
+      if (isCredit && (flow.poNumber || flow.flowType === 'INDENT_TO_PO' || flow.flowType === 'INDENT_PURCHASE' || flow.flowType === 'PURCHASE_TO_STORE_DISPATCH')) {
+        const poNum = flow.poNumber || `RAO/PO/752-${String(fIdx + 1).padStart(3, '0')}`;
+        const hasGrnDone = flow.stages?.some(s => (s.stageName || '').toLowerCase().includes('grn') && (s.status === 'Done' || s.status === 'Completed'));
+        const hasPayInitiated = flows.some(f => f.flowType === 'PO_TO_PAYMENT' && (f.linkedFlowId === flow.flowId || f.indentNo === flow.indentNo));
+
+        let status: 'AWAITING_GRN' | 'GRN_COMPLETED' | 'PAYMENT_INITIATED' = 'AWAITING_GRN';
+        if (hasPayInitiated) {
+          status = 'PAYMENT_INITIATED';
+        } else if (hasGrnDone || flow.flowType === 'PURCHASE_TO_STORE_DISPATCH') {
+          status = 'GRN_COMPLETED';
+        }
+
+        records.push({
+          id: `credit-${flow.id || flow.flowId}`,
+          poNumber: poNum,
+          poDate: flow.indentDate || flow.createdAt.slice(0, 10),
+          vendorName: flow.vendorName || 'M/S ULTRA TECH CEMENT LTD',
+          indentNo: flow.indentNo,
+          poAmount: Number(flow.poAmount || 185000),
+          status,
+          linkedFlowId: flow.flowId || flow.id,
+        });
+      }
+    });
+
+    if (records.length === 0) {
+      records.push({
+        id: 'credit-seed-001',
+        poNumber: 'RAO/PO/752-001',
+        poDate: '24/10/2026',
+        vendorName: 'M/S ULTRA TECH CEMENT LTD',
+        indentNo: 'IND-20261024-001',
+        poAmount: 185000,
+        status: 'AWAITING_GRN',
+        linkedFlowId: 'FLOW-PUR-20261024-001'
+      });
+      records.push({
+        id: 'credit-seed-002',
+        poNumber: 'RAO/PO/752-002',
+        poDate: '22/10/2026',
+        vendorName: 'M/S E SAB WELDING SOLUTIONS',
+        indentNo: 'IND-20261022-004',
+        poAmount: 85200,
+        status: 'GRN_COMPLETED',
+        linkedFlowId: 'FLOW-PSD-20261022-001'
+      });
+    }
+
+    return records;
   }
 }
 

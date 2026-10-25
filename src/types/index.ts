@@ -268,7 +268,7 @@ export function getUserModulePermission(
   if (moduleId === 'registry' || moduleId === 'audit' || moduleId === 'super-admin') {
     return { visible: false, canEdit: false, canDelete: false };
   }
-  if (['fms', 'delegation', 'checklist', 'ims', 'fms-audit', 'template-studio'].includes(moduleId)) {
+  if (['fms', 'delegation', 'checklist', 'ims', 'fms-audit', 'template-studio', 'stn-ledger', 'grn-ledger', 'credit-ledger'].includes(moduleId)) {
     return { visible: true, canEdit: true, canDelete: false };
   }
   if (moduleId === 'vendor-directory') {
@@ -900,7 +900,7 @@ export interface AppNotification {
   urgency?: 'HIGH' | 'MEDIUM' | 'LOW';
   title: string;
   message: string;
-  type: 'FMS_ACTION_REQUIRED' | 'STAGE_ADVANCED' | 'SLA_BREACH' | 'NUDGE' | 'DELEGATION' | 'STOCK_ALERT' | 'SYSTEM';
+  type: 'FMS_ACTION_REQUIRED' | 'STAGE_ADVANCED' | 'SLA_BREACH' | 'SLA_WARNING' | 'NUDGE' | 'DELEGATION' | 'STOCK_ALERT' | 'SYSTEM';
   timestamp: string;
   read: boolean;
   linkTab?: string;
@@ -1174,4 +1174,43 @@ export interface VendorSearchWithBankingResult {
   isNameMismatch: boolean;
   matchScore: number;
 }
+
+export interface StnRecord {
+  id: string;
+  stnNumber: string; // e.g., BPL/STN/2026/001
+  date: string;
+  sourceLocation: string; // Raipur Office / Central Store
+  destinationLocation: string; // Site Name
+  items: FmsLineItem[];
+  totalQty: number;
+  dispatchedBy: string;
+  linkedFlowId: string;
+  status: 'DRAFT' | 'DISPATCHED' | 'RECEIVED';
+}
+
+export interface GrnRecord {
+  id: string;
+  grnNumber: string; // e.g., BPL/GRN/2026/001
+  date: string;
+  vendorName: string;
+  poNumber: string;
+  items: FmsLineItem[];
+  totalAcceptedQty: number;
+  totalRejectedQty: number;
+  receivedBy: string;
+  linkedFlowId: string;
+  status: 'PENDING_VERIFICATION' | 'COMPLETED';
+}
+
+export interface CreditLedgerRecord {
+  id: string;
+  poNumber: string;
+  poDate: string;
+  vendorName: string;
+  indentNo: string;
+  poAmount: number;
+  status: 'AWAITING_GRN' | 'GRN_COMPLETED' | 'PAYMENT_INITIATED';
+  linkedFlowId: string; // Links back to INDENT_TO_PO or PURCHASE_TO_STORE_DISPATCH
+}
+
 

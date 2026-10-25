@@ -340,6 +340,31 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
 
           {/* Action Controls */}
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            {/* Status Filter Dropdown */}
+            <select
+              value={mismatchOnly ? 'MISMATCH' : statusFilter}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === 'MISMATCH') {
+                  setMismatchOnly(true);
+                  setStatusFilter('ALL');
+                } else {
+                  setMismatchOnly(false);
+                  setStatusFilter(val as any);
+                }
+              }}
+              aria-label="Filter payments by status"
+              className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200 text-xs font-bold transition-colors cursor-pointer shadow-2xs outline-none focus:border-indigo-500"
+            >
+              <option value="ALL">All Statuses ({payments.length})</option>
+              <option value="PENDING">Pending Sanction ({pendingApprovalList.length})</option>
+              <option value="APPROVED">Awaiting Bank Entry ({awaitingEntryList.length})</option>
+              <option value="DONE">Settled ({settledList.length})</option>
+              <option value="PENDING_GRN">Credit Pending ({creditPendingList.length})</option>
+              <option value="REJECTED">Rejected</option>
+              <option value="MISMATCH">Name Mismatch ({mismatchList.length})</option>
+            </select>
+
             {/* Column Customizer */}
             <ColumnCustomizerPopover
               storageKey={STORAGE_KEY}
@@ -367,94 +392,6 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
               <Plus className="w-4 h-4" />
               <span>+ New Payment Request</span>
             </button>
-          </div>
-        </div>
-
-        {/* Row 2: Status Facet Tabs & Filter Reset Counter */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-slate-100">
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl flex-wrap">
-            <button
-              type="button"
-              onClick={() => { setStatusFilter('ALL'); setMismatchOnly(false); }}
-              className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all cursor-pointer ${
-                statusFilter === 'ALL' && !mismatchOnly
-                  ? 'bg-slate-900 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              All ({payments.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => { setStatusFilter('PENDING'); setMismatchOnly(false); }}
-              className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all cursor-pointer ${
-                statusFilter === 'PENDING'
-                  ? 'bg-amber-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Pending Sanction ({pendingApprovalList.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => { setStatusFilter('APPROVED'); setMismatchOnly(false); }}
-              className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all cursor-pointer ${
-                statusFilter === 'APPROVED'
-                  ? 'bg-indigo-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Awaiting Bank Entry ({awaitingEntryList.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => { setStatusFilter('DONE'); setMismatchOnly(false); }}
-              className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all cursor-pointer ${
-                statusFilter === 'DONE'
-                  ? 'bg-emerald-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Settled ({settledList.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => { setStatusFilter('PENDING_GRN'); setMismatchOnly(false); }}
-              className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all cursor-pointer ${
-                statusFilter === 'PENDING_GRN'
-                  ? 'bg-purple-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Credit Pending ({creditPendingList.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setMismatchOnly(!mismatchOnly)}
-              className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                mismatchOnly
-                  ? 'bg-rose-600 text-white shadow-2xs'
-                  : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200'
-              }`}
-            >
-              <AlertTriangle className="w-3.5 h-3.5" />
-              <span>Name Mismatch ({mismatchList.length})</span>
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
-            <span>
-              Showing <strong className="text-slate-800">{filteredPayments.length}</strong> of {payments.length} payments
-            </span>
-            {(statusFilter !== 'ALL' || mismatchOnly || localSearch) && (
-              <button
-                type="button"
-                onClick={() => { setStatusFilter('ALL'); setMismatchOnly(false); setLocalSearch(''); }}
-                className="text-indigo-600 hover:underline font-semibold cursor-pointer"
-              >
-                Reset filters
-              </button>
-            )}
           </div>
         </div>
       </div>

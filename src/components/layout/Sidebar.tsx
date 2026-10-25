@@ -21,14 +21,17 @@ import {
   Scale,
   Users,
   Layers,
-  FileText
+  FileText,
+  Truck,
+  FileCheck,
+  CreditCard
 } from 'lucide-react';
 import { FmsInstance, UserProfile, isUserSuperAdmin, isUserAdmin, isUserAdminOrSuperAdmin, hasModulePermission, ChecklistItem, DelegationTask } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { getFlowDepartmentKey, getDepartmentBranchLabel, matchItemDepartment, matchTaskDepartment, getDepartmentForWorkflow } from '../../services/stageAssignment';
 import { UserAvatar } from '../common/UserAvatar';
 
-export type NavTab = 'summary' | 'site-requisitions' | 'mis' | 'fms' | 'fms-audit' | 'template-studio' | 'cs-sheet' | 'bank-payments' | 'vendor-directory' | 'delegation' | 'checklist' | 'ims' | 'registry' | 'audit' | 'super-admin' | 'profile';
+export type NavTab = 'summary' | 'site-requisitions' | 'mis' | 'fms' | 'fms-audit' | 'template-studio' | 'cs-sheet' | 'bank-payments' | 'vendor-directory' | 'delegation' | 'checklist' | 'ims' | 'registry' | 'audit' | 'super-admin' | 'profile' | 'stn-ledger' | 'grn-ledger' | 'credit-ledger';
 
 interface SidebarProps {
   activeTab: NavTab;
@@ -315,6 +318,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'vendor-directory' as NavTab,
       label: 'Vendor Directory',
       icon: Users,
+    },
+    {
+      id: 'credit-ledger' as NavTab,
+      label: 'Credit Ledger',
+      icon: CreditCard,
     },
   ];
 
@@ -733,6 +741,61 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             )}
                           </button>
                         </div>
+
+                        {/* 4. Dedicated Store Department Ledgers */}
+                        {dept.key === 'STORE' && (
+                          <div className="pt-1.5 border-t border-slate-200/60 space-y-1">
+                            {/* STN Ledger */}
+                            <button
+                              onClick={() => onTabChange('stn-ledger')}
+                              className={`w-full flex items-center justify-between px-2 py-1 rounded-md text-left transition-all ${
+                                activeTab === 'stn-ledger'
+                                  ? 'bg-indigo-600 text-white font-medium shadow-xs'
+                                  : 'text-slate-700 hover:bg-slate-100 font-semibold'
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <Truck className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'stn-ledger' ? 'text-white' : 'text-indigo-600'}`} />
+                                <span className="text-[11px] truncate">STN Ledger</span>
+                              </div>
+                            </button>
+
+                            {/* GRN Ledger */}
+                            <button
+                              onClick={() => onTabChange('grn-ledger')}
+                              className={`w-full flex items-center justify-between px-2 py-1 rounded-md text-left transition-all ${
+                                activeTab === 'grn-ledger'
+                                  ? 'bg-emerald-600 text-white font-medium shadow-xs'
+                                  : 'text-slate-700 hover:bg-slate-100 font-semibold'
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <FileCheck className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'grn-ledger' ? 'text-white' : 'text-emerald-600'}`} />
+                                <span className="text-[11px] truncate">GRN Ledger</span>
+                              </div>
+                            </button>
+                          </div>
+                        )}
+
+                        {/* 5. Dedicated Accounts Department Ledgers */}
+                        {dept.key === 'ACCOUNTS' && (
+                          <div className="pt-1.5 border-t border-slate-200/60 space-y-1">
+                            {/* Credit Ledger */}
+                            <button
+                              onClick={() => onTabChange('credit-ledger')}
+                              className={`w-full flex items-center justify-between px-2 py-1 rounded-md text-left transition-all ${
+                                activeTab === 'credit-ledger'
+                                  ? 'bg-amber-600 text-white font-medium shadow-xs'
+                                  : 'text-slate-700 hover:bg-slate-100 font-semibold'
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <CreditCard className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'credit-ledger' ? 'text-white' : 'text-amber-600'}`} />
+                                <span className="text-[11px] truncate">Credit Ledger</span>
+                              </div>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

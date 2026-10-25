@@ -397,8 +397,8 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
         </div>
       </div>
 
-      {/* Navigation View Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200">
+      {/* Navigation View Tabs - Mobile View Only (< md breakpoint) */}
+      <div className="flex items-center gap-2 border-b border-slate-200 overflow-x-auto md:hidden">
         <button
           onClick={() => setActiveTab('STAGE_TABLE')}
           className={`px-4 py-2.5 text-xs font-bold transition-all border-b-2 flex items-center gap-2 ${
@@ -437,7 +437,7 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
       </div>
 
       {/* Tab 1: Detailed Connected Stage Breakdown Table */}
-      {activeTab === 'STAGE_TABLE' && (
+      <div className={activeTab === 'STAGE_TABLE' ? 'block' : 'hidden md:block'}>
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
@@ -714,10 +714,10 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
             </table>
           </div>
         </div>
-      )}
+      </div>
 
       {/* Tab 2: Line Items Breakdown & Triage Status */}
-      {activeTab === 'LINE_ITEMS' && (
+      <div className={activeTab === 'LINE_ITEMS' ? 'block' : 'hidden md:block'}>
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div>
@@ -787,10 +787,10 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
             </table>
           </div>
         </div>
-      )}
+      </div>
 
       {/* Tab 3: Universal Form Data Inheritance Pool */}
-      {activeTab === 'UNIVERSAL_DATA' && (
+      <div className={activeTab === 'UNIVERSAL_DATA' ? 'block' : 'hidden md:block'}>
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div>
@@ -833,7 +833,7 @@ export const FmsIndividualView: React.FC<FmsIndividualViewProps> = ({
             </div>
           </div>
         </div>
-      )}
+      </div>
 
       {/* Store Triage Modal */}
       {isStoreTriageOpen && (

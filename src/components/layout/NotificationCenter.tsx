@@ -90,7 +90,8 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
       case 'FMS':
         return notif.type === 'FMS_ACTION_REQUIRED' || 
                notif.type === 'STAGE_ADVANCED' || 
-               notif.type === 'SLA_BREACH';
+               notif.type === 'SLA_BREACH' ||
+               notif.type === 'SLA_WARNING';
       case 'ALERTS':
         return notif.type === 'STOCK_ALERT' || 
                notif.type === 'DELEGATION' || 
@@ -127,6 +128,15 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
           bgActive: 'bg-rose-50/50 hover:bg-rose-50/90',
           icon: <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 animate-pulse" />,
           actionText: 'Inspect Delayed Stage'
+        };
+      case 'SLA_WARNING':
+        return {
+          pill: 'bg-amber-100 text-amber-800 border-amber-200',
+          badgeText: 'SLA WARNING (80%)',
+          borderAccent: 'border-l-4 border-amber-500',
+          bgActive: 'bg-amber-50/50 hover:bg-amber-50/90',
+          icon: <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />,
+          actionText: 'Inspect Approaching SLA'
         };
       case 'STOCK_ALERT':
         return {
@@ -180,6 +190,9 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     e.preventDefault();
     e.stopPropagation();
     if (!notif.read) {
+      if (notif.data?.groupedIds && Array.isArray(notif.data.groupedIds)) {
+        notif.data.groupedIds.forEach((id: string) => onMarkRead(id));
+      }
       onMarkRead(notif.id);
     }
     onSelectNotification(notif);
@@ -245,19 +258,19 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
       </div>
 
       {/* Filter Tabs */}
-      <div className="px-3 py-2 bg-slate-100 border-b border-slate-200 flex items-center gap-1.5 overflow-x-auto">
+      <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center gap-1.5">
         <button
           type="button"
           onClick={() => setActiveFilter('FOR_ME')}
-          className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
+          className={`px-2.5 py-1 text-xs rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
             activeFilter === 'FOR_ME'
-              ? 'bg-indigo-600 text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+              ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-600 font-bold'
+              : 'bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-950 border border-slate-300 font-medium'
           }`}
         >
           <span>Assigned to Me</span>
           {unreadForMe > 0 && (
-            <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
+            <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
               activeFilter === 'FOR_ME' ? 'bg-white text-indigo-700' : 'bg-rose-500 text-white'
             }`}>
               {unreadForMe}
@@ -268,10 +281,10 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
         <button
           type="button"
           onClick={() => setActiveFilter('ALL')}
-          className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer shrink-0 ${
+          className={`px-2.5 py-1 text-xs rounded-lg transition-all cursor-pointer ${
             activeFilter === 'ALL'
-              ? 'bg-slate-800 text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+              ? 'bg-slate-900 text-white shadow-sm ring-1 ring-slate-900 font-bold'
+              : 'bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-950 border border-slate-300 font-medium'
           }`}
         >
           All Updates ({notifications.length})
@@ -280,10 +293,10 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
         <button
           type="button"
           onClick={() => setActiveFilter('FMS')}
-          className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer shrink-0 ${
+          className={`px-2.5 py-1 text-xs rounded-lg transition-all cursor-pointer ${
             activeFilter === 'FMS'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+              ? 'bg-blue-600 text-white shadow-sm ring-1 ring-blue-600 font-bold'
+              : 'bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-950 border border-slate-300 font-medium'
           }`}
         >
           FMS & Approvals
@@ -292,13 +305,13 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
         <button
           type="button"
           onClick={() => setActiveFilter('ALERTS')}
-          className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer shrink-0 ${
+          className={`px-2.5 py-1 text-xs rounded-lg transition-all cursor-pointer ${
             activeFilter === 'ALERTS'
-              ? 'bg-amber-600 text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+              ? 'bg-amber-600 text-white shadow-sm ring-1 ring-amber-600 font-bold'
+              : 'bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-950 border border-slate-300 font-medium'
           }`}
         >
-          Tasks & Alerts
+          Tasks
         </button>
       </div>
 
@@ -412,6 +425,9 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
+                        if (notif.data?.groupedIds && Array.isArray(notif.data.groupedIds)) {
+                          notif.data.groupedIds.forEach((id: string) => onMarkRead(id));
+                        }
                         onMarkRead(notif.id);
                       }}
                       className="text-[10px] text-slate-400 hover:text-slate-700 font-medium hover:underline p-0.5"

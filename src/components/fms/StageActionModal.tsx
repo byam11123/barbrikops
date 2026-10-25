@@ -255,6 +255,14 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
 
     // Store to Site Dispatch Workflow Presets (4 Stages)
     if (flow.flowType === 'STORE_TO_SITE_DISPATCH' || flow.templateKey === 'STORE_TO_SITE_DISPATCH') {
+      if (stage.stageId === 'STG-SSD-02' || stageIndex === 1 || stage.stageName?.toLowerCase().includes('stn')) {
+        return [
+          { id: 'stnNumber', label: 'STN Number', type: 'TEXT', required: true, placeholder: 'e.g. BPL/STN/2026/044' },
+          { id: 'stnDate', label: 'STN Issue Date', type: 'DATE', required: true },
+          { id: 'stnItemsTable', label: 'Outward STN Items', type: 'MULTI_ITEM_TABLE', required: true },
+          { id: 'stnDocument', label: 'Upload STN / Challan Document', type: 'FILE' }
+        ];
+      }
       const stageDef = FMS_STORE_TO_SITE_DISPATCH_STAGES.find(
         (s) => s.stageId === stage.stageId ||
                s.name.toLowerCase() === stage.stageName?.toLowerCase() ||
@@ -494,6 +502,12 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
   const [previewFile, setPreviewFile] = useState<{ url: string; name: string } | null>(null);
 
   const isPoToPaymentFlow = Boolean(flow && (flow.flowType === 'PO_TO_PAYMENT' || flow.templateKey === 'PO_TO_PAYMENT'));
+  const isStoreToSiteDispatch = Boolean(flow && (flow.flowType === 'STORE_TO_SITE_DISPATCH' || flow.templateKey === 'STORE_TO_SITE_DISPATCH'));
+  const isStage2Stn = Boolean(
+    isStoreToSiteDispatch &&
+    stage &&
+    (stage.stageId === 'STG-SSD-02' || stageIndex === 1 || stage.stageName?.toLowerCase().includes('stn'))
+  );
   const isPaymentApprovalStage = Boolean(
     isPoToPaymentFlow &&
     stage &&
@@ -651,6 +665,28 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                 rejection_reason: ''
               }];
             }
+          } else if ((flow.flowType === 'STORE_TO_SITE_DISPATCH' || flow.templateKey === 'STORE_TO_SITE_DISPATCH') && f.id === 'stnItemsTable') {
+            const stage1Items = flow.stages?.[0]?.submittedData?.itemsTable || flow.stages?.[0]?.submittedData?.stnItemsTable;
+            const rawItems = Array.isArray(stage1Items) && stage1Items.length > 0
+              ? stage1Items
+              : (flow.lineItems && flow.lineItems.length > 0 ? flow.lineItems : pool.itemsTable || pool.requisitionItems || pool.lineItems || []);
+            if (rawItems.length > 0) {
+              inherited = rawItems.map((item: any, i: number) => ({
+                id: item.id || `row_${i + 1}`,
+                item_description: item.item_description || item.itemDescription || item.description || `Item #${i + 1}`,
+                quantity: item.quantity || item.storeQty || item.requestedQty || item.qty || 1,
+                unit: item.unit || 'Nos',
+                remarks: item.remarks || item.remark || ''
+              }));
+            } else {
+              inherited = [{
+                id: 'row_1',
+                item_description: flow.remarks || 'Store Transfer Item',
+                quantity: 1,
+                unit: 'Nos',
+                remarks: ''
+              }];
+            }
           } else {
             inherited = pool[f.id] || pool.multiItems || pool.requisitionItems || pool.lineItems || (flow.lineItems && flow.lineItems.length > 0 ? flow.lineItems.map((item: any, i: number) => ({
               id: item.id || `row_${i+1}`,
@@ -766,7 +802,7 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
       }
 
       // Initialize purchaser items for non-stage-2 review and quantity adjustment
-      if (!isStage2CheckStock && flow.lineItems && flow.lineItems.length > 0) {
+      if (!isStage2CheckStock && !isStoreToSiteDispatch && flow.lineItems && flow.lineItems.length > 0) {
         setPurchaserItems(flow.lineItems.map((item) => ({ ...item })));
       } else {
         setPurchaserItems([]);
@@ -1254,7 +1290,7 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
+      <div className={`bg-white rounded-2xl ${isStage2Stn ? 'max-w-4xl' : 'max-w-2xl'} w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh] animate-in fade-in zoom-in-95 duration-200`}>
         
         {/* Modal Header */}
         <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 flex items-center justify-between bg-gradient-to-r from-indigo-900 via-indigo-950 to-slate-900 text-white">
@@ -1860,6 +1896,12 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
 
                             if (!itemsList || itemsList.length === 0) return null;
 
+                            // User explicit instruction for STORE_TO_SITE_DISPATCH Stage 2:
+                            // Delete the Purchaser Line Items table, Requisition Line Items table, and STN Items Table from history section
+                            if (isStoreToSiteDispatch) {
+                              return null;
+                            }
+
                             const displayLabel = resolveFieldLabel(k, prior, pIdx);
                             return (
                               <div key={k} className="pt-2 border-t border-slate-100">
@@ -1874,6 +1916,39 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                   </div>
                 );
               });
+
+            if (isStoreToSiteDispatch) {
+              const stage1 = priorStages.find((s) => s.stageId === 'STG-SSD-01' || s.stageName.toLowerCase().includes('collect')) || priorStages[0];
+              return (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => setIsPriorStagesExpanded(!isPriorStagesExpanded)}
+                    className="w-full px-4 py-2.5 flex items-center justify-between text-left hover:bg-slate-100 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span className="font-bold text-xs text-slate-800">
+                        {stage1?.stageName || 'Collect Items from Store'}
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        Completed
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600">
+                      <span>{isPriorStagesExpanded ? 'Hide History' : 'View History'}</span>
+                      <span className="text-slate-400 font-mono text-[10px]">{isPriorStagesExpanded ? '▲' : '▼'}</span>
+                    </div>
+                  </button>
+
+                  {isPriorStagesExpanded && (
+                    <div className="p-3.5 space-y-3 border-t border-slate-200 bg-slate-100/40">
+                      {priorStagesCards}
+                    </div>
+                  )}
+                </div>
+              );
+            }
 
             if (isPoToPaymentFlow) {
               return (
@@ -2060,7 +2135,7 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
             )}
 
             {/* PURCHASER / ASSIGNEE LINE ITEM REVIEW & QUANTITY REVISION */}
-            {purchaserItems.length > 0 && !isStage2CheckStock && stageIndex !== 4 && stage.stageId !== 'STG-05' && !isStage5MaterialCollection && (
+            {purchaserItems.length > 0 && !isStage2CheckStock && !isStoreToSiteDispatch && stageIndex !== 4 && stage.stageId !== 'STG-05' && !isStage5MaterialCollection && (
               <div className="p-3.5 bg-indigo-50/60 border border-indigo-200 rounded-xl space-y-3">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div>
@@ -2343,7 +2418,14 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
 
                   if (field.type === 'MULTI_ITEM_TABLE') {
                     const rows = Array.isArray(val) ? val : [];
-                    const columns = (field.columns && field.columns.length > 0)
+                    const columns = field.id === 'stnItemsTable'
+                      ? [
+                          { key: 'item_description', label: 'Item Description', type: 'TEXT' as const },
+                          { key: 'quantity', label: 'Quantity', type: 'NUMBER' as const },
+                          { key: 'unit', label: 'Unit', type: 'TEXT' as const },
+                          { key: 'remarks', label: 'Remarks', type: 'TEXT' as const },
+                        ]
+                      : (field.columns && field.columns.length > 0)
                       ? field.columns
                       : typeof field.defaultValue === 'string' && field.defaultValue.trim()
                       ? field.defaultValue.split(',').map(s => s.trim()).filter(Boolean).map(colLabel => ({
@@ -2409,11 +2491,27 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                             <thead className="bg-slate-100 text-slate-800 font-bold border-b border-slate-200">
                               <tr>
                                 <th className="py-2 px-2 w-8 text-center">#</th>
-                                {columns.map((col) => (
-                                  <th key={col.key} className="py-2 px-2 min-w-[110px]">
-                                    {col.label}
-                                  </th>
-                                ))}
+                                {columns.map((col) => {
+                                  const isDesc = col.key === 'item_description' || col.key.includes('description');
+                                  const isQty = col.key === 'quantity' || col.key.includes('qty');
+                                  const isUnit = col.key === 'unit';
+                                  return (
+                                    <th
+                                      key={col.key}
+                                      className={`py-2 px-2.5 ${
+                                        isDesc
+                                          ? 'min-w-[280px] sm:min-w-[360px] text-left'
+                                          : isQty
+                                          ? 'w-24 text-center'
+                                          : isUnit
+                                          ? 'w-20 text-center'
+                                          : 'min-w-[140px]'
+                                      }`}
+                                    >
+                                      {col.label}
+                                    </th>
+                                  );
+                                })}
                                 <th className="py-2 px-1 w-8 text-center"></th>
                               </tr>
                             </thead>
@@ -2430,24 +2528,40 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                                     <td className="py-2 px-2 text-center font-mono text-slate-400 text-[11px]">
                                       {rIdx + 1}
                                     </td>
-                                    {columns.map((col) => (
-                                      <td key={col.key} className="py-1.5 px-1.5">
-                                        <input
-                                          type={col.type === 'NUMBER' ? 'number' : 'text'}
-                                          step={col.type === 'NUMBER' ? 'any' : undefined}
-                                          value={row[col.key] !== undefined ? row[col.key] : ''}
-                                          onChange={(e) =>
-                                            handleRowChange(
-                                              rIdx,
-                                              col.key,
-                                              col.type === 'NUMBER' ? parseFloat(e.target.value) || 0 : e.target.value
-                                            )
-                                          }
-                                          placeholder={col.label}
-                                          className="w-full text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-md px-2 py-1 font-semibold text-slate-800 focus:outline-none"
-                                        />
-                                      </td>
-                                    ))}
+                                    {columns.map((col) => {
+                                      const isDesc = col.key === 'item_description' || col.key.includes('description');
+                                      const isQty = col.key === 'quantity' || col.key.includes('qty');
+                                      const isUnit = col.key === 'unit';
+                                      return (
+                                        <td
+                                          key={col.key}
+                                          className={`py-1.5 px-1.5 ${
+                                            isDesc
+                                              ? 'min-w-[280px] sm:min-w-[360px]'
+                                              : isQty
+                                              ? 'w-24'
+                                              : isUnit
+                                              ? 'w-20'
+                                              : 'min-w-[140px]'
+                                          }`}
+                                        >
+                                          <input
+                                            type={col.type === 'NUMBER' ? 'number' : 'text'}
+                                            step={col.type === 'NUMBER' ? 'any' : undefined}
+                                            value={row[col.key] !== undefined ? row[col.key] : ''}
+                                            onChange={(e) =>
+                                              handleRowChange(
+                                                rIdx,
+                                                col.key,
+                                                col.type === 'NUMBER' ? parseFloat(e.target.value) || 0 : e.target.value
+                                              )
+                                            }
+                                            placeholder={col.label}
+                                            className={`w-full text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-md px-2 py-1 font-semibold text-slate-800 focus:outline-none ${isQty || isUnit ? 'text-center' : ''}`}
+                                          />
+                                        </td>
+                                      );
+                                    })}
                                     <td className="py-1.5 px-1 text-center">
                                       <button
                                         type="button"

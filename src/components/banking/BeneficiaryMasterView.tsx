@@ -340,6 +340,19 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            {/* Status Filter Dropdown */}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              aria-label="Filter beneficiaries by status"
+              className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200 text-xs font-bold transition-colors cursor-pointer shadow-2xs outline-none focus:border-indigo-500"
+            >
+              <option value="ALL">All Statuses ({beneficiaries.length})</option>
+              <option value="APPROVED">Approved ({approvedCount})</option>
+              <option value="PENDING">Pending Approval ({pendingCount})</option>
+              <option value="REJECTED">Rejected ({rejectedCount})</option>
+            </select>
+
             {/* Column Customizer */}
             <ColumnCustomizerPopover
               storageKey={STORAGE_KEY}
@@ -367,71 +380,6 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
               <Plus className="w-4 h-4" />
               <span>+ Add Beneficiary</span>
             </button>
-          </div>
-        </div>
-
-        {/* Row 2: Status Facet Tabs & Count */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-slate-100">
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl flex-wrap">
-            <button
-              type="button"
-              onClick={() => setStatusFilter('ALL')}
-              className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all cursor-pointer ${
-                statusFilter === 'ALL'
-                  ? 'bg-slate-900 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              All ({beneficiaries.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('APPROVED')}
-              className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all cursor-pointer ${
-                statusFilter === 'APPROVED'
-                  ? 'bg-emerald-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Approved ({approvedCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('PENDING')}
-              className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all cursor-pointer ${
-                statusFilter === 'PENDING'
-                  ? 'bg-amber-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Pending ({pendingCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('REJECTED')}
-              className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all cursor-pointer ${
-                statusFilter === 'REJECTED'
-                  ? 'bg-rose-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Rejected ({rejectedCount})
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
-            <span>
-              Showing <strong className="text-slate-800">{filteredBeneficiaries.length}</strong> of {beneficiaries.length} beneficiaries
-            </span>
-            {(statusFilter !== 'ALL' || localSearch) && (
-              <button
-                type="button"
-                onClick={() => { setStatusFilter('ALL'); setLocalSearch(''); }}
-                className="text-indigo-600 hover:underline font-semibold cursor-pointer"
-              >
-                Reset filters
-              </button>
-            )}
           </div>
         </div>
       </div>
