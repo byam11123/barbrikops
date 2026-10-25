@@ -395,9 +395,12 @@ export default function App() {
           const stgIdx = stageIndex !== undefined ? stageIndex : f.currentStageIndex;
           if (stagesCopy[stgIdx]) {
             targetAssigneeName = stagesCopy[stgIdx].assignee || '';
+            const currentCount = stagesCopy[stgIdx].nudgeCount || 0;
             stagesCopy[stgIdx] = {
               ...stagesCopy[stgIdx],
-              lastNudgeTimestamp: nudgeTime
+              lastNudgeTimestamp: nudgeTime,
+              nudgeCount: currentCount + 1,
+              lastNudgeAt: nudgeTime,
             };
           }
           return { ...f, stages: stagesCopy };

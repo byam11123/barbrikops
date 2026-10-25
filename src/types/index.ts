@@ -620,6 +620,8 @@ export interface FmsStageExecution {
   doerName?: string;
   processRemarks?: ProcessRemark[];
   lastNudgeTimestamp?: string;
+  nudgeCount?: number;
+  lastNudgeAt?: string;
   fields?: FmsStageFieldConfig[];
   submittedData?: Record<string, any>;
   logic?: FmsStageLogicConfig;

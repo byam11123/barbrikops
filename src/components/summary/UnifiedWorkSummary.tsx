@@ -44,13 +44,17 @@ import {
   MoreVertical,
   ChevronUp,
   ChevronDown,
-  ArrowUpDown
+  ArrowUpDown,
+  Settings
 } from 'lucide-react';
 import { downloadCsv } from '../../utils/csvExporter';
 import { CustomSelect } from '../common/CustomSelect';
 import { ChecklistItem, DelegationTask, FmsInstance, UserProfile, ProcessRemark, FmsStageDefinition, isUserSuperAdmin, isUserAdminOrSuperAdmin, isUserDirector, isUserEA, isUserProcessCoordinator } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
 import { SplitTaskCockpit } from './SplitTaskCockpit';
+import { PCDelayMonitor } from './PCDelayMonitor';
+import { EAApprovalDesk } from './EAApprovalDesk';
+import { DirectorQueue } from './DirectorQueue';
 import { 
   FMS_CHECK_STOCK_STAGES, 
   FMS_STANDARD_PURCHASE_STAGES, 
@@ -667,21 +671,51 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [assigneeFilter, setAssigneeFilter] = useState<string>('ALL');
 
-  const isSuperAdmin = isUserSuperAdmin(currentUser);
-  const isAdminOrSuperAdmin = isUserAdminOrSuperAdmin(currentUser);
-  const isDirectorUser = isUserDirector(currentUser);
-  const isEaUser = isUserEA(currentUser);
-  const isPcUser = isUserProcessCoordinator(currentUser) || currentUser.name.toLowerCase().includes('ritu') || currentUser.role.toLowerCase().includes('process coordinator');
+  const isSuperAdmin = isUserSuperAdmin(currentUser) || currentUser.systemRole === 'SUPER_ADMIN';
+  const isAdminOrSuperAdmin = isUserAdminOrSuperAdmin(currentUser) || currentUser.systemRole === 'SUPER_ADMIN' || currentUser.systemRole === 'ADMIN';
+  const isDirectorUser = isUserDirector(currentUser) || currentUser.systemRole === 'DIRECTOR';
+  const isEaUser = isUserEA(currentUser) || currentUser.role === 'Executive Assistant' || currentUser.systemRole === 'EXECUTIVE_ASSISTANT';
+  const isPcUser = isUserProcessCoordinator(currentUser) || currentUser.systemRole === 'PROCESS_COORDINATOR' || currentUser.name.toLowerCase().includes('ritu') || currentUser.role.toLowerCase().includes('process coordinator');
   const canCoordinate = isAdminOrSuperAdmin || isPcUser;
 
-  // Automatic Workspace Role Detection & Default Tab Mode
-  const defaultWorkspaceMode: 'TASKS' | 'PC_DESK' | 'EA_DESK' | 'DIRECTOR_QUEUE' = 
-    isDirectorUser ? 'DIRECTOR_QUEUE' :
-    isEaUser ? 'EA_DESK' :
-    isPcUser ? 'PC_DESK' :
-    'TASKS';
+  // Feature Flag: Role-Based Dashboards (Default: false, persisted in LocalStorage)
+  // Only SUPER_ADMIN can see and toggle this feature flag.
+  const [showRoleDashboards, setShowRoleDashboards] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem('barbrik_feature_role_dashboards');
+      return stored === 'true';
+    } catch {
+      return false;
+    }
+  });
 
-  const [workspaceMode, setWorkspaceMode] = useState<'TASKS' | 'PC_DESK' | 'EA_DESK' | 'DIRECTOR_QUEUE'>(defaultWorkspaceMode);
+  const toggleRoleDashboards = () => {
+    setShowRoleDashboards((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('barbrik_feature_role_dashboards', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  // Only SUPER_ADMIN with feature flag enabled can see the role dashboard tabs
+  const canShowRoleTabs = isSuperAdmin && showRoleDashboards;
+
+  // 'My Tasks' ('TASKS') is ALWAYS the default active tab on login, session start, or page refresh
+  const [workspaceMode, setWorkspaceMode] = useState<'TASKS' | 'PC_DESK' | 'EA_DESK' | 'DIRECTOR_QUEUE'>('TASKS');
+
+  // Always reset to 'TASKS' ('My Tasks') when user changes or session starts
+  React.useEffect(() => {
+    setWorkspaceMode('TASKS');
+  }, [currentUser.userId]);
+
+  // Guard workspaceMode against unauthorized access or when feature flag is disabled
+  React.useEffect(() => {
+    if (!canShowRoleTabs && workspaceMode !== 'TASKS') {
+      setWorkspaceMode('TASKS');
+    }
+  }, [canShowRoleTabs, workspaceMode]);
 
   // Sync PC desk active state
   const pcDeskActive = workspaceMode === 'PC_DESK' || isPcUser || (isAdminOrSuperAdmin && propPcDeskActive);
@@ -2003,94 +2037,111 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
 
   return (
     <div className="space-y-3 sm:space-y-4">
-      {/* Top Workspace Header & Role Switcher Bar */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-3.5 sm:p-4 rounded-2xl shadow-md border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className={`p-2.5 rounded-xl font-bold text-slate-950 shrink-0 ${
-            workspaceMode === 'DIRECTOR_QUEUE' ? 'bg-emerald-400' :
-            workspaceMode === 'EA_DESK' ? 'bg-sky-400' :
-            workspaceMode === 'PC_DESK' ? 'bg-amber-400' :
-            'bg-indigo-400'
-          }`}>
-            {workspaceMode === 'DIRECTOR_QUEUE' ? <ShieldCheck className="w-5 h-5" /> :
-             workspaceMode === 'EA_DESK' ? <Briefcase className="w-5 h-5" /> :
-             workspaceMode === 'PC_DESK' ? <GitBranch className="w-5 h-5" /> :
-             <Calendar className="w-5 h-5" />}
-          </div>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-base sm:text-lg font-black tracking-tight">
-                {workspaceMode === 'DIRECTOR_QUEUE' ? 'Director Executive Decision Desk' :
-                 workspaceMode === 'EA_DESK' ? 'Executive Assistant Approval Desk' :
-                 workspaceMode === 'PC_DESK' ? 'Process Coordinator SLA Delay Monitor' :
-                 getDynamicGreeting(currentUser.name)}
-              </h2>
-              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                workspaceMode === 'DIRECTOR_QUEUE' ? 'bg-emerald-400 text-slate-950' :
-                workspaceMode === 'EA_DESK' ? 'bg-sky-400 text-slate-950' :
-                workspaceMode === 'PC_DESK' ? 'bg-amber-400 text-slate-950' :
-                'bg-indigo-400 text-slate-950'
-              }`}>
-                {workspaceMode === 'DIRECTOR_QUEUE' ? 'Director Workspace' :
-                 workspaceMode === 'EA_DESK' ? 'EA Screening' :
-                 workspaceMode === 'PC_DESK' ? 'PC Desk' :
-                 currentUser.role || 'Staff Work'}
-              </span>
+      {/* Top Workspace Header & Role Switcher Bar: Visible ONLY to SUPER_ADMIN */}
+      {isSuperAdmin && (
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-3.5 sm:p-4 rounded-2xl shadow-md border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className={`p-2.5 rounded-xl font-bold text-slate-950 shrink-0 ${
+              workspaceMode === 'DIRECTOR_QUEUE' ? 'bg-emerald-400' :
+              workspaceMode === 'EA_DESK' ? 'bg-sky-400' :
+              workspaceMode === 'PC_DESK' ? 'bg-amber-400' :
+              'bg-indigo-400'
+            }`}>
+              {workspaceMode === 'DIRECTOR_QUEUE' ? <ShieldCheck className="w-5 h-5" /> :
+               workspaceMode === 'EA_DESK' ? <Briefcase className="w-5 h-5" /> :
+               workspaceMode === 'PC_DESK' ? <GitBranch className="w-5 h-5" /> :
+               <Calendar className="w-5 h-5" />}
             </div>
-            <p className="text-xs text-indigo-200 mt-0.5">
-              {workspaceMode === 'DIRECTOR_QUEUE' ? 'Pre-screened executive briefs, attached EA notes & PIN-verified 1-click authorization' :
-               workspaceMode === 'EA_DESK' ? 'Inspect rate approvals, CS sheet comparisons & prepare pre-review briefs for Director' :
-               workspaceMode === 'PC_DESK' ? 'Track cross-departmental SLA delays, collect delay reasons & generate weekly reports' :
-               'Personal daily task workbench, due items, checklists, and active FMS workflow stages'}
-            </p>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base sm:text-lg font-black tracking-tight">
+                  {workspaceMode === 'DIRECTOR_QUEUE' ? 'Director Executive Decision Desk' :
+                   workspaceMode === 'EA_DESK' ? 'Executive Assistant Approval Desk' :
+                   workspaceMode === 'PC_DESK' ? 'Process Coordinator SLA Delay Monitor' :
+                   getDynamicGreeting(currentUser.name)}
+                </h2>
+                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                  workspaceMode === 'DIRECTOR_QUEUE' ? 'bg-emerald-400 text-slate-950' :
+                  workspaceMode === 'EA_DESK' ? 'bg-sky-400 text-slate-950' :
+                  workspaceMode === 'PC_DESK' ? 'bg-amber-400 text-slate-950' :
+                  'bg-indigo-400 text-slate-950'
+                }`}>
+                  {workspaceMode === 'DIRECTOR_QUEUE' ? 'Director Workspace' :
+                   workspaceMode === 'EA_DESK' ? 'EA Screening' :
+                   workspaceMode === 'PC_DESK' ? 'PC Desk' :
+                   currentUser.role || 'Staff Work'}
+                </span>
+
+                {/* Super Admin Feature Flag Toggle for Role Dashboards */}
+                <button
+                  type="button"
+                  onClick={toggleRoleDashboards}
+                  title={showRoleDashboards ? "Feature Flag ON: Click to hide Role Dashboards" : "Feature Flag OFF: Click to enable Role Dashboards"}
+                  className={`ml-1 px-2.5 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                    showRoleDashboards 
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50 hover:bg-emerald-500/30' 
+                      : 'bg-white/10 text-slate-300 border-white/10 hover:bg-white/20 hover:text-white'
+                  }`}
+                >
+                  <Settings className={`w-3.5 h-3.5 ${showRoleDashboards ? 'text-emerald-400 animate-spin-slow' : 'text-slate-400'}`} />
+                  <span>Role Dashboards: {showRoleDashboards ? 'ON' : 'OFF'}</span>
+                </button>
+              </div>
+              <p className="text-xs text-indigo-200 mt-0.5">
+                {workspaceMode === 'DIRECTOR_QUEUE' ? 'Pre-screened executive briefs, attached EA notes & PIN-verified 1-click authorization' :
+                 workspaceMode === 'EA_DESK' ? 'Inspect rate approvals, CS sheet comparisons & prepare pre-review briefs for Director' :
+                 workspaceMode === 'PC_DESK' ? 'Track cross-departmental SLA delays, collect delay reasons & generate weekly reports' :
+                 'Personal daily task workbench, due items, checklists, and active FMS workflow stages'}
+              </p>
+            </div>
           </div>
+
+          {/* Workspace Mode Selector Bar: Visible ONLY to SUPER_ADMIN when Feature Flag is ON */}
+          {showRoleDashboards && (
+            <div className="bg-slate-950/60 p-1 rounded-xl border border-white/10 flex items-center gap-1 shrink-0 overflow-x-auto text-xs w-full md:w-auto">
+              <button
+                onClick={() => setWorkspaceMode('TASKS')}
+                className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  workspaceMode === 'TASKS' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>My Tasks</span>
+              </button>
+
+              <button
+                onClick={() => setWorkspaceMode('PC_DESK')}
+                className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  workspaceMode === 'PC_DESK' ? 'bg-amber-500 text-slate-950 shadow-xs' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                <GitBranch className="w-3.5 h-3.5" />
+                <span>PC Delay Monitor</span>
+              </button>
+
+              <button
+                onClick={() => setWorkspaceMode('EA_DESK')}
+                className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  workspaceMode === 'EA_DESK' ? 'bg-sky-500 text-slate-950 shadow-xs' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                <Briefcase className="w-3.5 h-3.5" />
+                <span>EA Approval Desk</span>
+              </button>
+
+              <button
+                onClick={() => setWorkspaceMode('DIRECTOR_QUEUE')}
+                className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  workspaceMode === 'DIRECTOR_QUEUE' ? 'bg-emerald-500 text-slate-950 shadow-xs' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Director Queue</span>
+              </button>
+            </div>
+          )}
         </div>
-
-        {/* Workspace Mode Selector Bar */}
-        {(isAdminOrSuperAdmin || isDirectorUser || isEaUser || isPcUser) && (
-          <div className="bg-slate-950/60 p-1 rounded-xl border border-white/10 flex items-center gap-1 shrink-0 overflow-x-auto text-xs w-full md:w-auto">
-            <button
-              onClick={() => setWorkspaceMode('TASKS')}
-              className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                workspaceMode === 'TASKS' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-300 hover:text-white'
-              }`}
-            >
-              <Calendar className="w-3.5 h-3.5" />
-              <span>My Tasks</span>
-            </button>
-
-            <button
-              onClick={() => setWorkspaceMode('PC_DESK')}
-              className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                workspaceMode === 'PC_DESK' ? 'bg-amber-500 text-slate-950 shadow-xs' : 'text-slate-300 hover:text-white'
-              }`}
-            >
-              <GitBranch className="w-3.5 h-3.5" />
-              <span>PC Delay Monitor</span>
-            </button>
-
-            <button
-              onClick={() => setWorkspaceMode('EA_DESK')}
-              className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                workspaceMode === 'EA_DESK' ? 'bg-sky-500 text-slate-950 shadow-xs' : 'text-slate-300 hover:text-white'
-              }`}
-            >
-              <Briefcase className="w-3.5 h-3.5" />
-              <span>EA Approval Desk</span>
-            </button>
-
-            <button
-              onClick={() => setWorkspaceMode('DIRECTOR_QUEUE')}
-              className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                workspaceMode === 'DIRECTOR_QUEUE' ? 'bg-emerald-500 text-slate-950 shadow-xs' : 'text-slate-300 hover:text-white'
-              }`}
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Director Queue</span>
-            </button>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* 4 Core Stat Cards (Toggleable - Hide for maximum table focus) */}
       {workspaceMode === 'TASKS' && showStatCards && (
@@ -3465,363 +3516,57 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       )}
 
       {/* WORKSPACE VIEW 1: PROCESS COORDINATOR (PC) SLA DELAY MONITOR */}
-      {workspaceMode === 'PC_DESK' && (
-        <div className="space-y-4 animate-in fade-in duration-150">
-          <div className="bg-gradient-to-r from-amber-950 via-slate-900 to-amber-950 text-white p-4 rounded-2xl border border-amber-800/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-amber-400 text-slate-950 rounded-xl font-black shrink-0">
-                <GitBranch className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-base sm:text-lg font-black tracking-tight">Cross-Department SLA Delay &amp; Escalation Tracker</h3>
-                <p className="text-xs text-amber-200 mt-0.5">
-                  Monitor stage delays, log delay explanations, issue instant nudges, and generate weekly reports for the Director.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setShowWeeklyDigestModal(true)}
-                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
-              >
-                <FileSpreadsheet className="w-4 h-4 text-slate-950" />
-                <span>Weekly Director Digest</span>
-              </button>
-            </div>
-          </div>
-
-          {/* PC SLA Delay Matrix Table */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="p-3 bg-slate-50 border-b border-slate-200 font-extrabold text-slate-800 text-xs flex items-center justify-between">
-              <span>Active Overdue &amp; SLA Delayed Items ({overdueItems.length})</span>
-              <span className="text-[11px] text-slate-500 font-normal">Click 'Log Reason' to collect explanation from department</span>
-            </div>
-
-            {overdueItems.length === 0 ? (
-              <div className="p-8 text-center text-slate-500 space-y-2">
-                <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
-                <h4 className="font-extrabold text-slate-800 text-sm">All Department Workflows Running On Schedule!</h4>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto">There are currently no SLA overdue stages or delayed checklists across Purchase, Store, Accounts, or Plant Ops.</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {overdueItems.map((item) => {
-                  const lastRemark = item.processRemarks && item.processRemarks.length > 0 ? item.processRemarks[item.processRemarks.length - 1] : null;
-
-                  return (
-                    <div key={item.id} className="p-4 hover:bg-amber-50/40 transition-colors flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-                      <div className="space-y-1 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono font-bold text-xs text-amber-950 bg-amber-100 px-2.5 py-0.5 rounded border border-amber-300">
-                            {item.referenceCode}
-                          </span>
-                          <span className="font-black text-slate-900 text-xs">
-                            {item.title}
-                          </span>
-                          <span className="bg-rose-100 text-rose-800 border border-rose-300 font-extrabold text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-rose-600" /> +{formatDelayVariance(item.delayHours || 0)} OVERDUE
-                          </span>
-                          {lastRemark && (
-                            <span className="bg-purple-100 text-purple-900 border border-purple-300 font-bold text-[10px] px-2 py-0.5 rounded-full">
-                              Reason Logged ({lastRemark.category})
-                            </span>
-                          )}
-                        </div>
-
-                        <p className="text-xs text-slate-600 font-medium">{item.subtitle}</p>
-
-                        {/* Display Logged Reason */}
-                        {lastRemark && (
-                          <div className="mt-1 p-2 rounded-lg bg-purple-50 border border-purple-200 text-xs text-purple-950 font-medium">
-                            <strong className="font-bold text-purple-900 text-[11px] block">PC Logged Reason ({lastRemark.authorName}):</strong>
-                            "{lastRemark.remarkText}"
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        {/* Nudge Button */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (onNudgeItem) {
-                              onNudgeItem(item.sourceModule, item.sourceId, item.rawItem?.stageIndex);
-                            }
-                            alert(`Instant Nudge reminder issued to assignee (${item.assigneeName || 'Department Assignee'})!`);
-                          }}
-                          className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold text-xs rounded-xl border border-amber-300 transition-colors flex items-center gap-1 cursor-pointer"
-                          title="Send Nudge Notification"
-                        >
-                          <Bell className="w-3.5 h-3.5 text-amber-700" />
-                          <span>Nudge</span>
-                        </button>
-
-                        {/* Log Delay Reason Button */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRemarkModalTarget({
-                              item,
-                              module: item.sourceModule,
-                              targetId: item.sourceId,
-                              stageIndex: item.rawItem?.stageIndex,
-                            });
-                            setRemarkText('');
-                          }}
-                          className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <MessageSquare className="w-3.5 h-3.5" />
-                          <span>Log Delay Reason</span>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
+      {workspaceMode === 'PC_DESK' && canShowRoleTabs && (
+        <PCDelayMonitor
+          flows={flows}
+          currentUser={currentUser}
+          onNudgeItem={onNudgeItem}
+          onOpenStageAction={onOpenStageAction}
+          onSelectFlowDetail={onSelectFmsDetail}
+          onLogDelayReason={(flow, stageIndex) => {
+            setRemarkModalTarget({
+              item: {
+                id: flow.id,
+                sourceModule: 'FMS',
+                sourceId: flow.id,
+                title: flow.stages[stageIndex]?.stageName || flow.title,
+                subtitle: `Indent #${flow.indentNo}`,
+                referenceCode: flow.indentNo,
+                targetDateStr: flow.stages[stageIndex]?.plannedDateTime || '',
+                status: flow.status,
+                isCompleted: false,
+                isOverdue: true,
+                isDueToday: false,
+                rawItem: { flow, stageIndex }
+              } as any,
+              module: 'FMS',
+              targetId: flow.id,
+              stageIndex
+            });
+            setRemarkText('');
+          }}
+          onOpenWeeklyDigest={() => setShowWeeklyDigestModal(true)}
+        />
       )}
 
       {/* WORKSPACE VIEW 2: EXECUTIVE ASSISTANT (EA) APPROVAL DESK */}
-      {workspaceMode === 'EA_DESK' && (
-        <div className="space-y-4 animate-in fade-in duration-150">
-          <div className="bg-sky-950 text-white p-4 rounded-2xl border border-sky-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-sky-400 text-slate-950 rounded-xl font-black shrink-0">
-                <Briefcase className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-base sm:text-lg font-black tracking-tight">Executive Assistant (EA) Approval Desk</h3>
-                <p className="text-xs text-sky-200 mt-0.5">
-                  Screen purchase requisitions, verify comparative rate statements, attach EA notes &amp; set priority flags for Director approval.
-                </p>
-              </div>
-            </div>
-            <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10 text-center shrink-0">
-              <span className="text-[10px] text-sky-200 block uppercase font-bold">Pending Executive Approvals</span>
-              <span className="text-lg font-black text-sky-300">
-                {flows.filter(f => f.status === 'In Progress').length}
-              </span>
-            </div>
-          </div>
-
-          {/* Table of Executive Approval Requisitions */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="p-3 bg-slate-50 border-b border-slate-200 font-extrabold text-slate-800 text-xs flex items-center justify-between">
-              <span>Requisitions Awaiting Executive Review ({flows.filter(f => f.status === 'In Progress').length})</span>
-              <span className="text-[11px] text-slate-500 font-normal">Click "Pre-Review &amp; Attach Brief" to prepare note for Director</span>
-            </div>
-
-            <div className="divide-y divide-slate-100">
-              {flows.filter(f => f.status === 'In Progress').map((flow) => {
-                const currentStage = flow.stages[flow.currentStageIndex];
-                if (!currentStage) return null;
-
-                const eaNoteRemark = currentStage.processRemarks?.find(r => r.authorRole?.includes('Executive Assistant'));
-                const hasEaNote = currentStage.notes?.includes('[EA Pre-Review Note]') || !!eaNoteRemark;
-
-                return (
-                  <div key={flow.id} className="p-4 hover:bg-slate-50 transition-colors flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-                    <div className="space-y-1 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono font-bold text-xs text-indigo-950 bg-indigo-50 px-2.5 py-0.5 rounded border border-indigo-200">
-                          Indent #{flow.indentNo}
-                        </span>
-                        <span className="font-extrabold text-slate-900 text-xs">
-                          Stage {flow.currentStageIndex + 1}: {currentStage.stageName}
-                        </span>
-                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase ${
-                          flow.priority === 'Urgent' ? 'bg-rose-100 text-rose-800 border border-rose-200' : 'bg-slate-100 text-slate-700'
-                        }`}>
-                          {flow.priority || 'Normal'}
-                        </span>
-                        {hasEaNote && (
-                          <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" /> EA Verified
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="text-xs text-slate-600 flex items-center gap-3 flex-wrap pt-0.5">
-                        <span><strong>Site:</strong> {flow.siteName || 'Raipur HQ'}</span>
-                        {flow.vendorName && <span><strong>Vendor:</strong> {flow.vendorName}</span>}
-                        {flow.poAmount && <span className="font-bold text-slate-900"><strong>Amount:</strong> ₹ {flow.poAmount.toLocaleString('en-IN')}</span>}
-                        <span><strong>Assignee:</strong> {currentStage.assignee}</span>
-                      </div>
-
-                      {/* Display EA Note preview if present */}
-                      {hasEaNote && (
-                        <div className="mt-1.5 p-2 rounded-lg bg-sky-50 border border-sky-200 text-xs text-sky-950 font-medium flex items-start gap-1.5">
-                          <Info className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="block font-bold text-sky-900 text-[11px]">Attached EA Note:</strong>
-                            {currentStage.notes?.replace('[EA Pre-Review Note]:', '') || eaNoteRemark?.remarkText}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedEaFlow({ flow, stageIndex: flow.currentStageIndex });
-                          setEaNotesText(currentStage.notes?.replace('[EA Pre-Review Note]:', '').trim() || eaNoteRemark?.remarkText || '');
-                        }}
-                        className="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Briefcase className="w-4 h-4" />
-                        <span>{hasEaNote ? 'Edit EA Brief' : 'Pre-Review & Attach Brief'}</span>
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+      {workspaceMode === 'EA_DESK' && canShowRoleTabs && (
+        <EAApprovalDesk
+          flows={flows}
+          currentUser={currentUser}
+          onSelectFlowDetail={onSelectFmsDetail}
+        />
       )}
 
       {/* WORKSPACE VIEW 3: DIRECTOR EXECUTIVE APPROVAL QUEUE */}
-      {workspaceMode === 'DIRECTOR_QUEUE' && (
-        <div className="space-y-4 animate-in fade-in duration-150">
-          <div className="bg-gradient-to-r from-slate-950 via-emerald-950 to-slate-900 text-white p-4 sm:p-5 rounded-2xl border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-emerald-400 text-slate-950 rounded-xl font-black shrink-0">
-                <ShieldCheck className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-base sm:text-lg font-black tracking-tight">Director Executive Decision Desk (Pranjal Agrawal)</h3>
-                <p className="text-xs text-emerald-200 mt-0.5">
-                  Pre-screened executive briefs, attached EA pre-reviews &amp; PIN-verified 1-click approvals.
-                </p>
-              </div>
-            </div>
-            <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10 text-center shrink-0">
-              <span className="text-[10px] text-emerald-200 block uppercase font-bold">Actionable Approvals</span>
-              <span className="text-lg font-black text-emerald-300">
-                {flows.filter(f => f.status === 'In Progress').length}
-              </span>
-            </div>
-          </div>
-
-          {/* Decision Brief Cards */}
-          <div className="grid grid-cols-1 gap-4">
-            {flows.filter(f => f.status === 'In Progress').map((flow) => {
-              const currentStage = flow.stages[flow.currentStageIndex];
-              if (!currentStage) return null;
-
-              const eaNoteRemark = currentStage.processRemarks?.find(r => r.authorRole?.includes('Executive Assistant'));
-              const eaNotesContent = currentStage.notes?.includes('[EA Pre-Review Note]')
-                ? currentStage.notes.replace('[EA Pre-Review Note]:', '').trim()
-                : eaNoteRemark?.remarkText;
-
-              return (
-                <div key={flow.id} className="bg-white rounded-2xl border-2 border-emerald-200 shadow-md overflow-hidden hover:border-emerald-400 transition-all p-4 sm:p-5 space-y-3">
-                  
-                  {/* Card Top Banner */}
-                  <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <span className="bg-emerald-100 text-emerald-950 font-mono font-black text-xs px-3 py-1 rounded-lg border border-emerald-300">
-                        Indent #{flow.indentNo}
-                      </span>
-                      <span className="font-black text-slate-900 text-sm">
-                        Stage {flow.currentStageIndex + 1}: {currentStage.stageName}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {flow.priority === 'Urgent' ? (
-                        <span className="bg-rose-600 text-white font-extrabold text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
-                          CRITICAL URGENT
-                        </span>
-                      ) : (
-                        <span className="bg-slate-100 text-slate-700 font-bold text-[10px] px-2.5 py-0.5 rounded-full uppercase">
-                          NORMAL PRIORITY
-                        </span>
-                      )}
-                      {eaNotesContent && (
-                        <span className="bg-sky-100 text-sky-900 border border-sky-300 font-extrabold text-[10px] px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3 text-sky-600" /> EA PRE-SCREENED
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* EA Pre-Review Callout Box */}
-                  {eaNotesContent ? (
-                    <div className="bg-sky-50/90 border border-sky-200 rounded-xl p-3 text-xs text-sky-950 space-y-1">
-                      <div className="flex items-center justify-between font-extrabold text-sky-900 text-[11px]">
-                        <span className="flex items-center gap-1.5">
-                          <Briefcase className="w-3.5 h-3.5 text-sky-600" />
-                          EA Brief Note (from Khushboo Sahu):
-                        </span>
-                        <span className="text-[10px] text-sky-600 font-normal">Pre-screened &amp; Verified</span>
-                      </div>
-                      <p className="font-semibold leading-relaxed text-sky-900 text-xs">{eaNotesContent}</p>
-                    </div>
-                  ) : (
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-500 italic">
-                      Direct Approval — No EA Pre-Review note attached yet.
-                    </div>
-                  )}
-
-                  {/* Operational Details Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
-                    <div>
-                      <span className="text-[10px] text-slate-400 font-semibold block uppercase">Vendor Partner</span>
-                      <span className="font-bold text-slate-900">{flow.vendorName || 'Selected Vendor'}</span>
-                    </div>
-
-                    <div>
-                      <span className="text-[10px] text-slate-400 font-semibold block uppercase">PO / Quote Amount</span>
-                      <span className="font-black text-emerald-700 text-sm">
-                        {flow.poAmount ? `₹ ${flow.poAmount.toLocaleString('en-IN')}` : 'As Per CS Sheet'}
-                      </span>
-                    </div>
-
-                    <div>
-                      <span className="text-[10px] text-slate-400 font-semibold block uppercase">Project Site Location</span>
-                      <span className="font-bold text-slate-800">{flow.siteName || 'Raipur HQ'}</span>
-                    </div>
-
-                    <div>
-                      <span className="text-[10px] text-slate-400 font-semibold block uppercase">Stage Assignee</span>
-                      <span className="font-bold text-slate-800">{currentStage.assignee}</span>
-                    </div>
-                  </div>
-
-                  {/* Action Bar */}
-                  <div className="flex items-center justify-end gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedDirectorRejectFlow({ flow, stageIndex: flow.currentStageIndex })}
-                      className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
-                    >
-                      Request Revision / Reject
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedDirectorFlow({ flow, stageIndex: flow.currentStageIndex });
-                        setDirectorPinVal('');
-                        setDirectorPinError(null);
-                      }}
-                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-colors flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <CheckCircle2 className="w-4 h-4 text-white" />
-                      <span>Authorize &amp; Approve Stage</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+      {workspaceMode === 'DIRECTOR_QUEUE' && canShowRoleTabs && (
+        <DirectorQueue
+          flows={flows}
+          currentUser={currentUser}
+          onAdvanceFmsStage={onAdvanceFmsStage || (() => {})}
+          onOpenStageAction={onOpenStageAction}
+          onSelectFlowDetail={onSelectFmsDetail}
+        />
       )}
 
       {/* EA SCREENING MODAL */}
