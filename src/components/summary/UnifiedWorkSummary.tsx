@@ -63,6 +63,7 @@ import {
   FMS_BENEFICIARY_APPROVAL_STAGES
 } from '../../data/initialData';
 import { isUserResponsibleForStage } from '../../services/stageAssignment';
+import { FileUploadField } from '../common/FileUploadField';
 
 export type StatCondition = 'ALL' | 'DUE_TODAY' | 'DUE_THIS_WEEK' | 'OVERDUE' | 'PENDING' | 'COMPLETED';
 
@@ -147,7 +148,8 @@ export function parseDateTimeStr(str: string | undefined): Date | null {
   return null;
 }
 
-export function getDelayHours(plannedStr: string | undefined, actualStr: string | undefined, isCompleted: boolean): number {
+export function getDelayHours(plannedStr: string | undefined, actualStr: string | undefined, isCompleted: boolean, isPending: boolean = false): number {
+  if (isPending) return 0;
   const plannedDate = parseDateTimeStr(plannedStr);
   if (!plannedDate) return 0;
   let actualDate = parseDateTimeStr(actualStr);
@@ -271,13 +273,14 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   const [showWeeklyDigestModal, setShowWeeklyDigestModal] = useState<boolean>(false);
   const [bankingActionRefresh, setBankingActionRefresh] = useState<number>(0);
 
-  // Inline UTR modal target for Stage 7 Payment Confirmation
+  // Inline UTR modal target for Stage 8 Payment Confirmation
   const [utrModalTarget, setUtrModalTarget] = useState<{
     flow: FmsInstance;
     stageIndex: number;
     amount: number;
     vendorName: string;
     utrNumber: string;
+    screenshotUrl?: string;
   } | null>(null);
 
   // Split-Screen Operational Cockpit State
@@ -410,13 +413,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
   } | null>(null);
 
   const handleOpenSplitCockpit = (item: UnifiedItem) => {
-    if (item.sourceModule === 'FMS') {
-      setActiveCockpitTask({
-        task: item,
-        flow: item.rawItem.flow,
-        stageIndex: item.rawItem.stageIndex
-      });
-    } else if (item.sourceModule === 'CHECKLIST') {
+    if (item.sourceModule === 'CHECKLIST') {
       setActiveCockpitTask({
         task: item,
         checklistItem: item.rawItem
@@ -508,65 +505,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
     if (!currentUser) return false;
     if (isAdminOrSuperAdmin) return true;
 
-    const normalizeUser = (s?: string) =>
-      (s || '')
-        .trim()
-        .toLowerCase()
-        .replace(/[\s_.-]/g, '')
-        .replace(/bramhanand/g, 'brahmanand')
-        .replace(/bramha/g, 'brahma');
-
-    const execAssignee = normalizeUser(stageExec?.assignee);
-    const defAssignee = normalizeUser(stageDef?.whoDefaultAssignee);
-    const userName = normalizeUser(currentUser.name);
-    const isBrahmanandUser = currentUser.userId === 'USR-002' || userName.includes('brahma');
-    const isPriyankaUser = currentUser.userId === 'USR-014' || userName.includes('priyanka') || (currentUser.role || '').toLowerCase().includes('account');
-    const isDirector = (currentUser.role || '').toLowerCase() === 'director' || userName.includes('pranjal');
-    const whoRoleNorm = normalizeUser(stageDef?.whoRole || stageExec?.whoRole);
-
-    // 0. Proxy Action Rule for PO_TO_PAYMENT: Stages 4 & 7 are actionable by BOTH Accountant & Director
-    const stgId = stageDef?.stageId || stageExec?.stageId;
-    if (stgId === 'STG-PAY-04' || stgId === 'STG-PAY-07') {
-      if (isPriyankaUser || isDirector) return true;
-    }
-
-    // 1. Strict active stage assignee matching
-    if (execAssignee) {
-      const list = execAssignee.split(/[\/,]/);
-      if (list.some((a: string) => a && (a === userName || a.includes(userName) || userName.includes(a)))) return true;
-      if (isBrahmanandUser && list.some((a: string) => a && a.includes('brahma'))) return true;
-      if (isPriyankaUser && list.some((a: string) => a && a.includes('priyanka'))) return true;
-      if (isDirector && list.some((a: string) => a && a.includes('pranjal'))) return true;
-    }
-
-    // 2. Check template default assignee
-    if (defAssignee) {
-      const list = defAssignee.split(/[\/,]/);
-      if (list.some((a: string) => a && (a === userName || a.includes(userName) || userName.includes(a)))) return true;
-      if (isBrahmanandUser && list.some((a: string) => a && a.includes('brahma'))) return true;
-      if (isPriyankaUser && list.some((a: string) => a && a.includes('priyanka'))) return true;
-      if (isDirector && list.some((a: string) => a && a.includes('pranjal'))) return true;
-    }
-
-    // 3. Delegation / responsible stage check
-    if (isDirectlyAssignedFms(stageDef, stageExec)) return true;
-
-    // 4. Role matching for Brahmanand
-    if (isBrahmanandUser) {
-      if (whoRoleNorm.includes('purchase') || whoRoleNorm.includes('store')) return true;
-    }
-
-    // 5. Role matching for Priyanka / Accounts in PO_TO_PAYMENT
-    if (isPriyankaUser && (whoRoleNorm.includes('account') || whoRoleNorm.includes('finance'))) {
-      return true;
-    }
-
-    // 6. Role matching for Director in PO_TO_PAYMENT
-    if (isDirector && whoRoleNorm.includes('director')) {
-      return true;
-    }
-
-    return false;
+    return isUserResponsibleForStage(stageDef, stageExec, currentUser);
   };
 
   // Build Unified Items List
@@ -730,21 +669,31 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       };
       if (!def) return;
 
-      // In Process Coordinator Desk mode, include all stages across flows; in User mode, include user-assigned stages
-      const isRelevantForPc = pcDeskActive
+      // Only render the Current Active Stage (where stage.status === 'In Progress' or flow.currentStageIndex === idx)
+      // Do NOT render future Pending stages. Exactly one row per FMS flow in inbox.
+      const isCompleted = stage.status === 'Done' || 
+        stage.status === 'Skipped' || 
+        stage.status === 'Completed' ||
+        Boolean(stage.actualDateTime || stage.actualTimestamp) ||
+        stage.assignee === 'System / Child Workflows' ||
+        (stage.assignee || '').toLowerCase().includes('child workflow') ||
+        flow.status === 'Completed' ||
+        flow.status === 'Cancelled' ||
+        flow.status === 'Closed' ||
+        flow.status === 'Awaiting Fulfillment';
+
+      const isCurrentActiveStage = !isCompleted && 
+        (flow.status === 'In Progress' || flow.status === 'Pending') && 
+        (stage.status === 'In Progress' || flow.currentStageIndex === idx);
+
+      if (!isCurrentActiveStage) return;
+
+      // In Process Coordinator Desk mode, include all active stages; in User mode, strictly user-assigned active stage
+      const isRelevantForUser = pcDeskActive
         ? (stage.status !== 'Skipped')
         : isMineFmsStage(def, stage);
 
-      if (isRelevantForPc) {
-        const isCompleted = stage.status === 'Done' || 
-          stage.status === 'Skipped' || 
-          stage.status === 'Completed' ||
-          Boolean(stage.actualDateTime || stage.actualTimestamp) ||
-          stage.assignee === 'System / Child Workflows' ||
-          (stage.assignee || '').toLowerCase().includes('child workflow') ||
-          flow.status === 'Completed' ||
-          flow.status === 'Awaiting Fulfillment';
-        const isCurrentActiveStage = !isCompleted && (flow.status === 'In Progress' || flow.status === 'Pending') && idx === flow.currentStageIndex;
+      if (isRelevantForUser) {
         const plannedDateTimeStr = stage.plannedDateTime
           || (flow.indentDate ? `${flow.indentDate} 11:00 AM` : undefined)
           || (flow.poDate ? `${flow.poDate} 11:00 AM` : undefined)
@@ -774,11 +723,14 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           ? (flow.poNumber ? `PO #${flow.poNumber}` : `Accounts PO #${flow.indentNo}`)
           : `FMS #${flow.indentNo}`;
 
-        const stageDelay = (typeof stage.timeDelayHours === 'number' && stage.timeDelayHours > 0)
+        const isPendingStage = stage.status === 'Pending' || !isCurrentActiveStage;
+        const stageDelay = isPendingStage
+          ? 0
+          : (typeof stage.timeDelayHours === 'number' && stage.timeDelayHours > 0)
           ? stage.timeDelayHours
           : (typeof stage.delayHours === 'number' && stage.delayHours > 0)
           ? stage.delayHours
-          : getDelayHours(plannedDateTimeStr, stage.actualDateTime, isCompleted);
+          : getDelayHours(plannedDateTimeStr, stage.actualDateTime, isCompleted, isPendingStage);
 
         unifiedItems.push({
           id: `unified-fms-${flow.id}-stg-${idx}`,
@@ -1218,9 +1170,34 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         const normRole = (currentUser.role || '').toLowerCase();
         const isAccountant = normName.includes('priyanka') || normRole.includes('account') || isAdminOrSuperAdmin;
         const isDirector = normName.includes('pranjal') || normRole === 'director' || isAdminOrSuperAdmin;
+        const isPurchaser = normName.includes('shyam') || normName.includes('vivek') || normRole.includes('purchas') || isAdminOrSuperAdmin;
 
-        // Stage 1: Fill Beneficiary Details
+        // Stage 1: Receive PO & Payment Request (Accountant)
         if (stgId === 'STG-PAY-01' && isAccountant) {
+          return (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => onAdvanceFmsStage(flow, undefined, { acknowledged: 'ACKNOWLEDGED', accountantRemarks: 'Dossier received and verified against PO & budget' })}
+                className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded flex items-center gap-1.5 shadow-xs cursor-pointer`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-indigo-200" />
+                <span>Acknowledge Request</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenStageAction ? onOpenStageAction(flow, stageIdx) : onSelectFmsDetail(flow)}
+                className={`${isMobile ? 'px-2.5 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded flex items-center gap-1 shadow-2xs cursor-pointer`}
+              >
+                <FileText className="w-3 h-3 text-slate-500" />
+                <span>Review Dossier</span>
+              </button>
+            </div>
+          );
+        }
+
+        // Stage 2: Fill Beneficiary Details (Accountant)
+        if (stgId === 'STG-PAY-02' && isAccountant) {
           return (
             <div className="flex items-center gap-1.5 flex-wrap">
               <button
@@ -1235,8 +1212,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           );
         }
 
-        // Stage 2: Director Beneficiary Approval
-        if (stgId === 'STG-PAY-02' && isDirector) {
+        // Stage 3: Director Beneficiary Approval (Director)
+        if (stgId === 'STG-PAY-03' && isDirector) {
           return (
             <div className="flex items-center gap-1.5 flex-wrap">
               <button
@@ -1259,8 +1236,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           );
         }
 
-        // Stage 3: Bank Entry Beneficiary
-        if (stgId === 'STG-PAY-03' && isAccountant) {
+        // Stage 4: Bank Entry Beneficiary (Accountant)
+        if (stgId === 'STG-PAY-04' && isAccountant) {
           return (
             <div className="flex items-center gap-1.5 flex-wrap">
               <button
@@ -1275,8 +1252,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           );
         }
 
-        // Stage 4: Netbanking Beneficiary Confirmation (Proxy Action: Accountant or Director)
-        if (stgId === 'STG-PAY-04' && (isAccountant || isDirector)) {
+        // Stage 5: Netbanking Beneficiary Confirmation (Director / Proxy: Accountant)
+        if (stgId === 'STG-PAY-05' && (isAccountant || isDirector)) {
           return (
             <div className="flex items-center gap-1.5 flex-wrap">
               <button
@@ -1291,8 +1268,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           );
         }
 
-        // Stage 5: Director Payment Approval
-        if (stgId === 'STG-PAY-05' && isDirector) {
+        // Stage 6: Director Payment Approval (Director)
+        if (stgId === 'STG-PAY-06' && isDirector) {
           return (
             <div className="flex items-center gap-1.5 flex-wrap">
               <button
@@ -1315,8 +1292,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           );
         }
 
-        // Stage 6: Bank Payment Entry
-        if (stgId === 'STG-PAY-06' && isAccountant) {
+        // Stage 7: Bank Payment Entry (Accountant)
+        if (stgId === 'STG-PAY-07' && isAccountant) {
           return (
             <div className="flex items-center gap-1.5 flex-wrap">
               <button
@@ -1331,8 +1308,8 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           );
         }
 
-        // Stage 7: Netbanking Payment Confirmation (Proxy Action: Accountant or Director)
-        if (stgId === 'STG-PAY-07' && (isAccountant || isDirector)) {
+        // Stage 8: Netbanking Payment Confirmation (Director / Proxy: Accountant)
+        if (stgId === 'STG-PAY-08' && (isAccountant || isDirector)) {
           return (
             <div className="flex items-center gap-1.5 flex-wrap">
               <button
@@ -1342,12 +1319,29 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                   stageIndex: stageIdx,
                   amount: flow.poAmount || 0,
                   vendorName: flow.vendorName || 'Vendor',
-                  utrNumber: `UTR-${Date.now().toString().slice(-6)}`
+                  utrNumber: `UTR-${Date.now().toString().slice(-6)}`,
+                  screenshotUrl: ''
                 })}
                 className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded flex items-center gap-1.5 shadow-xs cursor-pointer`}
               >
                 <Landmark className="w-3.5 h-3.5" />
                 <span>Confirm Payment & Enter UTR</span>
+              </button>
+            </div>
+          );
+        }
+
+        // Stage 9: Send Payment Details to Get Material (Purchaser: Shyam / Vivek)
+        if (stgId === 'STG-PAY-09' && isPurchaser) {
+          return (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => onOpenStageAction ? onOpenStageAction(flow, stageIdx) : onSelectFmsDetail(flow)}
+                className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded flex items-center gap-1.5 shadow-xs cursor-pointer`}
+              >
+                <Send className="w-3.5 h-3.5 text-indigo-200" />
+                <span>Send Details to Vendor</span>
               </button>
             </div>
           );
@@ -1391,15 +1385,6 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                 <span>View Details</span>
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => handleOpenSplitCockpit(item)}
-              className={`${isMobile ? 'px-2 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded flex items-center gap-1 transition-all shadow-xs cursor-pointer border border-slate-200`}
-              title="Open Split-Screen Operational Cockpit with link panel & mandatory verification checklist"
-            >
-              <Layers className="w-3.5 h-3.5 text-slate-500" />
-              <span>Cockpit</span>
-            </button>
           </div>
         );
       }
@@ -2551,17 +2536,6 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                                   <ExternalLink className="w-3 h-3" /> Form
                                 </a>
                               )}
-                              {isItemActionable(item) && isUserResponsibleForStage(item.rawItem.def, item.rawItem.stage, currentUser) && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenSplitCockpit(item)}
-                                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded text-[11px] flex items-center gap-1 transition-all shadow-xs cursor-pointer"
-                                  title="Open Split-Screen Operational Cockpit with link panel & mandatory verification checklist"
-                                >
-                                  <Layers className="w-3 h-3 text-indigo-200" />
-                                  <span>Split Cockpit</span>
-                                </button>
-                              )}
                               {(() => {
                                 if (!isItemActionable(item)) {
                                   return !item.isCompleted && (item.rawItem.flow.status === 'In Progress' || item.rawItem.flow.status === 'Pending') ? (
@@ -2588,17 +2562,11 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                                     </button>
                                   );
                                 }
-                                const hasFormFields = !!(
-                                  (stageExec?.fields && stageExec.fields.length > 0) ||
-                                  (stageDef?.fields && stageDef.fields.length > 0) ||
-                                  stageExec?.how === 'IN-APP FORM' ||
-                                  stageExec?.how === 'IN APP FORM'
-                                );
                                 const hasApprovalField = stageExec?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval')) ||
                                   stageDef?.fields?.some((f: any) => f.type === 'APPROVAL' || f.id === 'status' || f.label?.toLowerCase().includes('approval'));
 
-                                // When stage has configured form fields, Fill Form / Approve is the single primary action
-                                if (onOpenStageAction && hasFormFields) {
+                                // Canonical modal execution: ALWAYS open StageActionModal for actionable FMS tasks
+                                if (onOpenStageAction) {
                                   return (
                                     <button
                                       type="button"
@@ -2606,9 +2574,9 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                                       className={`px-2.5 py-1 font-bold rounded text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer border shadow-2xs ${
                                         hasApprovalField
                                           ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
-                                          : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                                          : 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-700 shadow-xs'
                                       }`}
-                                      title={hasApprovalField ? 'Review & Take Approval Decision' : 'Fill Form'}
+                                      title={hasApprovalField ? 'Review & Take Approval Decision' : 'Execute Stage in Form Modal'}
                                     >
                                       {hasApprovalField ? (
                                         <>
@@ -2616,62 +2584,14 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                                         </>
                                       ) : (
                                         <>
-                                          <FileText className="w-3.5 h-3.5" /> <span>Fill Form</span>
+                                          <FileText className="w-3.5 h-3.5 text-indigo-100" /> <span>Execute Stage</span>
                                         </>
                                       )}
                                     </button>
                                   );
                                 }
 
-                                // For non-form stages with decision logic: Yes / No
-                                if (stageDef?.hasYesNoDecision || stageExec?.logic?.gatewayType === 'CONDITIONAL_JUMP') {
-                                  return (
-                                    <div className="flex items-center gap-1">
-                                      <button
-                                        onClick={() => {
-                                          if (onCompleteFmsStage) {
-                                            onCompleteFmsStage(item.rawItem.flow, item.rawItem.stageIndex, 'Yes');
-                                          } else {
-                                            onAdvanceFmsStage(item.rawItem.flow, 'Yes');
-                                          }
-                                        }}
-                                        className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded text-[11px] transition-colors cursor-pointer"
-                                        title="Advance / Yes"
-                                      >
-                                        Yes
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          if (onCompleteFmsStage) {
-                                            onCompleteFmsStage(item.rawItem.flow, item.rawItem.stageIndex, 'No');
-                                          } else {
-                                            onAdvanceFmsStage(item.rawItem.flow, 'No');
-                                          }
-                                        }}
-                                        className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded text-[11px] transition-colors cursor-pointer"
-                                        title={stageExec?.stageId === 'STG-10' ? 'No: Skip Stage 11 and jump directly to Stage 12' : 'No / Reject'}
-                                      >
-                                        {stageExec?.stageId === 'STG-10' ? 'No (Skip Stg 11)' : 'No'}
-                                      </button>
-                                    </div>
-                                  );
-                                }
-
-                                // For non-form sequential steps: Mark Done
-                                return (
-                                  <button
-                                    onClick={() => {
-                                      if (onCompleteFmsStage) {
-                                        onCompleteFmsStage(item.rawItem.flow, item.rawItem.stageIndex);
-                                      } else {
-                                        onAdvanceFmsStage(item.rawItem.flow);
-                                      }
-                                    }}
-                                    className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded text-[11px] transition-colors cursor-pointer"
-                                  >
-                                    Mark Done
-                                  </button>
-                                );
+                                return null;
                               })()}
                             </div>
                           )}
@@ -3702,7 +3622,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
         />
       )}
 
-      {/* Inline UTR Modal for Stage 7 Payment Confirmation */}
+      {/* Inline UTR Modal for Stage 8 Payment Confirmation */}
       {utrModalTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95">
@@ -3728,9 +3648,11 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
             <form
               onSubmit={(e) => {
                 e.preventDefault();
+                if (!utrModalTarget.screenshotUrl) return;
                 const targetUtr = utrModalTarget.utrNumber.trim() || `UTR-${Date.now().toString().slice(-6)}`;
                 onAdvanceFmsStage(utrModalTarget.flow, undefined, {
                   utrNumber: targetUtr,
+                  paymentDoneScreenshot: utrModalTarget.screenshotUrl,
                   paymentStatus: 'DONE',
                   settlementRemarks: 'Transaction confirmed via inline action'
                 });
@@ -3752,6 +3674,18 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Payment Done Screenshot / Transfer Proof <span className="text-rose-500">*</span>
+                </label>
+                <FileUploadField
+                  id="paymentDoneScreenshot"
+                  value={utrModalTarget.screenshotUrl || ''}
+                  onChange={(val) => setUtrModalTarget({ ...utrModalTarget, screenshotUrl: val })}
+                  placeholder="Upload payment done transfer proof / bank screenshot"
+                />
+              </div>
+
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
@@ -3762,7 +3696,12 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm cursor-pointer"
+                  disabled={!utrModalTarget.screenshotUrl}
+                  className={`px-4 py-1.5 text-xs font-bold rounded-lg shadow-sm cursor-pointer ${
+                    !utrModalTarget.screenshotUrl
+                      ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  }`}
                 >
                   Submit & Complete Settlement
                 </button>

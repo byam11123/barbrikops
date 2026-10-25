@@ -2149,6 +2149,27 @@ class StorageAdapter {
     this.notifyListeners();
   }
 
+  public addInventoryMovement(movement: InventoryMovement | (Omit<InventoryMovement, 'id'> & { id?: string })) {
+    const existing = this.getInventoryMovements();
+    const newMovement: InventoryMovement = {
+      id: movement.id || `mov-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      transactionId: movement.transactionId || `TXN-${Date.now()}`,
+      itemId: movement.itemId,
+      itemName: movement.itemName,
+      type: movement.type,
+      quantity: movement.quantity,
+      sourceLocation: movement.sourceLocation,
+      destinationLocation: movement.destinationLocation,
+      timestamp: movement.timestamp || new Date().toLocaleString('en-GB'),
+      referenceDoc: movement.referenceDoc,
+      initiatedBy: movement.initiatedBy,
+      notes: movement.notes,
+    };
+    const updated = [newMovement, ...existing];
+    this.saveInventoryMovements(updated);
+    return newMovement;
+  }
+
   // Central Registry Config
   public getRegistryConfig(): CentralRegistryConfig {
     if (typeof window === 'undefined') return DEFAULT_REGISTRY_CONFIG;
@@ -3369,13 +3390,14 @@ class StorageAdapter {
     const nowStr = now.toLocaleString('en-GB');
     let runningTime = now.getTime();
 
-    // Build the 7 sequential stages with SLAs and plannedDateTime
+    // Build the 9 sequential stages with SLAs and plannedDateTime
     const stages: FmsStageExecution[] = FMS_PO_PAYMENT_STAGES.map((stgDef, index) => {
       const slaMs = (stgDef.slaHours || 1) * 3600 * 1000;
       runningTime += slaMs;
       const plannedDate = new Date(runningTime).toLocaleString('en-GB');
 
-      if (isVerifiedBeneficiary && index < 4) {
+      // Skip Stages 2, 3, 4, 5 (index 1 to 4) if vendor is already verified
+      if (isVerifiedBeneficiary && index >= 1 && index <= 4) {
         return {
           stageId: stgDef.stageId,
           stageName: stgDef.name,
@@ -3390,22 +3412,8 @@ class StorageAdapter {
         };
       }
 
-      if (isVerifiedBeneficiary && index === 4) {
-        return {
-          stageId: stgDef.stageId,
-          stageName: stgDef.name,
-          assignee: stgDef.whoDefaultAssignee || 'Pranjal Agrawal',
-          whoRole: stgDef.whoRole,
-          whoDefaultAssignee: stgDef.whoDefaultAssignee,
-          how: stgDef.howChannel,
-          plannedDateTime: plannedDate,
-          status: 'In Progress' as const,
-          stageStartedAt: now.toISOString(),
-          notes: `Director payment authorization for ₹${(paymentRecord.amountToBePaid || 0).toLocaleString('en-IN')}`,
-        };
-      }
-
-      if (!isVerifiedBeneficiary && index === 0) {
+      // Stage 1 (index 0: Receive PO & Payment Request) is always the starting active stage
+      if (index === 0) {
         return {
           stageId: stgDef.stageId,
           stageName: stgDef.name,
@@ -3416,14 +3424,14 @@ class StorageAdapter {
           plannedDateTime: plannedDate,
           status: 'In Progress' as const,
           stageStartedAt: now.toISOString(),
-          notes: 'Awaiting Accounts beneficiary entry & cancelled cheque verification',
+          notes: 'Accountant verification & acknowledgment of PO payment request',
         };
       }
 
       return {
         stageId: stgDef.stageId,
         stageName: stgDef.name,
-        assignee: stgDef.whoDefaultAssignee || (stgDef.whoRole === 'DIRECTOR' ? 'Pranjal Agrawal' : 'Priyanka Agrawal'),
+        assignee: stgDef.whoDefaultAssignee || (stgDef.whoRole === 'DIRECTOR' ? 'Pranjal Agrawal' : stgDef.whoRole === 'PURCHASER' ? 'Shyam Rao Sureshe' : 'Priyanka Agrawal'),
         whoRole: stgDef.whoRole,
         whoDefaultAssignee: stgDef.whoDefaultAssignee,
         how: stgDef.howChannel,
@@ -3432,7 +3440,7 @@ class StorageAdapter {
       };
     });
 
-    const activeStageIndex = isVerifiedBeneficiary ? 4 : 0;
+    const activeStageIndex = 0;
     const activeStage = stages[activeStageIndex];
     const cleanSheetNo = (paymentRecord.sheetNo || Date.now().toString()).replace(/[^a-zA-Z0-9]/g, '-');
     const flowId = `FLOW-PAY-${cleanSheetNo}`;

@@ -237,9 +237,9 @@ export const FmsTemplateStudioPage: React.FC<FmsTemplateStudioPageProps> = ({
         baseStages = FMS_PAYMENT_TO_DISPATCH_STAGES;
         break;
       case 'SITE_RECEIVE':
-        name = 'Site Material Receive (MRN)';
+        name = 'Site Material Receive (GRN)';
         hub = 'SITE_LOGISTICS';
-        ref = 'MRN / Delivery Challan';
+        ref = 'GRN / Delivery Challan';
         baseStages = FMS_SITE_RECEIVE_STAGES;
         break;
       case 'ACCOUNTS_INVOICE_COLLECTION':
@@ -1874,7 +1874,7 @@ export const FmsTemplateStudioPage: React.FC<FmsTemplateStudioPageProps> = ({
                             <option value="CHECK_STOCK">Store Check Stock (CHECK_STOCK)</option>
                             <option value="PURCHASE_TO_STORE_DISPATCH">Purchase to Store Dispatch (PURCHASE_TO_STORE_DISPATCH)</option>
                             <option value="PAYMENT_TO_DISPATCH">Vendor Payment to Dispatch (PAYMENT_TO_DISPATCH)</option>
-                            <option value="SITE_RECEIVE">Site Material Receive MRN (SITE_RECEIVE)</option>
+                            <option value="SITE_RECEIVE">Site Material Receive GRN (SITE_RECEIVE)</option>
                             <option value="ACCOUNTS_INVOICE_COLLECTION">Accounts Invoice Collection (ACCOUNTS_INVOICE_COLLECTION)</option>
                           </select>
                         </div>

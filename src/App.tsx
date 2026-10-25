@@ -806,9 +806,16 @@ export default function App() {
         nextIndex = updatedStages.length; // Completes parent stages; enters Awaiting Fulfillment
       }
     } else if (flow.flowType === 'PO_TO_PAYMENT') {
-      // 7-Stage Workflow Architecture for PO_TO_PAYMENT:
-      // Phase 1: Beneficiary Setup (Stages 1-4)
-      // Phase 2: Payment Execution (Stages 5-7)
+      // 9-Stage Workflow Architecture for PO_TO_PAYMENT:
+      // STG-PAY-01 (Receive PO & Payment Request): Assignee: Accountant
+      // STG-PAY-02 (Fill Beneficiary): Assignee: Accountant
+      // STG-PAY-03 (Director Beneficiary Approval): Assignee: Director
+      // STG-PAY-04 (Bank Entry Beneficiary): Assignee: Accountant
+      // STG-PAY-05 (Netbanking Beneficiary Confirmation): Assignee: Director (Proxy for Accountant)
+      // STG-PAY-06 (Director Payment Approval): Assignee: Director
+      // STG-PAY-07 (Bank Payment Entry): Assignee: Accountant
+      // STG-PAY-08 (Netbanking Payment Confirmation): Assignee: Director (Proxy for Accountant) - Captures UTR & Payment Screenshot
+      // STG-PAY-09 (Send Payment Details to Get Material): Assignee: Purchaser (Shyam/Vivek)
       
       const bankPayments = storageAdapter.getBankPayments();
       const targetPayment = bankPayments.find(
@@ -821,7 +828,40 @@ export default function App() {
       const targetBenSheetNo = targetPayment?.linkedBeneficiarySheetNo || flow.linkedBeneficiarySheetNo;
 
       if (currentStage.stageId === 'STG-PAY-01' || currentIndex === 0) {
-        // Stage 1: Fill Beneficiary Details -> Advance to Stage 2 (Director Beneficiary Approval)
+        // STG-PAY-01: Receive PO & Payment Request - Accountant acknowledges the request
+        // Skip Logic: If the vendor is ALREADY verified, Stages 2, 3, 4, and 5 must be marked Skipped,
+        // and the flow must jump directly to Stage 6 (Director Payment Approval).
+        const vendorProfiles = storageAdapter.getVendorProfiles();
+        const vendorMatch = vendorProfiles.find(
+          (v) =>
+            v.tradeName?.toLowerCase().trim() === flow.vendorName?.toLowerCase().trim() ||
+            v.legalName?.toLowerCase().trim() === flow.vendorName?.toLowerCase().trim() ||
+            (targetPayment?.vendorName && v.tradeName?.toLowerCase().trim() === targetPayment.vendorName.toLowerCase().trim())
+        );
+        const hasVerifiedBankInMaster = Boolean(vendorMatch?.bankAccounts?.some((a) => a.verificationStatus === 'VERIFIED'));
+        const isAlreadyVerified =
+          flow.paymentMode === 'UPI' ||
+          targetPayment?.modeOfPayment === 'UPI' ||
+          targetPayment?.beneficiaryMasterStatus === 'VERIFIED' ||
+          hasVerifiedBankInMaster ||
+          updatedStages[1]?.status === 'Skipped';
+
+        if (isAlreadyVerified) {
+          // Mark Stages 2, 3, 4, 5 (indices 1, 2, 3, 4) as Skipped
+          for (let sIdx = 1; sIdx <= 4; sIdx++) {
+            if (updatedStages[sIdx]) {
+              updatedStages[sIdx].status = 'Skipped';
+              updatedStages[sIdx].notes = 'Auto-skipped: Vendor is already verified in Beneficiary Master';
+              updatedStages[sIdx].actualDateTime = formattedNow;
+              updatedStages[sIdx].actualTimestamp = now.toISOString();
+            }
+          }
+          nextIndex = 5; // Jump directly to Stage 6 (STG-PAY-06: Director Payment Approval)
+        } else {
+          nextIndex = 1; // Proceed to Stage 2 (STG-PAY-02: Fill Beneficiary)
+        }
+      } else if (currentStage.stageId === 'STG-PAY-02' || currentIndex === 1) {
+        // STG-PAY-02: Fill Beneficiary - Accountant records coordinates
         if (targetPaymentId && (submittedData?.beneficiaryName || submittedData?.accountNo)) {
           storageAdapter.addBeneficiaryDetailsToPayment(
             targetPaymentId,
@@ -835,62 +875,100 @@ export default function App() {
             currentUser
           );
         }
-        nextIndex = 1;
-      } else if (currentStage.stageId === 'STG-PAY-02' || currentIndex === 1) {
-        // Stage 2: Director Beneficiary Approval
+        nextIndex = 2; // Advance to Stage 3 (STG-PAY-03: Director Beneficiary Approval)
+      } else if (currentStage.stageId === 'STG-PAY-03' || currentIndex === 2) {
+        // STG-PAY-03: Director Beneficiary Approval - Director checks and sanctions addition
         const isApproved = submittedData?.status !== 'REJECTED' && decision !== 'No';
         if (targetBenSheetNo) {
           storageAdapter.approveBeneficiaryRecord(targetBenSheetNo, isApproved, currentUser, submittedData?.approvalRemarks);
         }
         if (isApproved) {
-          nextIndex = 2; // Advance to Stage 3: Bank Entry Beneficiary
+          nextIndex = 3; // Advance to Stage 4 (STG-PAY-04: Bank Entry Beneficiary)
         } else {
-          // Rejection returns to Stage 1 for correction
-          if (updatedStages[0]) {
-            updatedStages[0].status = 'In Progress';
-            updatedStages[0].actualDateTime = undefined;
+          // Rejection returns to Stage 2 for correction
+          if (updatedStages[1]) {
+            updatedStages[1].status = 'In Progress';
+            updatedStages[1].actualDateTime = undefined;
+            updatedStages[1].actualTimestamp = undefined;
           }
-          nextIndex = 0;
+          nextIndex = 1;
         }
-      } else if (currentStage.stageId === 'STG-PAY-03' || currentIndex === 2) {
-        // Stage 3: Bank Entry Beneficiary -> Advance to Stage 4 (Netbanking Beneficiary Confirmation)
+      } else if (currentStage.stageId === 'STG-PAY-04' || currentIndex === 3) {
+        // STG-PAY-04: Bank Entry Beneficiary - Accountant initiates bank portal addition & cooling period
         if (targetBenSheetNo) {
           storageAdapter.recordBeneficiaryEntry(targetBenSheetNo, 'DONE', submittedData?.bankReferenceNumber, currentUser);
         }
-        nextIndex = 3;
-      } else if (currentStage.stageId === 'STG-PAY-04' || currentIndex === 3) {
-        // Stage 4: Netbanking Beneficiary Confirmation (Proxy Action: Accountant or Director)
-        // Addition confirmed! Advance to Phase 2: Stage 5 (Director Payment Approval)
+        nextIndex = 4; // Advance to Stage 5 (STG-PAY-05: Netbanking Beneficiary Confirmation)
+      } else if (currentStage.stageId === 'STG-PAY-05' || currentIndex === 4) {
+        // STG-PAY-05: Netbanking Beneficiary Confirmation - Director (Proxy for Accountant)
         if (targetBenSheetNo) {
           storageAdapter.finalizeBeneficiaryAddition(targetBenSheetNo, 'DONE', submittedData?.confirmationRemarks, currentUser);
         }
-        nextIndex = 4;
-      } else if (currentStage.stageId === 'STG-PAY-05' || currentIndex === 4) {
-        // Stage 5: Director Payment Approval
+        nextIndex = 5; // Advance to Stage 6 (STG-PAY-06: Director Payment Approval)
+      } else if (currentStage.stageId === 'STG-PAY-06' || currentIndex === 5) {
+        // STG-PAY-06: Director Payment Approval - Director sanctions release
         const isApproved = submittedData?.status !== 'REJECTED' && decision !== 'No';
         if (targetPaymentId) {
           storageAdapter.approveBankPayment(targetPaymentId, isApproved, currentUser, submittedData?.approvalRemarks);
         }
         if (isApproved) {
-          nextIndex = 5; // Advance to Stage 6: Bank Payment Entry
+          nextIndex = 6; // Advance to Stage 7 (STG-PAY-07: Bank Payment Entry)
         } else {
-          // Rejection cancels or pauses payment
-          nextIndex = 4;
+          nextIndex = 5; // Rejected / Paused at Stage 6
         }
-      } else if (currentStage.stageId === 'STG-PAY-06' || currentIndex === 5) {
-        // Stage 6: Bank Payment Entry -> Advance to Stage 7 (Netbanking Payment Confirmation)
+      } else if (currentStage.stageId === 'STG-PAY-07' || currentIndex === 6) {
+        // STG-PAY-07: Bank Payment Entry - Accountant performs portal transfer
         if (targetPaymentId) {
           storageAdapter.recordBankPaymentEntry(targetPaymentId, 'DONE', submittedData?.bankAccountDebited, currentUser);
         }
-        nextIndex = 6;
-      } else if (currentStage.stageId === 'STG-PAY-07' || currentIndex === 6) {
-        // Stage 7: Netbanking Payment Confirmation (Proxy Action: Accountant or Director)
-        // Captures UTR number & finalizes disbursement
+        nextIndex = 7; // Advance to Stage 8 (STG-PAY-08: Netbanking Payment Confirmation)
+      } else if (currentStage.stageId === 'STG-PAY-08' || currentIndex === 7) {
+        // STG-PAY-08: Netbanking Payment Confirmation - Director (Proxy for Accountant)
+        // Mandatory UTR number and Payment Done Screenshot
         const utr = submittedData?.utrNumber || `UTR-${Date.now().toString().slice(-6)}`;
+        const screenshotUrl = submittedData?.paymentDoneScreenshot || submittedData?.paymentDoneProof || '';
         if (targetPaymentId) {
-          storageAdapter.finalizeBankPaymentSettlement(targetPaymentId, 'DONE', utr, undefined, currentUser);
+          storageAdapter.finalizeBankPaymentSettlement(targetPaymentId, 'DONE', utr, screenshotUrl, currentUser);
         }
-        nextIndex = 7; // Completed!
+        updatedDataPool.utrNumber = utr;
+        updatedDataPool.paymentDoneScreenshot = screenshotUrl;
+
+        // Credit vs Advance branching logic:
+        const rawTerms = String(flow.paymentTerms || targetPayment?.paymentTerms || flow.instanceDataPool?.paymentTerms || '').toUpperCase();
+        const isCredit = rawTerms.includes('CREDIT');
+
+        if (isCredit) {
+          // If CREDIT: Stages 9 and 10 are SKIPPED (material was ALREADY received at Central Store before payment was released)
+          for (let sIdx = 8; sIdx < updatedStages.length; sIdx++) {
+            if (updatedStages[sIdx]) {
+              updatedStages[sIdx].status = 'Skipped';
+              updatedStages[sIdx].notes = 'Auto-skipped: Material was already collected and received at Central Store prior to payment disbursement';
+              updatedStages[sIdx].actualDateTime = formattedNow;
+              updatedStages[sIdx].actualTimestamp = now.toISOString();
+            }
+          }
+          nextIndex = updatedStages.length; // Completes PO_TO_PAYMENT!
+        } else {
+          // ADVANCE terms: Proceed to Stage 9 (Send Payment Details to Get Material - Shyam)
+          if (updatedStages[8]) {
+            updatedStages[8].assignee = 'Shyam Rao Sureshe';
+            updatedStages[8].whoDefaultAssignee = 'Shyam Rao Sureshe';
+          }
+          nextIndex = 8;
+        }
+      } else if (currentStage.stageId === 'STG-PAY-09' || currentIndex === 8) {
+        // STG-PAY-09: Send Payment Details to Get Material - Purchaser (Shyam)
+        // Shyam assigns PO to lowest workload assistant or chosen assistant
+        const chosenAssistant = submittedData?.poAssignTo || updatedDataPool.poAssignTo || flow.poAssignTo || 'Rajendra';
+        if (updatedStages[9]) {
+          updatedStages[9].assignee = chosenAssistant;
+          updatedStages[9].whoDefaultAssignee = chosenAssistant;
+        }
+        updatedDataPool.poAssignTo = chosenAssistant;
+        nextIndex = 9; // Advance to Stage 10 (STG-PAY-10: Collect Material from Vendor)
+      } else if (currentStage.stageId === 'STG-PAY-10' || currentIndex === 9) {
+        // STG-PAY-10: Collect Material from Vendor - Purchaser Assistant (Rajendra/Vivek/Rajnikant)
+        nextIndex = 10; // Completed all 10 stages!
       }
     } else if (flow.flowType === 'PURCHASE_TO_STORE_DISPATCH') {
       // Stage 5: IS E-WAY BILL REQUIRED?
@@ -960,13 +1038,39 @@ export default function App() {
           nextIndex = 4;
         } else if (currentIndex === 4 || currentStage.stageId === 'STG-05') {
           // Stage 5 (Index 4: Generate & Issue PO) -> Stage 6 (Index 5: Send PO for Material Collection)
-          // Dynamic Workload & Delay Assignment for Stage 6
-          const bestAssistant = getBestPurchaseAssistant(flows, delegationTasks, usersList);
-          if (updatedStages[5]) {
-            updatedStages[5].assignee = bestAssistant.name;
-            updatedStages[5].whoDefaultAssignee = bestAssistant.name;
+          // Condition: Stage 6 should ONLY trigger if PaymentTerms === 'CREDIT'.
+          // If PaymentTerms === 'ADVANCE', mark this stage as Skipped, because material collection is handled by Stage 9 of PO_TO_PAYMENT workflow.
+          const rawTerms = 
+            submittedData?.paymentTerms || 
+            flow.instanceDataPool?.paymentTerms ||
+            (submittedData?.vendorPaymentTerms && Object.values(submittedData.vendorPaymentTerms)[0]) ||
+            (flow.instanceDataPool?.vendorPaymentTerms && Object.values(flow.instanceDataPool.vendorPaymentTerms)[0]);
+          const isCredit = String(rawTerms || '').toUpperCase().includes('CREDIT');
+
+          if (isCredit) {
+            // Trigger Stage 6 for CREDIT PO: Dynamic Workload & Delay Assignment or Shyam's Override
+            const bestAssistant = getBestPurchaseAssistant(flows, delegationTasks, usersList);
+            const assignedAssistant = submittedData?.poAssignTo || flow.poAssignTo || flow.instanceDataPool?.poAssignTo || bestAssistant.name;
+            if (updatedStages[5]) {
+              updatedStages[5].assignee = assignedAssistant;
+              updatedStages[5].whoDefaultAssignee = assignedAssistant;
+              updatedStages[5].status = 'In Progress';
+            }
+            updatedDataPool.poAssignTo = assignedAssistant;
+            nextIndex = 5;
+          } else {
+            // ADVANCE terms: Mark Stage 6 as Skipped because material collection is handled via Stage 9 of PO_TO_PAYMENT
+            if (submittedData?.poAssignTo) {
+              updatedDataPool.poAssignTo = submittedData.poAssignTo;
+            }
+            if (updatedStages[5]) {
+              updatedStages[5].status = 'Skipped';
+              updatedStages[5].notes = 'Skipped: Material collection handled via Stage 9 of PO to Payment FMS flow (Advance payment)';
+              updatedStages[5].actualDateTime = formattedNow;
+              updatedStages[5].actualTimestamp = now.toISOString();
+            }
+            nextIndex = 6; // Completes INDENT_TO_PO workflow!
           }
-          nextIndex = 5;
         }
       } else {
         const isStoreAvailabilityStage = currentStage.stageId === 'STG-IND-02' || currentStage.stageName.toUpperCase().includes('AVAILABLE IN STORE');
@@ -1191,17 +1295,20 @@ export default function App() {
         ? submittedData.triageLineItems 
         : (flow.lineItems || []);
       
-      const storeItems = submittedItems.filter((i) => (i.storeQty || 0) > 0);
-      const purchaseItems = submittedItems.filter((i) => (i.purchaseQty || 0) > 0);
-      const holdItems = submittedItems.filter((i) => (i.holdQty || 0) > 0);
+      const storeItems = submittedItems.filter((i) => (i.storeQty || 0) > 0 || ((i.csrQty || 0) + (i.otherSiteQty || 0)) > 0);
+      const purchaseItems = submittedItems.filter((i) => (i.purchaseQty || 0) > 0 || (i.purchaseQtyRequired || 0) > 0);
+      const holdItems = submittedItems.filter((i) => (i.holdQty || 0) > 0 || i.triageAllocation === 'HELD_ARCHIVED');
 
       const generatedSubFlows: NonNullable<FmsInstance['linkedSubFlows']> = [];
 
       // 1. Spawn Store Material Dispatch if storeQty > 0
       if (storeItems.length > 0) {
         const storeDispatchIndentNo = `${flow.indentNo}-DISP`;
+        const storedFlows = storageAdapter.getFmsFlows();
         const existingStoreFlow = updatedFlowsList.find(
-          (f) => f.flowType === 'STORE_TO_SITE_DISPATCH' && (f.parentFlowId === flow.id || f.indentNo === storeDispatchIndentNo)
+          (f) => f.flowType === 'STORE_TO_SITE_DISPATCH' && (f.parentFlowId === flow.id || f.indentNo === storeDispatchIndentNo || f.indentNo === `${flow.indentNo}-DISP`)
+        ) || storedFlows.find(
+          (f) => f.flowType === 'STORE_TO_SITE_DISPATCH' && (f.parentFlowId === flow.id || f.indentNo === storeDispatchIndentNo || f.indentNo === `${flow.indentNo}-DISP`)
         );
 
         const storeLineItems: FmsLineItem[] = storeItems.map((item) => ({
@@ -1275,8 +1382,11 @@ export default function App() {
       // 2. Spawn Purchase Indent if purchaseQty > 0
       if (purchaseItems.length > 0) {
         const purchaseIndentNo = `${flow.indentNo}-PUR`;
+        const storedFlows = storageAdapter.getFmsFlows();
         const existingPurchaseFlow = updatedFlowsList.find(
-          (f) => f.flowType === 'INDENT_PURCHASE' && (f.parentFlowId === flow.id || f.indentNo === purchaseIndentNo || f.indentNo === flow.indentNo)
+          (f) => (f.flowType === 'INDENT_PURCHASE' || f.flowType === 'INDENT_TO_PO') && (f.parentFlowId === flow.id || f.indentNo === purchaseIndentNo || f.indentNo === flow.indentNo || f.indentNo === `${flow.indentNo}-PUR`)
+        ) || storedFlows.find(
+          (f) => (f.flowType === 'INDENT_PURCHASE' || f.flowType === 'INDENT_TO_PO') && (f.parentFlowId === flow.id || f.indentNo === purchaseIndentNo || f.indentNo === flow.indentNo || f.indentNo === `${flow.indentNo}-PUR`)
         );
 
         const purchaseLineItems: FmsLineItem[] = purchaseItems.map((item) => ({
@@ -1547,111 +1657,352 @@ export default function App() {
       updatedFlowsList = storageAdapter.getFmsFlows();
     }
 
-    // 3. When Accounts PO to Payment completes Stage 7 (Netbanking Payment Confirmation):
-    // Automatically spawn / ensure Purchase to Store to Dispatch FMS exists!
-    if (flow.flowType === 'PO_TO_PAYMENT' && (currentStage.stageId === 'STG-PAY-07' || currentStage.stageId === 'STG-PAY-15')) {
-      const existingPsdFlow = flows.find(
-        (f) => f.linkedFlowId === flow.flowId || (f.indentNo === flow.indentNo && f.flowType === 'PURCHASE_TO_STORE_DISPATCH')
+    // Helpers to spawn standardized sub-workflows:
+    const spawnPurchaseToStoreDispatch = (parentFlow: FmsInstance, reason: string) => {
+      const existingPsdFlow = updatedFlowsList.find(
+        (f) => f.flowType === 'PURCHASE_TO_STORE_DISPATCH' && (f.linkedFlowId === parentFlow.flowId || f.indentNo === parentFlow.indentNo)
       );
       if (!existingPsdFlow) {
+        const poList = (parentFlow as any).poList || ((parentFlow as any).submittedData)?.poList || (parentFlow.instanceDataPool?.poList) || [];
+        const poNum = parentFlow.poNumber || (Array.isArray(poList) && poList[0]?.poNumber) || `BPL/PO/${parentFlow.indentNo}`;
+        const venName = parentFlow.vendorName || (Array.isArray(poList) && poList[0]?.vendorName) || 'Vendor';
+
         const newPsdFlow: FmsInstance = {
-          id: `fms-inst-psd-${flow.indentNo}-${Date.now()}`,
-          flowId: `FLOW-PSD-${flow.indentNo}-001`,
+          id: `fms-inst-psd-${parentFlow.indentNo}-${Date.now().toString().slice(-4)}`,
+          flowId: `FLOW-PSD-${parentFlow.indentNo}`,
           flowType: 'PURCHASE_TO_STORE_DISPATCH',
-          linkedFlowId: flow.flowId,
-          requisitionNumber: flow.indentNo,
-          indentNo: flow.indentNo,
-          indentDate: flow.indentDate || formattedNow,
-          siteName: flow.siteName,
-          priority: flow.priority,
+          templateKey: 'PURCHASE_TO_STORE_DISPATCH',
+          linkedFlowId: parentFlow.flowId,
+          parentFlowId: parentFlow.id,
+          parentFlowType: parentFlow.flowType,
+          parentFlowIndentNo: parentFlow.indentNo,
+          requisitionNumber: parentFlow.requisitionNumber || parentFlow.indentNo,
+          indentNo: parentFlow.indentNo,
+          indentDate: parentFlow.indentDate || formattedNow,
+          poNumber: poNum,
+          vendorName: venName,
+          siteName: parentFlow.siteName || 'Bijetala Site',
+          priority: parentFlow.priority || 'Normal',
+          paymentTerms: parentFlow.paymentTerms || parentFlow.instanceDataPool?.paymentTerms || 'CREDIT',
           currentStageId: 'STG-PSD-01',
           currentStageIndex: 0,
-          totalStages: 10,
+          totalStages: 4,
           status: 'In Progress',
           createdAt: formattedNow,
           updatedAt: formattedNow,
           totalDelayHours: 0,
-          remarks: `Material received at warehouse. Purchase to Store to Dispatch workflow initiated for Indent #${flow.indentNo}`,
+          remarks: `Material collected from vendor (${reason}). Purchase to Store Dispatch initiated for Brahmanand Patel.`,
+          lineItems: parentFlow.lineItems || [],
           stages: FMS_PURCHASE_TO_STORE_DISPATCH_STAGES.map((s, sIdx) => ({
             stageId: s.stageId,
             stageName: s.name,
-            assignee: s.whoDefaultAssignee,
+            assignee: s.whoDefaultAssignee || 'Brahmanand Patel',
+            whoRole: s.whoRole,
+            whoDefaultAssignee: s.whoDefaultAssignee || 'Brahmanand Patel',
             how: s.howChannel,
             status: sIdx === 0 ? 'In Progress' : 'Pending',
             plannedDateTime: sIdx === 0 ? formattedNow : undefined,
-            formResponseRef: s.formUrl,
+            fields: s.fields,
           })),
         };
         updatedFlowsList = [newPsdFlow, ...updatedFlowsList];
-        showToast(`Payment completed! Purchase to Store to Dispatch Flow created for Indent #${flow.indentNo}.`);
+        showToast(`Material collected! Purchase to Store Dispatch Flow created for Brahmanand Patel (Indent #${parentFlow.indentNo}).`);
+
+        storageAdapter.addNotification({
+          userId: 'USR-002', // Brahmanand Patel
+          title: `Action Required: GRN & Quality Check #${newPsdFlow.flowId}`,
+          message: `Consignment arriving from ${venName} (PO #${poNum}). Physical inspection & GRN entry required.`,
+          type: 'FMS_ACTION_REQUIRED',
+          linkTab: 'fms',
+          linkEntityId: newPsdFlow.id,
+          data: { flowId: newPsdFlow.flowId, stageIndex: 0 }
+        });
+      }
+    };
+
+    const spawnSiteReceive = (parentDispatchFlow: FmsInstance) => {
+      const existingRec = updatedFlowsList.find(
+        (f) => f.flowType === 'SITE_RECEIVE' && (f.parentFlowId === parentDispatchFlow.id || f.linkedFlowId === parentDispatchFlow.flowId)
+      );
+      if (!existingRec) {
+        const siteIndentNo = `${parentDispatchFlow.indentNo}-REC`;
+        const newSiteRecFlow: FmsInstance = {
+          id: `fms-inst-rec-${parentDispatchFlow.indentNo}-${Date.now().toString().slice(-4)}`,
+          flowId: `FLOW-REC-${parentDispatchFlow.indentNo}`,
+          flowType: 'SITE_RECEIVE',
+          templateKey: 'SITE_RECEIVE',
+          parentFlowId: parentDispatchFlow.id,
+          parentFlowType: parentDispatchFlow.flowType,
+          parentFlowIndentNo: parentDispatchFlow.indentNo,
+          linkedFlowId: parentDispatchFlow.flowId,
+          requisitionNumber: parentDispatchFlow.requisitionNumber || parentDispatchFlow.indentNo,
+          indentNo: siteIndentNo,
+          indentDate: parentDispatchFlow.indentDate || formattedNow,
+          poNumber: parentDispatchFlow.poNumber,
+          vendorName: parentDispatchFlow.vendorName,
+          siteName: parentDispatchFlow.siteName || 'Bijetala Site',
+          priority: parentDispatchFlow.priority || 'Normal',
+          currentStageId: 'STG-REC-01',
+          currentStageIndex: 0,
+          totalStages: 1,
+          status: 'In Progress',
+          createdAt: formattedNow,
+          updatedAt: formattedNow,
+          totalDelayHours: 0,
+          remarks: `Site Material Receive (GRN) dispatched from ${parentDispatchFlow.flowType}. Handover to Site User / Store Incharge.`,
+          lineItems: parentDispatchFlow.lineItems || [],
+          stages: FMS_SITE_RECEIVE_STAGES.map((s) => ({
+            stageId: s.stageId,
+            stageName: s.name,
+            assignee: s.whoDefaultAssignee || 'Aman Kumar',
+            whoRole: s.whoRole,
+            whoDefaultAssignee: s.whoDefaultAssignee || 'Aman Kumar',
+            how: s.howChannel,
+            status: 'In Progress',
+            plannedDateTime: formattedNow,
+            fields: s.fields,
+          })),
+        };
+        updatedFlowsList = [newSiteRecFlow, ...updatedFlowsList];
+        showToast(`Consignment dispatched! Site GRN Receive workflow spawned for ${parentDispatchFlow.siteName} (Assigned to Aman Kumar).`);
+
+        storageAdapter.addNotification({
+          userId: 'USR-001', // Aman Kumar / Site Store
+          title: `Action Required: Site GRN Receipt #${newSiteRecFlow.flowId}`,
+          message: `Consignment in transit from Central Store to ${parentDispatchFlow.siteName}. Verify physical delivery and upload stamped challan.`,
+          type: 'FMS_ACTION_REQUIRED',
+          linkTab: 'fms',
+          linkEntityId: newSiteRecFlow.id,
+          data: { flowId: newSiteRecFlow.flowId, stageIndex: 0 }
+        });
+      }
+    };
+
+    // Symmetric Collection Triggers -> PURCHASE_TO_STORE_DISPATCH:
+    // (A) Indent to PO Stage 6 (Credit PO) completion -> spawn PURCHASE_TO_STORE_DISPATCH
+    if (
+      (flow.flowType === 'INDENT_PURCHASE' || flow.flowType === 'INDENT_TO_PO') &&
+      (currentStage.stageId === 'STG-06' || currentIndex === 5)
+    ) {
+      spawnPurchaseToStoreDispatch(flow, 'Credit PO Collection Complete');
+    }
+
+    // (B) PO to Payment Stage 10 (Advance PO) completion -> spawn PURCHASE_TO_STORE_DISPATCH
+    if (
+      flow.flowType === 'PO_TO_PAYMENT' &&
+      (currentStage.stageId === 'STG-PAY-10' || currentIndex === 9)
+    ) {
+      spawnPurchaseToStoreDispatch(flow, 'Advance Payment & Collection Complete');
+    }
+
+    // PURCHASE_TO_STORE_DISPATCH Stage 1 (GRN & Quality Check) completion:
+    if (
+      flow.flowType === 'PURCHASE_TO_STORE_DISPATCH' &&
+      (currentStage.stageId === 'STG-PSD-01' || currentIndex === 0)
+    ) {
+      // 1. Quality Check & Rejection Analysis
+      const itemsList = Array.isArray(submittedData?.itemsTable) ? submittedData.itemsTable : (flow.lineItems || []);
+      let totalAcceptedQty = 0;
+      let totalRejectedQty = 0;
+      const rejectedItemsDesc: string[] = [];
+
+      itemsList.forEach((it: any) => {
+        const acc = Number(it.accepted_qty ?? it.quantity ?? it.qty ?? 1);
+        const rej = Number(it.rejected_qty ?? 0);
+        totalAcceptedQty += acc;
+        totalRejectedQty += rej;
+        if (rej > 0) {
+          rejectedItemsDesc.push(`${it.item_description || 'Item'} (${rej} damaged/rejected: ${it.rejection_reason || 'Defective'})`);
+        }
+      });
+
+      // 2. Log Inventory Movement: RECEIVE to Central Store
+      try {
+        storageAdapter.addInventoryMovement({
+          transactionId: `TXN-GRN-${Date.now().toString().slice(-6)}`,
+          itemId: flow.lineItems?.[0]?.id || `ITEM-GRN-${flow.indentNo}`,
+          itemName: flow.lineItems?.[0]?.itemDescription || flow.remarks || `Consignment under PO #${flow.poNumber}`,
+          type: 'RECEIVE',
+          quantity: totalAcceptedQty > 0 ? totalAcceptedQty : 1,
+          sourceLocation: flow.vendorName || 'Vendor Consignment',
+          destinationLocation: 'Central Store',
+          timestamp: formattedNow,
+          referenceDoc: submittedData?.grnNumber || `GRN-${flow.indentNo}`,
+          initiatedBy: currentUser.name || 'Brahmanand Patel',
+          notes: `Goods Received Note (GRN) verification complete at Central Store warehouse. Accepted: ${totalAcceptedQty}, Rejected: ${totalRejectedQty}.`
+        });
+      } catch (movErr) {
+        console.error('Failed to log inventory receipt movement:', movErr);
+      }
+
+      // 3. If RejectedQty > 0, trigger a return task
+      if (totalRejectedQty > 0) {
+        const returnTask: DelegationTask = {
+          id: `task_rej_${Date.now()}`,
+          taskId: `d_rej_${Date.now().toString().slice(-4)}`,
+          name: 'Brahmanand Patel',
+          rolePhone: 'CENTRAL STORE MANAGER',
+          task: `Return Defective Material to Vendor: PO #${flow.poNumber || flow.indentNo}`,
+          firstDate: formattedNow.split(' ')[0],
+          latestRevision: formattedNow.split(' ')[0],
+          totalRevisions: 0,
+          status: 'Pending',
+          priority: 'Urgent',
+          notes: `Defective / damaged items identified during GRN check for Indent #${flow.indentNo}: ${rejectedItemsDesc.join('; ')}. Contact vendor ${flow.vendorName} for replacement or credit note.`,
+        };
+        const allTasks = storageAdapter.getDelegationTasks();
+        storageAdapter.saveDelegationTasks([returnTask, ...allTasks]);
+        setDelegationTasks([returnTask, ...allTasks]);
+        showToast(`Return task created for Brahmanand Patel: ${totalRejectedQty} rejected item(s).`);
+      }
+
+      // 4. If Credit PO, completing Stage 1 triggers PO_TO_PAYMENT using AcceptedQty amount
+      const rawTerms = String(flow.paymentTerms || flow.instanceDataPool?.paymentTerms || '').toUpperCase();
+      const isCredit = rawTerms.includes('CREDIT') || (!rawTerms.includes('ADVANCE'));
+
+      if (isCredit) {
+        const poNum = flow.poNumber || `BPL/PO/${flow.indentNo}`;
+        let payableAmount = flow.poAmount || 0;
+        if (totalAcceptedQty > 0 && itemsList.length > 0) {
+          const totalOrdered = itemsList.reduce((acc: number, it: any) => acc + Number(it.ordered_qty || it.qty || 1), 0);
+          if (totalOrdered > 0 && payableAmount > 0) {
+            payableAmount = Math.round((payableAmount * totalAcceptedQty) / totalOrdered);
+          }
+        }
+
+        // Update BankPaymentRecord to READY_FOR_PAYMENT
+        try {
+          const bankPayments = storageAdapter.getBankPayments();
+          let bankPaymentsUpdated = false;
+          const updatedBankPayments = bankPayments.map((p) => {
+            if (
+              p.approvalStatus === 'PENDING_GRN' &&
+              (p.billNoPo === poNum || p.sheetNo === poNum || p.sheetNo === flow.indentNo || (flow.vendorName && p.vendorName?.toLowerCase().trim() === flow.vendorName?.toLowerCase().trim()))
+            ) {
+              bankPaymentsUpdated = true;
+              return {
+                ...p,
+                amountToBePaid: payableAmount > 0 ? payableAmount : p.amountToBePaid,
+                approvalStatus: 'READY_FOR_PAYMENT' as const,
+                remarks: `GRN Completed on ${formattedNow} (Accepted Qty: ${totalAcceptedQty}) - Ready for Payment Sanction`,
+              };
+            }
+            return p;
+          });
+          if (bankPaymentsUpdated) {
+            storageAdapter.saveBankPayments(updatedBankPayments);
+          }
+        } catch (bpErr) {
+          console.error('Failed to update bank payment to READY_FOR_PAYMENT:', bpErr);
+        }
+
+        // Spawn PO_TO_PAYMENT for Accounts if not already created
+        const existingPayFlow = updatedFlowsList.find(
+          (f) => f.flowType === 'PO_TO_PAYMENT' && (f.linkedFlowId === flow.flowId || f.indentNo === flow.indentNo)
+        );
+
+        if (!existingPayFlow) {
+          const initialPayStages = FMS_PO_PAYMENT_STAGES.map((stg, idx) => ({
+            stageId: stg.stageId,
+            stageName: stg.name,
+            whoRole: stg.whoRole,
+            whoDefaultAssignee: stg.whoDefaultAssignee,
+            assignee: stg.whoDefaultAssignee || 'Priyanka Agrawal',
+            how: stg.howChannel || 'IN-APP',
+            status: idx === 0 ? ('In Progress' as const) : ('Pending' as const),
+            plannedDateTime: formattedNow,
+            fields: stg.fields,
+          }));
+
+          const newPayFlow: FmsInstance = {
+            id: `fms-inst-pay-${flow.indentNo}-${Date.now().toString().slice(-4)}`,
+            flowId: `FLOW-PAY-${poNum.replace(/[^a-zA-Z0-9]/g, '-')}`,
+            flowType: 'PO_TO_PAYMENT',
+            templateKey: 'PO_TO_PAYMENT',
+            linkedFlowId: flow.flowId,
+            parentFlowId: flow.id,
+            parentFlowType: flow.flowType,
+            parentFlowIndentNo: flow.indentNo,
+            poNumber: poNum,
+            vendorName: flow.vendorName || 'Awarded Vendor',
+            poAmount: payableAmount,
+            poAssignTo: 'Priyanka Agrawal',
+            indentNo: flow.indentNo,
+            siteName: flow.siteName,
+            paymentTerms: 'CREDIT',
+            createdAt: formattedNow,
+            updatedAt: formattedNow,
+            currentStageIndex: 0,
+            currentStageId: initialPayStages[0]?.stageId || 'STG-PAY-01',
+            totalStages: 10,
+            stages: initialPayStages,
+            status: 'In Progress',
+            priority: 'Urgent',
+            totalDelayHours: 0,
+            remarks: `GRN Completed at Central Store. Credit purchase payment disbursement initiated for accepted goods (₹${payableAmount}).`
+          };
+
+          updatedFlowsList = [newPayFlow, ...updatedFlowsList];
+          showToast(`GRN Verification Completed! Credit Payment Requisition spawned in Accounts Inbox for ₹${payableAmount}.`);
+        }
       }
     }
 
-    // 4. When Store Manager completes GRN / Material Receipt (PURCHASE_TO_STORE_DISPATCH, SITE_RECEIVE, or INDENT_TO_PO Stage 5):
-    // If no PO_TO_PAYMENT workflow exists yet (Credit PO path), automatically spawn PO_TO_PAYMENT for Accounts!
-    const isGrnCompletion =
-      (flow.flowType === 'PURCHASE_TO_STORE_DISPATCH' && (currentStage.stageId === 'STG-PSD-01' || currentStage.stageName.toLowerCase().includes('grn') || currentStage.stageName.toLowerCase().includes('receive'))) ||
-      (flow.flowType === 'SITE_RECEIVE') ||
-      (flow.flowType === 'INDENT_TO_PO' && (currentStage.stageId === 'STG-05' || currentStage.stageName.toLowerCase().includes('dispatch') || currentStage.stageName.toLowerCase().includes('collection')));
-
-    if (isGrnCompletion) {
-      const existingPayFlow = updatedFlowsList.find(
-        (f) => f.flowType === 'PO_TO_PAYMENT' && (f.linkedFlowId === flow.flowId || f.indentNo === flow.indentNo)
-      );
-
-      if (!existingPayFlow) {
-        const customizedTpl = storageAdapter.getAllMasterTemplates().find((t) => t.templateKey === 'PO_TO_PAYMENT' || t.id === 'builtin_PO_TO_PAYMENT');
-        const initialPayStages = customizedTpl
-          ? customizedTpl.stages.map((stg, idx) => ({
-              stageId: stg.stageId,
-              stageName: stg.stageName || (stg as any).name || `Stage ${idx + 1}`,
-              whoRole: stg.whoRole,
-              whoDefaultAssignee: stg.whoDefaultAssignee,
-              assignee: stg.whoDefaultAssignee || 'Priyanka Agrawal',
-              how: (stg as any).howChannel || 'IN-APP',
-              status: idx === 0 ? ('In Progress' as const) : ('Pending' as const),
-              plannedDateTime: formattedNow,
-              fields: stg.fields,
-            }))
-          : FMS_PO_PAYMENT_STAGES.map((stg, idx) => ({
-              stageId: stg.stageId,
-              stageName: stg.name,
-              whoRole: stg.whoRole,
-              whoDefaultAssignee: stg.whoDefaultAssignee,
-              assignee: stg.whoDefaultAssignee || 'Priyanka Agrawal',
-              how: stg.howChannel || 'IN-APP',
-              status: idx === 0 ? ('In Progress' as const) : ('Pending' as const),
-              plannedDateTime: formattedNow,
-              fields: stg.fields,
-            }));
-
-        const poList = (flow as any).poList || ((flow as any).submittedData)?.poList || [];
-        const poNum = flow.poNumber || (Array.isArray(poList) && poList[0]?.poNumber) || `BPL/PO/${flow.indentNo}`;
-        const newPayFlow: FmsInstance = {
-          id: `fms-inst-pay-${flow.indentNo}-${Date.now()}`,
-          flowId: `FLOW-PAY-${poNum.replace(/[^a-zA-Z0-9]/g, '-')}`,
-          flowType: 'PO_TO_PAYMENT',
-          linkedFlowId: flow.flowId,
-          poNumber: poNum,
-          vendorName: flow.vendorName || (Array.isArray(poList) && poList[0]?.vendorName) || 'Awarded Vendor',
-          poAmount: flow.poAmount || 0,
-          poAssignTo: 'Priyanka Agrawal',
-          indentNo: flow.indentNo,
-          siteName: flow.siteName,
-          createdAt: formattedNow,
-          updatedAt: formattedNow,
-          currentStageIndex: 0,
-          currentStageId: initialPayStages[0]?.stageId || 'STG-PAY-01',
-          totalStages: initialPayStages.length,
-          stages: initialPayStages,
-          status: 'IN_PROGRESS',
-          priority: 'Urgent',
-          totalDelayHours: 0,
-        };
-
-        updatedFlowsList = [newPayFlow, ...updatedFlowsList];
-        showToast(`GRN Material Receipt Completed! Credit Payment Requisition spawned in Accounts Inbox for Indent #${flow.indentNo}.`);
+    // Outbound Dispatch -> Transfer Inventory & Spawn Standalone SITE_RECEIVE:
+    // (A) PURCHASE_TO_STORE_DISPATCH Stage 4 (Dispatch) completion:
+    if (
+      flow.flowType === 'PURCHASE_TO_STORE_DISPATCH' &&
+      (currentStage.stageId === 'STG-PSD-04' || currentIndex === 3)
+    ) {
+      // 1. Log Inventory Movement: TRANSFER to target site
+      try {
+        storageAdapter.addInventoryMovement({
+          transactionId: `TXN-TRF-${Date.now().toString().slice(-6)}`,
+          itemId: flow.lineItems?.[0]?.id || `ITEM-TRF-${flow.indentNo}`,
+          itemName: flow.lineItems?.[0]?.itemDescription || flow.remarks || `Consignment Transfer to ${flow.siteName}`,
+          type: 'TRANSFER',
+          quantity: Number(flow.lineItems?.[0]?.qty || 1),
+          sourceLocation: 'Central Store',
+          destinationLocation: flow.siteName || 'Project Site',
+          timestamp: formattedNow,
+          referenceDoc: submittedData?.stnNumber || flow.instanceDataPool?.stnNumber || `STN-${flow.indentNo}`,
+          initiatedBy: currentUser.name || 'Brahmanand Patel',
+          notes: `Central Store dispatched to ${flow.siteName} with Gate Pass #${submittedData?.gatePassNumber || 'GP'}.`
+        });
+      } catch (trfErr) {
+        console.error('Failed to log inventory transfer movement:', trfErr);
       }
+
+      // 2. Spawn Standalone SITE_RECEIVE
+      spawnSiteReceive(flow);
+    }
+
+    // (B) STORE_TO_SITE_DISPATCH Stage 4 (Dispatch) completion:
+    if (
+      flow.flowType === 'STORE_TO_SITE_DISPATCH' &&
+      (currentStage.stageId === 'STG-SSD-04' || currentIndex === 3)
+    ) {
+      // 1. Log Inventory Movement: TRANSFER to target site
+      try {
+        storageAdapter.addInventoryMovement({
+          transactionId: `TXN-TRF-${Date.now().toString().slice(-6)}`,
+          itemId: flow.lineItems?.[0]?.id || `ITEM-TRF-${flow.indentNo}`,
+          itemName: flow.lineItems?.[0]?.itemDescription || flow.remarks || `Store Material Issue to ${flow.siteName}`,
+          type: 'TRANSFER',
+          quantity: Number(flow.lineItems?.[0]?.qty || 1),
+          sourceLocation: 'Central Store',
+          destinationLocation: flow.siteName || 'Project Site',
+          timestamp: formattedNow,
+          referenceDoc: submittedData?.stnNumber || flow.instanceDataPool?.stnNumber || `STN-${flow.indentNo}`,
+          initiatedBy: currentUser.name || 'Amanat Bharadwaj',
+          notes: `Store warehouse issue dispatched to ${flow.siteName} with Gate Pass.`
+        });
+      } catch (trfErr) {
+        console.error('Failed to log inventory transfer movement:', trfErr);
+      }
+
+      // 2. Spawn Standalone SITE_RECEIVE
+      spawnSiteReceive(flow);
     }
 
     setFlows(updatedFlowsList);

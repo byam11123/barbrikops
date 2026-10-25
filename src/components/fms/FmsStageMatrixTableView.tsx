@@ -128,7 +128,7 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
       { key: 'CHECK_STOCK', label: 'Check Stock (Store FMS)', dept: 'STORE' },
       { key: 'PURCHASE_TO_STORE_DISPATCH', label: 'Purchase to Store Dispatch', dept: 'STORE' },
       { key: 'STORE_TO_SITE_DISPATCH', label: 'Store to Site Issue', dept: 'STORE' },
-      { key: 'SITE_RECEIVE', label: 'Site Material Receive (MRN)', dept: 'STORE' },
+      { key: 'SITE_RECEIVE', label: 'Site Material Receive (GRN)', dept: 'STORE' },
       { key: 'PO_TO_PAYMENT', label: 'PO to Payment (Accounts FMS)', dept: 'ACCOUNTS' },
       { key: 'BENEFICIARY_APPROVAL', label: 'Beneficiary Approval FMS', dept: 'ACCOUNTS' },
       { key: 'ACCOUNTS_INVOICE_COLLECTION', label: 'Invoice Collection FMS', dept: 'ACCOUNTS' },

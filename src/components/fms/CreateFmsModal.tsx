@@ -898,7 +898,7 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
       onClose();
     } else if (flowType === 'SITE_RECEIVE') {
       if (!indentNo.trim()) {
-        setError('Site Requisition / MRN / Challan Number is required');
+        setError('Site Requisition / GRN / Challan Number is required');
         return;
       }
 
@@ -2027,13 +2027,13 @@ export const CreateFmsModal: React.FC<CreateFmsModalProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Site Requisition / MRN <span className="text-rose-500">*</span>
+                    Site Requisition / GRN <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
                     required
                     readOnly={true}
-                    placeholder="e.g. MRN-2026-088 or Indent 752"
+                    placeholder="e.g. GRN-2026-088 or Indent 752"
                     value={indentNo}
                     className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-slate-100 text-slate-500 font-semibold cursor-not-allowed select-all focus:outline-none"
                   />

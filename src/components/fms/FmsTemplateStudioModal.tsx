@@ -330,20 +330,20 @@ export const getTargetStage1Info = (templateKey: string): TargetStage1Info => {
     case 'SITE_RECEIVE':
       return {
         key: 'SITE_RECEIVE',
-        templateName: 'Site Material Receive MRN FMS',
-        stage1Id: 'STG-MRN-01',
-        stage1Name: 'Material Receipt Note (MRN) & Unloading Inspection',
+        templateName: 'Site Material Receive GRN FMS',
+        stage1Id: 'STG-REC-01',
+        stage1Name: 'Goods Received Note (GRN) & Unloading Inspection',
         whoRole: 'SITE STORE IN-CHARGE',
-        whoDefaultAssignee: 'Suresh Kumar',
-        slaHours: 0,
-        howChannel: 'MRN MOBILE FORM',
+        whoDefaultAssignee: 'Aman Kumar',
+        slaHours: 12,
+        howChannel: 'GRN MOBILE FORM',
         fields: [
-          { id: 'mrnNumber', label: 'MRN Entry Number', type: 'TEXT', required: true, defaultSourceField: 'mrnNo' },
-          { id: 'poNumber', label: 'PO / Gate Pass Ref', type: 'TEXT', required: true, defaultSourceField: 'poNumber' },
+          { id: 'siteGrnNumber', label: 'Site GRN Number', type: 'TEXT', required: true, defaultSourceField: 'grnNo' },
+          { id: 'poNumber', label: 'PO / STN Gate Pass Ref', type: 'TEXT', required: true, defaultSourceField: 'poNumber' },
           { id: 'receivedQty', label: 'Total Received Quantity', type: 'NUMBER', required: true, defaultSourceField: 'quantity' },
           { id: 'damagedQty', label: 'Damaged / Shortage Quantity', type: 'NUMBER', required: false, defaultSourceField: 'damagedQty' },
           { id: 'inspectorName', label: 'Unloading Inspector Name', type: 'TEXT', required: true, defaultSourceField: 'requestedBy' },
-          { id: 'mrnPhotos', label: 'Unloading Inspection Photo Link', type: 'URL', required: false, defaultSourceField: 'photoUrl' },
+          { id: 'signedChallanUpload', label: 'Signed Delivery Challan Attachment', type: 'FILE', required: true, defaultSourceField: 'photoUrl' },
         ],
         checkpoints: [
           'Physical material counted at unloading dock',
@@ -851,9 +851,9 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
         baseStages = FMS_PAYMENT_TO_DISPATCH_STAGES;
         break;
       case 'SITE_RECEIVE':
-        name = 'Site Material Receive (MRN)';
+        name = 'Site Material Receive (GRN)';
         hub = 'SITE_LOGISTICS';
-        ref = 'MRN / Delivery Challan';
+        ref = 'GRN / Delivery Challan';
         baseStages = FMS_SITE_RECEIVE_STAGES;
         break;
       case 'ACCOUNTS_INVOICE_COLLECTION':
@@ -953,7 +953,7 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
           ];
         } else if (key === 'SITE_RECEIVE') {
           defaultFields = [
-            { id: 'mrnNumber', label: 'Delivery Challan / MRN No.', type: 'TEXT', required: true },
+            { id: 'siteGrnNumber', label: 'Delivery Challan / GRN No.', type: 'TEXT', required: true },
             { id: 'consignorStore', label: 'Consignor / Source Store', type: 'TEXT', required: true },
             { id: 'siteName', label: 'Receiving Site', type: 'SELECT', options: ['SILADEHI', 'BIJETALA', 'RAIPUR'], required: true },
             { id: 'receivedDate', label: 'Receiving Date', type: 'TEXT', required: true },
@@ -1623,7 +1623,7 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
                 <option value="STORE_TO_SITE_DISPATCH">Store to Site Dispatch (9 stages)</option>
                 <option value="PURCHASE_TO_STORE_DISPATCH">Purchase to Store Dispatch (10 stages)</option>
                 <option value="PAYMENT_TO_DISPATCH">Vendor Payment to Dispatch (7 stages)</option>
-                <option value="SITE_RECEIVE">Site Material Receive (MRN) (9 stages)</option>
+                <option value="SITE_RECEIVE">Site Material Receive (GRN) (1 stage)</option>
                 <option value="ACCOUNTS_INVOICE_COLLECTION">Accounts Invoice Collection (10 stages)</option>
                 <option value="HR_ATTENDANCE_PAYMENT">Labour Attendance &amp; Payment (7 stages)</option>
                 <option value="BREAKDOWN_REPORTING">Machine Breakdown (13 stages)</option>
@@ -2439,7 +2439,7 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
                               <option value="STORE_TO_SITE_DISPATCH">Store to Site Dispatch (STORE_TO_SITE_DISPATCH)</option>
                               <option value="PURCHASE_TO_STORE_DISPATCH">Purchase to Store Dispatch (PURCHASE_TO_STORE_DISPATCH)</option>
                               <option value="PAYMENT_TO_DISPATCH">Vendor Payment to Dispatch (PAYMENT_TO_DISPATCH)</option>
-                              <option value="SITE_RECEIVE">Site Material Receive MRN (SITE_RECEIVE)</option>
+                              <option value="SITE_RECEIVE">Site Material Receive GRN (SITE_RECEIVE)</option>
                               <option value="ACCOUNTS_INVOICE_COLLECTION">Accounts Invoice Collection (ACCOUNTS_INVOICE_COLLECTION)</option>
                             </select>
                           </div>
@@ -2576,7 +2576,7 @@ export const FmsTemplateStudioModal: React.FC<FmsTemplateStudioModalProps> = ({
                             { key: 'invoiceNo', label: 'Invoice / Bill Reference', tech: 'invoiceNo' },
                             { key: 'paymentBank', label: 'Bank Name & Branch', tech: 'paymentBank' },
                             { key: 'utrNumber', label: 'UTR / Payment Reference No.', tech: 'utrNumber' },
-                            { key: 'mrnNumber', label: 'Material Receipt Note (MRN)', tech: 'mrnNumber' },
+                            { key: 'grnNumber', label: 'Goods Received Note (GRN)', tech: 'grnNumber' },
                             { key: 'purpose', label: 'Purpose / Remarks', tech: 'purpose' },
                             { key: 'remarks', label: 'Remarks / Notes', tech: 'remarks' },
                           ];

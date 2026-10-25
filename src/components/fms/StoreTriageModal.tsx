@@ -84,7 +84,10 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
         storeStockQtyAvailable: totalAvail,
         csrQty: 0,
         otherSiteQty: 0,
+        storeQty: 0,
+        purchaseQty: 0,
         purchaseQtyRequired: 0,
+        holdQty: reqQty,
         triageAllocation: 'HELD_ARCHIVED',
         dispatchSource: 'Central Store',
       };
@@ -133,7 +136,10 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
       storeStockQtyAvailable: totalAvail,
       csrQty,
       otherSiteQty,
+      storeQty: csrQty + otherSiteQty,
+      purchaseQty: purchaseQtyRequired,
       purchaseQtyRequired,
+      holdQty: 0,
       triageAllocation,
       dispatchSource,
     };
@@ -141,17 +147,47 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
 
   // Load initial line items from flow or initialize default line item if empty
   const [lineItems, setLineItems] = useState<FmsLineItem[]>(() => {
-    const rawItems = (flow.lineItems && flow.lineItems.length > 0)
-      ? flow.lineItems
-      : [
-          {
-            id: 'ITEM-1',
-            itemDescription: flow.title || 'Requested Indent Line Material',
-            qty: 1,
-            unit: 'Nos',
-            urgency: 'NORMAL' as const,
-          }
-        ];
+    let rawCandidate: any[] = [];
+    if (flow.lineItems && flow.lineItems.length > 0) {
+      rawCandidate = flow.lineItems;
+    } else if (flow.instanceDataPool?.requisitionItems && Array.isArray(flow.instanceDataPool.requisitionItems)) {
+      rawCandidate = flow.instanceDataPool.requisitionItems;
+    } else if (flow.instanceDataPool?.lineItems && Array.isArray(flow.instanceDataPool.lineItems)) {
+      rawCandidate = flow.instanceDataPool.lineItems;
+    } else if (flow.instanceDataPool?.multiItems && Array.isArray(flow.instanceDataPool.multiItems)) {
+      rawCandidate = flow.instanceDataPool.multiItems;
+    } else if (flow.stages?.[0]?.submittedData?.requisitionItems && Array.isArray(flow.stages[0].submittedData.requisitionItems)) {
+      rawCandidate = flow.stages[0].submittedData.requisitionItems;
+    } else if (flow.stages?.[0]?.submittedData?.multiItems && Array.isArray(flow.stages[0].submittedData.multiItems)) {
+      rawCandidate = flow.stages[0].submittedData.multiItems;
+    } else {
+      rawCandidate = [
+        {
+          id: 'ITEM-1',
+          itemDescription: flow.title || 'Requested Indent Line Material',
+          qty: 1,
+          unit: 'Nos',
+          urgency: 'NORMAL' as const,
+        }
+      ];
+    }
+
+    const rawItems: FmsLineItem[] = rawCandidate.map((item: any, idx: number) => {
+      const q = parseFloat(item.qty || item.quantity || item.requestedQty || item.ordered_qty) || 1;
+      return {
+        id: item.id || `ITEM-${idx + 1}`,
+        itemDescription: item.itemDescription || item.item_description || item.description || `Item #${idx + 1}`,
+        qty: q,
+        requestedQty: q,
+        unit: item.unit || 'Nos',
+        urgency: item.urgency || ('NORMAL' as const),
+        remark: item.remarks || item.remark || item.workPurpose || item.work_purpose || '',
+        csrStock: item.csrStock,
+        otherSiteStock: item.otherSiteStock,
+        stockSiteName: item.stockSiteName,
+        triageAllocation: item.triageAllocation,
+      };
+    });
 
     const inventoryItems = storageAdapter.getInventoryItems();
 
@@ -235,14 +271,42 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
   const handleSubmitTriage = () => {
     setIsSubmitting(true);
 
+    const preparedLineItems: FmsLineItem[] = lineItems.map((item, idx) => {
+      const isArchived = item.triageAllocation === 'HELD_ARCHIVED';
+      const reqQty = Number(item.qty || 1);
+      const csr = Number(item.csrQty || 0);
+      const other = Number(item.otherSiteQty || 0);
+      const storeQ = csr + other;
+      const purchQ = Number(item.purchaseQtyRequired || 0);
+
+      return {
+        ...item,
+        id: item.id || `ITEM-${idx + 1}`,
+        itemDescription: item.itemDescription || 'Material Item',
+        qty: reqQty,
+        requestedQty: reqQty,
+        csrStock: item.csrStock ?? 0,
+        otherSiteStock: item.otherSiteStock ?? 0,
+        stockSiteName: item.stockSiteName || defaultOtherSite,
+        csrQty: csr,
+        otherSiteQty: other,
+        storeQty: isArchived ? 0 : storeQ,
+        purchaseQty: isArchived ? 0 : purchQ,
+        purchaseQtyRequired: isArchived ? 0 : purchQ,
+        holdQty: isArchived ? reqQty : 0,
+        triageAllocation: item.triageAllocation,
+      };
+    });
+
     const { updatedParent } = storageAdapter.splitIndentForPurchaseAndStore(
       flow,
-      lineItems,
+      preparedLineItems,
       triageNotes,
       currentUser
     );
 
     const resultingFlow = updatedParent || flow;
+    resultingFlow.lineItems = preparedLineItems;
 
     setTimeout(() => {
       onCompleteTriage(resultingFlow, {

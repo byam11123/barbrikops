@@ -742,6 +742,7 @@ export interface FmsInstance {
   poAmount?: number;
   linkedFlowId?: string;
   paymentMode?: 'BANK_ACCOUNT' | 'UPI' | 'PENDING';
+  paymentTerms?: 'ADVANCE' | 'CREDIT' | string;
   // HR Labour Attendance specific fields:
   totalLabourPresent?: number;
   totalOtHours?: number;
@@ -983,7 +984,7 @@ export interface ComparativeStatement {
 // BANK PAYMENTS, BENEFICIARY & IBT TYPES
 // ==========================================
 
-export type PaymentApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+export type PaymentApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'PENDING_GRN' | 'READY_FOR_PAYMENT';
 export type PaymentStepStatus = 'PENDING' | 'DONE' | 'CANCELLED';
 
 export interface BankPaymentRecord {
@@ -1006,6 +1007,7 @@ export interface BankPaymentRecord {
   poUpload?: string;                 // Attachment URL or Base64
   billNoPo?: string;                 // Bill / PO Reference No
   emailAddress?: string;
+  paymentTerms?: string;             // e.g. 'CREDIT' | 'ADVANCE'
 
   // Beneficiary Master Link & Accounts Double-Entry Verification
   beneficiaryMasterStatus: 'VERIFIED' | 'NEEDS_ADDITION' | 'NOT_APPLICABLE_UPI';

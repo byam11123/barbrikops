@@ -41,7 +41,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
   onRefresh,
 }) => {
   const [payments, setPayments] = useState<BankPaymentRecord[]>(() => storageAdapter.getBankPayments());
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'DONE'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'DONE' | 'PENDING_GRN'>('ALL');
   const [mismatchOnly, setMismatchOnly] = useState(false);
   const [localSearch, setLocalSearch] = useState('');
 
@@ -138,6 +138,8 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
       if (p.approvalStatus !== 'REJECTED') return false;
     } else if (statusFilter === 'DONE') {
       if (p.paymentStatus !== 'DONE') return false;
+    } else if (statusFilter === 'PENDING_GRN') {
+      if (p.approvalStatus !== 'PENDING_GRN') return false;
     }
 
     const effectiveSearch = (localSearch || searchQuery || '').trim().toLowerCase();
@@ -167,6 +169,8 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
 
   const settledList = payments.filter(p => p.paymentStatus === 'DONE');
   const settledSum = settledList.reduce((acc, curr) => acc + (curr.amountToBePaid || 0), 0);
+
+  const creditPendingList = payments.filter(p => p.approvalStatus === 'PENDING_GRN');
 
   const mismatchList = payments.filter(p => p.isNameMismatch);
   const mismatchSum = mismatchList.reduce((acc, curr) => acc + (curr.amountToBePaid || 0), 0);
@@ -415,6 +419,17 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
             </button>
             <button
               type="button"
+              onClick={() => { setStatusFilter('PENDING_GRN'); setMismatchOnly(false); }}
+              className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all cursor-pointer ${
+                statusFilter === 'PENDING_GRN'
+                  ? 'bg-purple-600 text-white shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Credit Pending ({creditPendingList.length})
+            </button>
+            <button
+              type="button"
               onClick={() => setMismatchOnly(!mismatchOnly)}
               className={`px-3 py-1.5 text-xs rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
                 mismatchOnly
@@ -556,6 +571,16 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                         {p.approvalStatus === 'PENDING' && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
                             <Clock className="w-3 h-3 text-amber-600" /> Pending
+                          </span>
+                        )}
+                        {p.approvalStatus === 'PENDING_GRN' && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                            <Clock className="w-3 h-3 text-purple-600" /> Pending GRN
+                          </span>
+                        )}
+                        {p.approvalStatus === 'READY_FOR_PAYMENT' && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                            <CheckCircle2 className="w-3 h-3 text-blue-600" /> Ready for Payment
                           </span>
                         )}
                         {p.approvalStatus === 'APPROVED' && (

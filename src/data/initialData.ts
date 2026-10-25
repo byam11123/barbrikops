@@ -36,15 +36,15 @@ export const INITIAL_NOTIFICATIONS: AppNotification[] = [
     id: 'notif-init-02',
     userId: 'USR-001',
     targetUserName: 'Amanat Bharadwaj',
-    title: 'Physical MRN Verification: FLOW-REC-102-001',
-    message: 'Consignment arrived at Central Store. Quality check and physical gate MRN entry required.',
+    title: 'Physical GRN Verification: FLOW-REC-102-001',
+    message: 'Consignment arrived at Central Store. Quality check and physical gate GRN entry required.',
     type: 'FMS_ACTION_REQUIRED',
     urgency: 'HIGH',
     timestamp: '10/10/2026, 08:45 AM',
     read: false,
     linkTab: 'fms',
     linkEntityId: 'FLOW-REC-102-001',
-    data: { flowId: 'FLOW-REC-102-001', stageName: 'Store MRN & Inspection' }
+    data: { flowId: 'FLOW-REC-102-001', stageName: 'Store GRN & Inspection' }
   },
   {
     id: 'notif-init-03',
@@ -809,7 +809,7 @@ export const FMS_STANDARD_PURCHASE_STAGES: FmsStageDefinition[] = [
     ],
     subWorkflowTrigger: {
       enabled: true,
-      name: 'Trigger Purchase to Store Dispatch & MRN Workflow',
+      name: 'Trigger Purchase to Store Dispatch & GRN Workflow',
       targetTemplateKey: 'PURCHASE_TO_STORE_DISPATCH',
       triggerCondition: 'ON_COMPLETE',
       targetAssigneeRule: 'DYNAMIC_ROLE',
@@ -973,7 +973,7 @@ export const FMS_PO_PAYMENT_STAGES: FmsStageDefinition[] = [
     stageId: 'STG-PAY-09',
     stageNumber: 9,
     name: 'Send Payment Details to Get Material',
-    what: 'Purchaser shares payment UTR, PO details and transfer proof screenshot with vendor to schedule material collection / dispatch',
+    what: 'Purchaser shares payment UTR, PO details and transfer proof screenshot with vendor and selects Purchaser Assistant for material collection',
     whoRole: 'PURCHASER',
     whoDefaultAssignee: 'Shyam Rao Sureshe',
     howChannel: 'WHATSAPP / EMAIL TO VENDOR',
@@ -988,8 +988,27 @@ export const FMS_PO_PAYMENT_STAGES: FmsStageDefinition[] = [
       { id: 'siteName', label: 'Delivery Site Name', type: 'TEXT', required: true },
       { id: 'poAttachmentUrl', label: 'PO Attachment', type: 'FILE', required: false },
       { id: 'paymentDoneScreenshot', label: 'Payment Done Screenshot', type: 'FILE', required: true },
-      { id: 'confirmationStatus', label: 'Material Collection Intimation Status', type: 'SELECT', options: ['COMMUNICATED_TO_VENDOR', 'DISPATCH_IN_PROGRESS', 'COLLECTED'], required: true, defaultValue: 'COMMUNICATED_TO_VENDOR' },
+      { id: 'sentVia', label: 'Sent Via', type: 'SELECT', options: ['WhatsApp', 'Email', 'Courier'], required: true, defaultValue: 'WhatsApp' },
+      { id: 'poAssignTo', label: 'PO Assign To', type: 'SELECT', options: ['Rajendra', 'Vivek', 'Rajnikant'], required: true },
       { id: 'dispatchRemarks', label: 'Purchaser Delivery / Material Dispatch Notes', type: 'TEXTAREA', placeholder: 'Details communicated to vendor via WhatsApp/Email. Target dispatch date confirmed...' }
+    ]
+  },
+  {
+    stageId: 'STG-PAY-10',
+    stageNumber: 10,
+    name: 'Collect Material from Vendor',
+    what: 'Purchaser Assistant collects physical material consignment from vendor, verifies delivery challan, and books transit vehicle',
+    whoRole: 'PURCHASER ASSISTANT',
+    whoDefaultAssignee: 'Rajendra',
+    howChannel: 'PHYSICAL HANDOVER',
+    slaHours: 4,
+    hasYesNoDecision: false,
+    fields: [
+      { id: 'collectionDate', label: 'Collection Date', type: 'DATE', required: true },
+      { id: 'vendorDispatchChallanNo', label: 'Vendor Delivery Challan / LR No', type: 'TEXT', required: true, placeholder: 'e.g. DC-9842 or LR No' },
+      { id: 'vehicleNumber', label: 'Vehicle Number', type: 'TEXT', required: true, placeholder: 'e.g. CG-04-1234' },
+      { id: 'driverDetails', label: 'Driver Name & Phone', type: 'TEXT', placeholder: 'e.g. Driver Rajesh (9827012345)' },
+      { id: 'collectionRemarks', label: 'Collection Remarks', type: 'TEXTAREA', placeholder: 'Physical inspection and collection notes...' }
     ]
   }
 ];
@@ -1036,115 +1055,84 @@ export const FMS_PURCHASE_TO_STORE_DISPATCH_STAGES: FmsStageDefinition[] = [
   {
     stageId: 'STG-PSD-01',
     stageNumber: 1,
-    name: 'RECEIVE PURCHASED MATERIAL',
-    what: 'Receive incoming purchased material physically at store warehouse',
-    whoRole: 'STORE MANAGER(BRAMHANAND PATEL)',
-    whoDefaultAssignee: 'Bramhanand Patel',
+    name: 'GRN & Quality Check',
+    what: 'Receive incoming purchased material physically at Central Store warehouse, perform quality check and log Goods Received Note (GRN)',
+    whoRole: 'STORE MANAGER (BRAHMANAND PATEL)',
+    whoDefaultAssignee: 'Brahmanand Patel',
     howChannel: 'PHYSICALLY',
     slaHours: 2,
-    hasYesNoDecision: false
+    hasYesNoDecision: false,
+    fields: [
+      { id: 'grnNumber', label: 'GRN Number', type: 'TEXT', required: true, placeholder: 'e.g. BPL/GRN/2026/012' },
+      { id: 'vendorChallanNo', label: 'Vendor Challan / Invoice No', type: 'TEXT', required: true },
+      { id: 'receivedDate', label: 'Received Date', type: 'DATE', required: true },
+      { 
+        id: 'itemsTable', 
+        label: 'GRN Line Items & Quality Check', 
+        type: 'MULTI_ITEM_TABLE', 
+        required: true,
+        columns: [
+          { key: 'item_description', label: 'Item Description', type: 'TEXT' },
+          { key: 'ordered_qty', label: 'Ordered Qty', type: 'NUMBER' },
+          { key: 'received_qty', label: 'Received Qty', type: 'NUMBER' },
+          { key: 'accepted_qty', label: 'Accepted Qty', type: 'NUMBER' },
+          { key: 'rejected_qty', label: 'Rejected Qty', type: 'NUMBER' },
+          { key: 'rejection_reason', label: 'Remarks / Rejection Reason', type: 'TEXT' }
+        ]
+      },
+      { id: 'grnAttachment', label: 'Upload Vendor Bill / Delivery Challan', type: 'FILE', required: false }
+    ]
   },
   {
     stageId: 'STG-PSD-02',
     stageNumber: 2,
-    name: 'CHECK & VERIFY MATERIAL PURCHASED WITH PO/STOCK TRANSFER NOTE/INVOICE',
-    what: 'Inspect and verify material physically against Purchase Order, invoice, or stock transfer note',
-    whoRole: 'PURCHASE EXECUTIVE( SHYAM RAO SURESHE )',
-    whoDefaultAssignee: 'Shyam Rao Sureshe',
-    howChannel: 'PHYSICALLY',
+    name: 'Stock Inward',
+    what: 'Store accepted stock in designated warehouse bin/rack location and record inward entry in digital register',
+    whoRole: 'STORE MANAGER (BRAHMANAND PATEL)',
+    whoDefaultAssignee: 'Brahmanand Patel',
+    howChannel: 'STORE REGISTER',
     slaHours: 2,
-    hasYesNoDecision: false
+    hasYesNoDecision: false,
+    fields: [
+      { id: 'binLocation', label: 'Bin / Shelf Location', type: 'TEXT', required: true, placeholder: 'e.g. Bay 4 - Rack B - Shelf 2' },
+      { id: 'inwardDate', label: 'Inward Date', type: 'DATE', required: true },
+      { id: 'inwardRemarks', label: 'Warehouse Inward Remarks', type: 'TEXTAREA' }
+    ]
   },
   {
     stageId: 'STG-PSD-03',
     stageNumber: 3,
-    name: 'PREPARE STOCK TRANSFER NOTE/DELIVERY CHALLAN',
-    what: 'Generate official stock transfer note / physical delivery challan copy for outbound transit',
-    whoRole: 'PURCHASE EXECUTIVE (SHYAM RAO SURESHE)',
-    whoDefaultAssignee: 'Shyam Rao Sureshe',
+    name: 'Prepare STN (Stock Transfer Note)',
+    what: 'Generate official Stock Transfer Note (STN) for outbound transit to project site',
+    whoRole: 'STORE MANAGER (BRAHMANAND PATEL)',
+    whoDefaultAssignee: 'Brahmanand Patel',
     howChannel: 'PHYSICAL COPY',
     slaHours: 2,
-    hasYesNoDecision: false
+    hasYesNoDecision: false,
+    fields: [
+      { id: 'stnNumber', label: 'STN Number', type: 'TEXT', required: true, placeholder: 'e.g. BPL/STN/2026/089' },
+      { id: 'stnDate', label: 'STN Date', type: 'DATE', required: true },
+      { id: 'stnItemsTable', label: 'Outward STN Items', type: 'MULTI_ITEM_TABLE', required: true }
+    ]
   },
   {
     stageId: 'STG-PSD-04',
     stageNumber: 4,
-    name: 'ARRANGE VEHICLE FOR DISPATCH',
-    what: 'Coordinate and book transport/vehicle physically for project site delivery',
-    whoRole: 'STORE MANAGER(BRAMHANAND PATEL)',
-    whoDefaultAssignee: 'Bramhanand Patel',
-    howChannel: 'PHYSICAL',
-    slaHours: 6,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-PSD-05',
-    stageNumber: 5,
-    name: 'IS E-WAY BILL REQUIRED?',
-    what: 'Compliance Checkpoint: Is GST E-Way Bill required for this consignment (> ₹50,000 or inter-state)?',
-    whoRole: 'STORE MANAGER(BRAMHANAND PATEL)',
-    whoDefaultAssignee: 'Bramhanand Patel',
-    howChannel: 'WHATSAPP/CALL',
-    slaHours: 1,
-    isCheckpoint: true,
-    hasYesNoDecision: true
-  },
-  {
-    stageId: 'STG-PSD-06',
-    stageNumber: 6,
-    name: 'SEND DELIVERY CHALLAN/STOCK TRANSFER NOTE FOR E-WAY BILL',
-    what: 'Transmit challan/transfer note to accounts/taxation desk to generate government E-Way Bill',
-    whoRole: 'PURCHASE EXECUTIVE (SHYAM RAO SURESHE)',
-    whoDefaultAssignee: 'Shyam Rao Sureshe',
-    howChannel: 'WHATSAPP/EMAIL/PHYYSICAL',
-    slaHours: 2,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-PSD-07',
-    stageNumber: 7,
-    name: 'GET E-WAY BILL',
-    what: 'Receive generated E-Way Bill document and attach to vehicle documentation docket',
-    whoRole: 'STORE MANAGER(BRAMHANAND PATEL)',
-    whoDefaultAssignee: 'Bramhanand Patel',
-    howChannel: 'WHATSAPP/EMAIL/PHYSICAL',
+    name: 'Logistics & Dispatch',
+    what: 'Coordinate transit vehicle, check E-Way Bill requirement, generate Gate Pass, and dispatch consignment to project site',
+    whoRole: 'STORE MANAGER (BRAHMANAND PATEL)',
+    whoDefaultAssignee: 'Brahmanand Patel',
+    howChannel: 'PHYSICAL DISPATCH',
     slaHours: 4,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-PSD-08',
-    stageNumber: 8,
-    name: 'LOAD MATERIAL FOR DISPATCH',
-    what: 'Supervise physical loading and securing of consignment onto the dispatch vehicle',
-    whoRole: 'STORE MANAGER(BRAMHANAND PATEL)',
-    whoDefaultAssignee: 'Bramhanand Patel',
-    howChannel: 'PHYSICALLY',
-    slaHours: 4,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-PSD-09',
-    stageNumber: 9,
-    name: 'DISPATCH ALL MATERIAL WITH ALL DOCUMENTS',
-    what: 'Release loaded vehicle physically with signed challan, invoice, gate pass, and E-Way Bill',
-    whoRole: 'STORE MANAGER(BRAMHANAND PATEL)',
-    whoDefaultAssignee: 'Bramhanand Patel',
-    howChannel: 'PHYSICALLY',
-    slaHours: 4,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-PSD-10',
-    stageNumber: 10,
-    name: 'GET RECEIVING',
-    what: 'Obtain site receiver acknowledgment slip and log confirmation via Google Form',
-    whoRole: 'PURCHASER (RAJENDRA/VIVEK/RAJNIKANT)',
-    whoDefaultAssignee: 'Rajendra / Vivek / Rajnikant',
-    howChannel: 'WHATSAPP/EMAIL/PHYSICALLY',
-    formUrl: undefined,
-    slaHours: 12,
-    isCheckpoint: true,
-    hasYesNoDecision: false
+    hasYesNoDecision: false,
+    fields: [
+      { id: 'vehicleNumber', label: 'Vehicle Number', type: 'TEXT', required: true, placeholder: 'e.g. CG-04-1234' },
+      { id: 'driverDetails', label: 'Driver Details (Name & Phone)', type: 'TEXT', required: true, placeholder: 'e.g. Rajesh Kumar (9827012345)' },
+      { id: 'isEwayBillRequired', label: 'E-Way Bill Required?', type: 'SELECT', options: ['Yes', 'No'], required: true, defaultValue: 'Yes' },
+      { id: 'ewayBillNumber', label: 'E-Way Bill Number', type: 'TEXT', placeholder: 'e.g. 191283719283' },
+      { id: 'gatePassDocument', label: 'Upload Signed Gate Pass / STN Docket', type: 'FILE', required: false },
+      { id: 'dispatchRemarks', label: 'Outward Dispatch Remarks', type: 'TEXTAREA' }
+    ]
   }
 ];
 
@@ -1236,117 +1224,21 @@ export const FMS_SITE_RECEIVE_STAGES: FmsStageDefinition[] = [
   {
     stageId: 'STG-REC-01',
     stageNumber: 1,
-    name: 'RECEIVE MATERIAL',
-    what: 'Receive incoming shipment physically at project site store',
-    whoRole: 'STORE INCHARGE',
-    whoDefaultAssignee: 'Site Store Incharge (Amanat / Siladehi Incharge)',
-    howChannel: 'WHATSAPP/EMAIL',
-    slaHours: 0,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-REC-02',
-    stageNumber: 2,
-    name: 'CHECK MATERIAL WITH PO/DELIVERY CHALLAN/INVOICE/STOCK TRANSFER NOTE',
-    what: 'Inspect materials physically against PO, challan, and stock transfer note',
-    whoRole: 'STORE INCHARGE',
-    whoDefaultAssignee: 'Site Store Incharge',
-    howChannel: 'PHYSICALLY',
-    slaHours: 4,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-REC-03',
-    stageNumber: 3,
-    name: 'ARE THERE ANY DISCREPANCY OBSERVED ?',
-    what: 'Quality Checkpoint: Are any discrepancies, shortfalls, or physical damages observed in consignment?',
-    whoRole: 'STORE INCHARGE',
-    whoDefaultAssignee: 'Site Store Incharge',
-    howChannel: 'WHATSAPP/CALL',
-    slaHours: 1,
-    isCheckpoint: true,
-    hasYesNoDecision: true
-  },
-  {
-    stageId: 'STG-REC-04',
-    stageNumber: 4,
-    name: 'INFORM CSR STORE & GET IT RECTIFIED',
-    what: 'Notify Central Raipur/CSR Store team regarding discrepancy and obtain replacement/adjustment',
-    whoRole: 'STORE INCHARGE',
-    whoDefaultAssignee: 'Site Store Incharge',
-    howChannel: 'WHATSAPP/EMAIL/PHONE',
-    slaHours: 2,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-REC-05',
-    stageNumber: 5,
-    name: 'IS MATERIAL ACCEPTABLE ?',
-    what: 'Material Acceptability Checkpoint: Is material in acceptable condition for installation/construction?',
-    whoRole: 'STORE INCHARGE',
-    whoDefaultAssignee: 'Site Store Incharge',
-    howChannel: 'WHATSAPP/CALL',
-    slaHours: 1,
-    isCheckpoint: true,
-    hasYesNoDecision: true
-  },
-  {
-    stageId: 'STG-REC-06',
-    stageNumber: 6,
-    name: 'RETURN MATERIAL TO REPAIRE STORE',
-    what: 'Dispatch rejected/damaged items physically back to repair store / central depot',
-    whoRole: 'STORE INCHARGE',
-    whoDefaultAssignee: 'Site Store Incharge',
-    howChannel: 'PHYSICALLY',
-    slaHours: 2,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-REC-07',
-    stageNumber: 7,
-    name: 'GET MATERIAL VERIFIED',
-    what: 'Technical site verification by Construction Material (Civil Incharge) or Mechanical Material (Mechanical Incharge)',
-    whoRole: 'CONSTRUCTION (CIVIL INCHARGE) / MECHANICAL INCHARGE',
-    whoDefaultAssignee: 'Chakravarti Ji / Pranay Ghosh',
-    howChannel: 'WHATSAPP/EMAIL/PHYSICALLY',
-    slaHours: 1,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-REC-08',
-    stageNumber: 8,
-    name: 'GIVE RECEIVING IN STOCK TRANSFER NOTE/DELIVERY CHALLAN/INVOICE SEND TO RAIPUR STORE',
-    what: 'Sign and stamp receiving on physical stock transfer note/challan and transmit copy to Raipur Central Store',
-    whoRole: 'STORE INCHARGE',
-    whoDefaultAssignee: 'Site Store Incharge',
-    howChannel: 'WHATSAPP/EMAIL/PHYSICALLY',
-    slaHours: 1,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-REC-09',
-    stageNumber: 9,
-    name: 'IS MATERIAL INWARD FORM FILLED ?',
-    what: 'Digital Inventory Checkpoint: Has the Site DEO submitted the Material Inward Google Form?',
-    whoRole: 'SITE DEO',
-    whoDefaultAssignee: 'Site DEO',
-    howChannel: 'IN-APP MATERIAL LOG',
-    slaHours: 1,
-    isCheckpoint: true,
-    hasYesNoDecision: true
-  },
-  {
-    stageId: 'STG-REC-10',
-    stageNumber: 10,
-    name: 'IN-APP MATERIAL INWARD ENTRY',
-    what: 'Log official inbound receipt and physical inventory count in organization Material In/Out Google Form',
-    whoRole: 'SITE DEO',
-    whoDefaultAssignee: 'Site DEO',
-    howChannel: 'IN-APP MATERIAL LOG',
-    formUrl: undefined,
-    slaHours: 1,
-    isCheckpoint: true,
-    hasYesNoDecision: false
+    name: 'Site Material Receipt & GRN Verification',
+    what: 'Site store team inspects incoming consignment, verifies quantities against delivery challan, logs Site GRN, and uploads signed acknowledgment slip',
+    whoRole: 'SITE USER (AMAN KUMAR / SITE DEO)',
+    whoDefaultAssignee: 'Aman Kumar',
+    howChannel: 'IN-APP SITE LOG',
+    slaHours: 12,
+    hasYesNoDecision: false,
+    fields: [
+      { id: 'siteGrnNumber', label: 'Site GRN Number', type: 'TEXT', required: true, placeholder: 'e.g. SITE/GRN/2026/044' },
+      { id: 'receiptDate', label: 'Receipt Date', type: 'DATE', required: true },
+      { id: 'receivedBy', label: 'Received By (Staff Name & Designation)', type: 'TEXT', required: true, placeholder: 'e.g. Aman Kumar (Site Store Incharge)' },
+      { id: 'receivedQty', label: 'Received Quantity Confirmed', type: 'NUMBER', required: true },
+      { id: 'signedChallanUpload', label: 'Upload Signed & Stamped Delivery Challan', type: 'FILE', required: true },
+      { id: 'siteRemarks', label: 'Site Verification & Physical Inspection Notes', type: 'TEXTAREA', placeholder: 'Items physically inspected and verified on site...' }
+    ]
   }
 ];
 
@@ -1354,104 +1246,69 @@ export const FMS_STORE_TO_SITE_DISPATCH_STAGES: FmsStageDefinition[] = [
   {
     stageId: 'STG-SSD-01',
     stageNumber: 1,
-    name: 'COLLECT ALL ITEMS AVAILABE',
-    what: 'Collect all available materials physically at store warehouse as per requisition details',
-    whoRole: 'STORE MANAGER-SUMANT(SILADEHI)/HEMANT(BIJETALA)',
-    whoDefaultAssignee: 'Sumant / Hemant',
+    name: 'Collect Items from Store',
+    what: 'Physically gather all approved requisition materials from store racks and verify inventory readiness',
+    whoRole: 'STORE MANAGER (AMANAT / SUMANT / HEMANT)',
+    whoDefaultAssignee: 'Amanat Bharadwaj',
     howChannel: 'PHYSICALLY',
     slaHours: 4,
-    hasYesNoDecision: false
+    hasYesNoDecision: false,
+    fields: [
+      { id: 'itemsTable', label: 'Store Items to Collect', type: 'MULTI_ITEM_TABLE', required: true },
+      { id: 'collectionDate', label: 'Store Collection Date', type: 'DATE', required: true },
+      { id: 'storeKeeperNotes', label: 'Store Keeper Collection Remarks', type: 'TEXTAREA' }
+    ]
   },
   {
     stageId: 'STG-SSD-02',
     stageNumber: 2,
-    name: 'ARRANGE VEHICLE FOR DISPATCH',
-    what: 'Coordinate and book transport/vehicle physically for dispatching collected inventory to site',
-    whoRole: 'STORE MANAGER-SUMANT(SILADEHI)/HEMANT(BIJETALA)',
-    whoDefaultAssignee: 'Sumant / Hemant',
-    howChannel: 'PHYSICALLY',
-    slaHours: 6,
-    hasYesNoDecision: false
+    name: 'Prepare STN (Stock Transfer Note)',
+    what: 'Prepare official stock transfer note (STN) and delivery challan for outbound internal transfer',
+    whoRole: 'STORE MANAGER (AMANAT / SUMANT / HEMANT)',
+    whoDefaultAssignee: 'Amanat Bharadwaj',
+    howChannel: 'PHYSICAL COPY',
+    slaHours: 2,
+    hasYesNoDecision: false,
+    fields: [
+      { id: 'stnNumber', label: 'STN Number', type: 'TEXT', required: true, placeholder: 'e.g. BPL/STN/2026/044' },
+      { id: 'stnDate', label: 'STN Issue Date', type: 'DATE', required: true },
+      { id: 'stnItemsTable', label: 'Outward STN Items', type: 'MULTI_ITEM_TABLE', required: true },
+      { id: 'stnDocument', label: 'Upload STN / Challan Document', type: 'FILE' }
+    ]
   },
   {
     stageId: 'STG-SSD-03',
     stageNumber: 3,
-    name: 'PREPARE STOCK TRANSFER NOTE/DELIVERY CHALLAN',
-    what: 'Generate official physical stock transfer note / delivery challan copy for outbound site transfer',
-    whoRole: 'STORE MANAGER-SUMANT(SILADEHI)/HEMANT(BIJETALA)',
-    whoDefaultAssignee: 'Sumant / Hemant',
+    name: 'Arrange Vehicle & Logistics',
+    what: 'Coordinate and book transport/vehicle physically for project site transit and confirm E-Way Bill if required',
+    whoRole: 'STORE MANAGER (AMANAT / SUMANT / HEMANT)',
+    whoDefaultAssignee: 'Amanat Bharadwaj',
     howChannel: 'PHYSICALLY',
-    slaHours: 2,
-    hasYesNoDecision: false
+    slaHours: 4,
+    hasYesNoDecision: false,
+    fields: [
+      { id: 'vehicleNumber', label: 'Vehicle Number', type: 'TEXT', required: true, placeholder: 'e.g. CG-04-1234' },
+      { id: 'driverDetails', label: 'Driver Details (Name & Phone)', type: 'TEXT', required: true, placeholder: 'e.g. Rajesh Kumar (9827012345)' },
+      { id: 'isEwayBillRequired', label: 'E-Way Bill Required?', type: 'SELECT', options: ['Yes', 'No'], required: true, defaultValue: 'Yes' },
+      { id: 'ewayBillNumber', label: 'E-Way Bill Number', type: 'TEXT' }
+    ]
   },
   {
     stageId: 'STG-SSD-04',
     stageNumber: 4,
-    name: 'IS E-WAY REQUIRED?',
-    what: 'Compliance Checkpoint: Determine if GST E-Way Bill is required for consignment (> ₹50,000 / inter-state)',
-    whoRole: 'STORE MANAGER-SUMANT(SILADEHI)/HEMANT(BIJETALA)',
-    whoDefaultAssignee: 'Sumant / Hemant',
-    howChannel: 'WHATSAPP/CALL',
-    slaHours: 1,
-    isCheckpoint: true,
-    hasYesNoDecision: true
-  },
-  {
-    stageId: 'STG-SSD-05',
-    stageNumber: 5,
-    name: 'SEND STOCK TRANSFER NOTE/DELIVERY CHALLAN FOR E-WAY BILL',
-    what: 'Transmit challan/transfer note copy to accounts/taxation desk to generate government E-Way Bill',
-    whoRole: 'STORE MANAGER-SUMANT(SILADEHI)/HEMANT(BIJETALA)',
-    whoDefaultAssignee: 'Sumant / Hemant',
-    howChannel: 'WHATSAPP/EMAIL/PHYSICALLY',
-    slaHours: 2,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-SSD-06',
-    stageNumber: 6,
-    name: 'GET E-WAY BILL',
-    what: 'Receive generated E-Way Bill document and attach to vehicle documentation docket',
-    whoRole: 'STORE MANAGER-SUMANT(SILADEHI)/HEMANT(BIJETALA)',
-    whoDefaultAssignee: 'Sumant / Hemant',
-    howChannel: 'WHATSAPP/EMAIL/PHYSICALLY',
-    slaHours: 4,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-SSD-07',
-    stageNumber: 7,
-    name: 'LOAD MATERIAL TO BE DISPATCHED',
-    what: 'Supervise physical loading and securing of consignment onto the dispatch vehicle',
-    whoRole: 'STORE MANAGER-SUMANT(SILADEHI)/HEMANT(BIJETALA)',
-    whoDefaultAssignee: 'Sumant / Hemant',
+    name: 'Dispatch Material with Gate Pass',
+    what: 'Release loaded vehicle physically with signed challan, transfer note, and gate pass',
+    whoRole: 'STORE MANAGER (AMANAT / SUMANT / HEMANT)',
+    whoDefaultAssignee: 'Amanat Bharadwaj',
     howChannel: 'PHYSICALLY',
     slaHours: 4,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-SSD-08',
-    stageNumber: 8,
-    name: 'DISPATCH MATERIAL WITH ALL DOCUMENTS',
-    what: 'Release loaded vehicle physically with signed challan, transfer note, gate pass, and E-Way Bill',
-    whoRole: 'STORE MANAGER-SUMANT(SILADEHI)/HEMANT(BIJETALA)',
-    whoDefaultAssignee: 'Sumant / Hemant',
-    howChannel: 'PHYSICALLY',
-    slaHours: 4,
-    hasYesNoDecision: false
-  },
-  {
-    stageId: 'STG-SSD-09',
-    stageNumber: 9,
-    name: 'GET RECEIVING OF MATERIAL',
-    what: 'Obtain site receiver acknowledgment slip and log confirmation via Google Form',
-    whoRole: 'PURCHASER',
-    whoDefaultAssignee: 'Rajnikant Behera / Purchaser',
-    howChannel: 'WHATSAPP/EMAIL/PHYSICAL COPY',
-    formUrl: undefined,
-    slaHours: 12,
-    isCheckpoint: true,
-    hasYesNoDecision: false
+    hasYesNoDecision: false,
+    fields: [
+      { id: 'gatePassNumber', label: 'Gate Pass Number', type: 'TEXT', required: true, placeholder: 'e.g. GP-2026-981' },
+      { id: 'dispatchDate', label: 'Dispatch Date & Time', type: 'DATE', required: true },
+      { id: 'gatePassDocument', label: 'Upload Signed Gate Pass', type: 'FILE' },
+      { id: 'dispatchRemarks', label: 'Outward Transit Remarks', type: 'TEXTAREA' }
+    ]
   }
 ];
 
@@ -4989,7 +4846,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     departmentHub: 'STORE',
     referenceLabel: 'BPL/PTS/',
     defaultPriority: 'Normal',
-    description: '10-stage vendor dispatch tracking, LR verification, gate entry & warehouse intake.',
+    description: '4-stage central store GRN & quality check, stock inward, STN preparation and site dispatch.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
     stages: FMS_PURCHASE_TO_STORE_DISPATCH_STAGES.map((s, idx) => ({
@@ -5008,7 +4865,7 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
     departmentHub: 'STORE',
     referenceLabel: 'BPL/SIV/',
     defaultPriority: 'Normal',
-    description: '8-stage central warehouse issue voucher, loading, transit & site store gate receipt.',
+    description: '4-stage central warehouse issue voucher, STN preparation, vehicle logistics and dispatch.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
     stages: FMS_STORE_TO_SITE_DISPATCH_STAGES.map((s, idx) => ({
@@ -5023,11 +4880,11 @@ export const SYSTEM_BUILTIN_TEMPLATES: FmsTemplateDefinition[] = [
   {
     id: 'tpl_site_receive',
     templateKey: 'SITE_RECEIVE',
-    name: 'Site Material Receive (MRN) Workflow',
+    name: 'Site Material Receive (GRN) Workflow',
     departmentHub: 'STORE',
-    referenceLabel: 'BPL/MRN/',
+    referenceLabel: 'BPL/GRN/',
     defaultPriority: 'Normal',
-    description: '8-stage material receipt note (MRN), physical inspection, quality check & store register entry.',
+    description: 'Standalone site material receipt note (GRN), physical verification, challan upload and handover sign-off.',
     createdAt: '01/10/2026',
     updatedAt: '01/10/2026',
     stages: FMS_SITE_RECEIVE_STAGES.map((s, idx) => ({

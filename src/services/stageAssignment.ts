@@ -196,13 +196,15 @@ export const isUserResponsibleForStage = (
   const execAssignee = normalize(stageExec?.assignee);
   if (execAssignee) {
     const list = execAssignee.split(/[\/,]/).map(normalize);
-    if (list.some(a => a && a === userName)) return true;
+    return list.some(a => a && (a === userName || a.includes(userName) || userName.includes(a)));
   }
 
   // 2. Check default assignee from template
   const rawAssignee = stageDef?.whoDefaultAssignee || '';
-  const assigneeList = rawAssignee.split(/[\/,]/).map(normalize);
-  if (assigneeList.some(a => a && a === userName)) return true;
+  if (rawAssignee) {
+    const assigneeList = rawAssignee.split(/[\/,]/).map(normalize);
+    return assigneeList.some(a => a && (a === userName || a.includes(userName) || userName.includes(a)));
+  }
 
   // 3. Check Role exactly
   const whoRole = normalize(stageDef?.whoRole || stageExec?.whoRole);
@@ -738,7 +740,7 @@ export const matchTaskDepartment = (
   if (targetDept === 'STORE') {
     return rolePhone.includes('store') || rolePhone.includes('warehouse') ||
            taskName.includes('amanat') || taskName.includes('sumant') || taskName.includes('hemant') ||
-           taskDesc.includes('stock') || taskDesc.includes('inventory') || taskDesc.includes('dispatch') || taskDesc.includes('mrn');
+           taskDesc.includes('stock') || taskDesc.includes('inventory') || taskDesc.includes('dispatch') || taskDesc.includes('grn');
   }
   if (targetDept === 'ACCOUNTS') {
     return rolePhone.includes('account') || rolePhone.includes('finance') ||
