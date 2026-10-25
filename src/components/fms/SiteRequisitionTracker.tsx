@@ -43,7 +43,8 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
     });
   }, [flows, currentUser]);
 
-  const filteredFlows = useMemo(() => {
+  // Base list filtered by search and site filter
+  const siteAndSearchFilteredFlows = useMemo(() => {
     return accessibleFlows.filter((f) => {
       // Search text
       if (searchQuery.trim()) {
@@ -62,15 +63,58 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
         return false;
       }
 
-      // Status filter
-      if (selectedStatus !== 'ALL') {
-        if (selectedStatus === 'IN_PROGRESS' && f.status !== 'In Progress') return false;
-        if (selectedStatus === 'COMPLETED' && f.status !== 'Completed') return false;
-      }
-
       return true;
     });
-  }, [accessibleFlows, searchQuery, selectedSite, selectedStatus]);
+  }, [accessibleFlows, searchQuery, selectedSite]);
+
+  // 4 Core Summary Stat Counts
+  const statCounts = useMemo(() => {
+    let inProgress = 0;
+    let awaitingFulfillment = 0;
+    let overdueDelayed = 0;
+
+    siteAndSearchFilteredFlows.forEach((f) => {
+      if (f.status === 'In Progress') {
+        inProgress += 1;
+      }
+      if (f.status === 'Awaiting Fulfillment' || f.status === 'Pending') {
+        awaitingFulfillment += 1;
+      }
+      const isOverdue =
+        (f.totalDelayHours !== undefined && f.totalDelayHours > 0) ||
+        f.status === 'Overdue' ||
+        f.status === 'Delayed' ||
+        Boolean(f.stages && f.stages.some((s) => (s.delayHours !== undefined && s.delayHours > 0) || (s.timeDelayHours !== undefined && s.timeDelayHours > 0) || s.status === 'Delayed'));
+      if (isOverdue) {
+        overdueDelayed += 1;
+      }
+    });
+
+    return {
+      total: siteAndSearchFilteredFlows.length,
+      inProgress,
+      awaitingFulfillment,
+      overdueDelayed,
+    };
+  }, [siteAndSearchFilteredFlows]);
+
+  const filteredFlows = useMemo(() => {
+    return siteAndSearchFilteredFlows.filter((f) => {
+      if (selectedStatus === 'ALL') return true;
+      if (selectedStatus === 'IN_PROGRESS') return f.status === 'In Progress';
+      if (selectedStatus === 'AWAITING_FULFILLMENT') return f.status === 'Awaiting Fulfillment' || f.status === 'Pending';
+      if (selectedStatus === 'OVERDUE') {
+        return (
+          (f.totalDelayHours !== undefined && f.totalDelayHours > 0) ||
+          f.status === 'Overdue' ||
+          f.status === 'Delayed' ||
+          Boolean(f.stages && f.stages.some((s) => (s.delayHours !== undefined && s.delayHours > 0) || (s.timeDelayHours !== undefined && s.timeDelayHours > 0) || s.status === 'Delayed'))
+        );
+      }
+      if (selectedStatus === 'COMPLETED') return f.status === 'Completed';
+      return true;
+    });
+  }, [siteAndSearchFilteredFlows, selectedStatus]);
 
   // Find linked child workflows for a selected parent flow
   const getChildWorkflows = (parentFlow: FmsInstance) => {
@@ -80,36 +124,104 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-      <div className="bg-slate-900 rounded-2xl p-6 text-white shadow-xl border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">
-            <FileText className="w-4 h-4" />
-            <span>Site Material Requisitions & Tracking Desk</span>
+      <div className="bg-slate-900 rounded-2xl p-6 text-white shadow-xl border border-slate-800">
+        <div className="flex items-center gap-2 text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">
+          <FileText className="w-4 h-4" />
+          <span>Site Material Requisitions & Tracking Desk</span>
+        </div>
+        <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
+          Site Requisitions Tracker
+        </h2>
+        <p className="text-slate-400 text-xs sm:text-sm mt-1 max-w-2xl">
+          Track active site material requisitions, stock verification status, current assignees, and downstream store/purchase dispatch progress in real-time.
+        </p>
+      </div>
+
+      {/* Summary Stat Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {/* Total Requisitions */}
+        <div
+          onClick={() => setSelectedStatus('ALL')}
+          className={`p-4 rounded-xl border transition-all cursor-pointer ${
+            selectedStatus === 'ALL'
+              ? 'bg-white border-indigo-400 ring-2 ring-indigo-200 shadow-xs'
+              : 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
+              Total Requisitions
+            </span>
+            <FileText className="w-4 h-4 text-indigo-500" />
           </div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
-            Site Requisitions Tracker
-          </h2>
-          <p className="text-slate-400 text-xs sm:text-sm mt-1 max-w-2xl">
-            Track active site material requisitions, stock verification status, current assignees, and downstream store/purchase dispatch progress in real-time.
-          </p>
+          <div className="mt-2 text-2xl font-black text-slate-900">
+            {statCounts.total}
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl px-4 py-2.5 text-center">
-            <div className="text-xs text-slate-400 font-medium">Accessible Requisitions</div>
-            <div className="text-lg font-bold text-indigo-400">{accessibleFlows.length}</div>
+        {/* In Progress */}
+        <div
+          onClick={() => setSelectedStatus(selectedStatus === 'IN_PROGRESS' ? 'ALL' : 'IN_PROGRESS')}
+          className={`p-4 rounded-xl border transition-all cursor-pointer ${
+            selectedStatus === 'IN_PROGRESS'
+              ? 'bg-white border-amber-400 ring-2 ring-amber-200 shadow-xs'
+              : 'bg-white border-slate-200 hover:border-amber-300 shadow-2xs'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-600">
+              In Progress
+            </span>
+            <Clock className="w-4 h-4 text-amber-500" />
           </div>
-          <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl px-4 py-2.5 text-center">
-            <div className="text-xs text-slate-400 font-medium">Active In-Progress</div>
-            <div className="text-lg font-bold text-amber-400">
-              {accessibleFlows.filter((f) => f.status === 'In Progress').length}
-            </div>
+          <div className="mt-2 text-2xl font-black text-slate-900">
+            {statCounts.inProgress}
+          </div>
+        </div>
+
+        {/* Awaiting Fulfillment */}
+        <div
+          onClick={() => setSelectedStatus(selectedStatus === 'AWAITING_FULFILLMENT' ? 'ALL' : 'AWAITING_FULFILLMENT')}
+          className={`p-4 rounded-xl border transition-all cursor-pointer ${
+            selectedStatus === 'AWAITING_FULFILLMENT'
+              ? 'bg-white border-sky-400 ring-2 ring-sky-200 shadow-xs'
+              : 'bg-white border-slate-200 hover:border-sky-300 shadow-2xs'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-sky-600">
+              Awaiting Fulfillment
+            </span>
+            <Boxes className="w-4 h-4 text-sky-500" />
+          </div>
+          <div className="mt-2 text-2xl font-black text-slate-900">
+            {statCounts.awaitingFulfillment}
+          </div>
+        </div>
+
+        {/* Overdue / Delayed */}
+        <div
+          onClick={() => setSelectedStatus(selectedStatus === 'OVERDUE' ? 'ALL' : 'OVERDUE')}
+          className={`p-4 rounded-xl border transition-all cursor-pointer ${
+            selectedStatus === 'OVERDUE'
+              ? 'bg-white border-rose-400 ring-2 ring-rose-200 shadow-xs'
+              : 'bg-white border-slate-200 hover:border-rose-300 shadow-2xs'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-rose-600">
+              Overdue / Delayed
+            </span>
+            <AlertCircle className="w-4 h-4 text-rose-500" />
+          </div>
+          <div className="mt-2 text-2xl font-black text-slate-900">
+            {statCounts.overdueDelayed}
           </div>
         </div>
       </div>
 
-      {/* Filter Controls */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+      {/* Filter Controls (Sticky top-0 z-30) */}
+      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3 sticky top-0 z-30">
         <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
           {/* Search */}
           <div className="relative flex-1 min-w-[200px]">
@@ -150,6 +262,8 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
             >
               <option value="ALL">All Statuses</option>
               <option value="IN_PROGRESS">In Progress</option>
+              <option value="AWAITING_FULFILLMENT">Awaiting Fulfillment</option>
+              <option value="OVERDUE">Overdue / Delayed</option>
               <option value="COMPLETED">Completed</option>
             </select>
           </div>
@@ -173,19 +287,19 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
+          <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] relative">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-300 text-slate-700 font-bold uppercase tracking-wider text-[11px] sticky top-0 z-20 shadow-xs">
                 <tr>
-                  <th className="px-4 py-3.5">Requisition No</th>
-                  <th className="px-4 py-3.5">Site / Location</th>
-                  <th className="px-4 py-3.5">Requested By</th>
-                  <th className="px-4 py-3.5">Items Count</th>
-                  <th className="px-4 py-3.5">Current Stage</th>
-                  <th className="px-4 py-3.5">Assignee</th>
-                  <th className="px-4 py-3.5">Planned Date / SLA</th>
-                  <th className="px-4 py-3.5 text-center">Status</th>
-                  <th className="px-4 py-3.5 text-right">Action</th>
+                  <th className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300">Requisition No</th>
+                  <th className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300">Site / Location</th>
+                  <th className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300">Requested By</th>
+                  <th className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300">Items Count</th>
+                  <th className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300">Current Stage</th>
+                  <th className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300">Assignee</th>
+                  <th className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300">Planned Date / SLA</th>
+                  <th className="px-4 py-3.5 text-center sticky top-0 bg-slate-50 border-b border-slate-300">Status</th>
+                  <th className="px-4 py-3.5 text-right sticky top-0 bg-slate-50 border-b border-slate-300">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium text-slate-800">

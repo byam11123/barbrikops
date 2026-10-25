@@ -2166,7 +2166,7 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       {/* Control & Filter Bar (Sticky top bar for easy filtering at all times) */}
       {workspaceMode === 'TASKS' && (
         <div className="space-y-3 sm:space-y-4">
-          <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-xs px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-1.5 sm:gap-2">
+          <div className="sticky top-0 z-30 bg-white px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-1.5 sm:gap-2">
         {/* Search on Left */}
         <div className="relative flex-1 min-w-0 md:max-w-xs">
           <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" />
@@ -2733,12 +2733,12 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
           )}
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-visible flex flex-col">
-          <div className="overflow-x-auto min-h-[300px]">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden flex flex-col">
+          <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] min-h-[300px] relative">
             <table className="w-full text-left text-xs border-collapse">
-            <thead className="sticky top-0 z-10 bg-slate-100/95 backdrop-blur-xs text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px] shadow-2xs">
+            <thead className="sticky top-0 z-20 bg-slate-100 text-slate-700 font-semibold border-b border-slate-300 uppercase tracking-wider text-[11px] shadow-xs">
               <tr>
-                <th className="py-2.5 px-2 w-9 min-w-[36px] max-w-[36px] text-center sticky left-0 top-0 z-30 bg-slate-100 border-r border-slate-200">
+                <th className="py-2.5 px-2 w-9 min-w-[36px] max-w-[36px] text-center sticky left-0 top-0 z-30 bg-slate-100 border-r border-slate-200 border-b border-slate-300">
                   <input
                     type="checkbox"
                     checked={selectedBatchIds.length === paginatedItems.length && paginatedItems.length > 0}
@@ -2747,25 +2747,25 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
                     title="Select all on this page for batch action"
                   />
                 </th>
-                <th className="py-2.5 px-3 text-left whitespace-nowrap sticky left-[36px] top-0 z-30 bg-slate-100 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)] w-36 min-w-[140px] max-w-[140px]">
+                <th className="py-2.5 px-3 text-left whitespace-nowrap sticky left-[36px] top-0 z-30 bg-slate-100 border-r border-slate-200 border-b border-slate-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)] w-36 min-w-[140px] max-w-[140px]">
                   Quick Action
                 </th>
-                <th className="py-2.5 px-3 min-w-[250px]">Context / Reference</th>
-                <th className="py-2.5 px-3 min-w-[220px]">Task / Stage Description</th>
-                <th className="py-2.5 px-2 text-center whitespace-nowrap">Status</th>
-                <th className="py-2.5 px-2 whitespace-nowrap">
+                <th className="py-2.5 px-3 min-w-[250px] sticky top-0 bg-slate-100 border-b border-slate-300">Context / Reference</th>
+                <th className="py-2.5 px-3 min-w-[220px] sticky top-0 bg-slate-100 border-b border-slate-300">Task / Stage Description</th>
+                <th className="py-2.5 px-2 text-center whitespace-nowrap sticky top-0 bg-slate-100 border-b border-slate-300">Status</th>
+                <th className="py-2.5 px-2 whitespace-nowrap sticky top-0 bg-slate-100 border-b border-slate-300">
                   <span className="flex items-center gap-1">
                     <Calendar className="w-3.5 h-3.5 text-slate-500" />
                     <span>Planned</span>
                   </span>
                 </th>
-                <th className="py-2.5 px-2 whitespace-nowrap">
+                <th className="py-2.5 px-2 whitespace-nowrap sticky top-0 bg-slate-100 border-b border-slate-300">
                   <span className="flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5 text-slate-500" />
                     <span>Actual</span>
                   </span>
                 </th>
-                <th className="py-2.5 px-2 whitespace-nowrap">
+                <th className="py-2.5 px-2 whitespace-nowrap sticky top-0 bg-slate-100 border-b border-slate-300">
                   <span className="flex items-center gap-1">
                     <AlertTriangle className="w-3.5 h-3.5 text-slate-500" />
                     <span>Delay</span>

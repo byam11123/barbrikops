@@ -313,7 +313,7 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
       </div>
 
       {/* Toolbar & Filter Bar */}
-      <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
+      <div className="sticky top-0 z-30 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
         {/* Row 1: Search Box & Actions */}
         <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
           {/* Search Box */}
@@ -386,22 +386,22 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
 
       {/* Main Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] relative">
           <table className="w-full text-left text-xs text-slate-700">
-            <thead className="bg-slate-100 text-slate-900 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
+            <thead className="sticky top-0 z-20 bg-slate-100 text-slate-900 font-bold uppercase tracking-wider text-[11px] border-b border-slate-300 shadow-xs">
               <tr>
-                {visibleColumns.includes('sheetNo') && <th className="p-3.5 pl-5">Sheet Ref</th>}
-                {visibleColumns.includes('beneficiaryName') && <th className="p-3.5">Name of Beneficiary</th>}
-                {visibleColumns.includes('tradeVendorName') && <th className="p-3.5">Vendor Name</th>}
-                {visibleColumns.includes('bankDetails') && <th className="p-3.5">Bank Name &amp; A/C</th>}
-                {visibleColumns.includes('ifscCode') && <th className="p-3.5">IFSC Code</th>}
-                {visibleColumns.includes('category') && <th className="p-3.5">Purpose</th>}
-                {visibleColumns.includes('proof') && <th className="p-3.5">Cheque / Proof</th>}
-                {visibleColumns.includes('remark') && <th className="p-3.5">Remark</th>}
-                {visibleColumns.includes('approvalStatus') && <th className="p-3.5">Approval Status</th>}
-                {visibleColumns.includes('beneficiaryEntry') && <th className="p-3.5">Beneficiary Entry Status</th>}
-                {visibleColumns.includes('additionStatus') && <th className="p-3.5">Addition Status</th>}
-                {visibleColumns.includes('actions') && <th className="p-3.5 text-right pr-5">Actions</th>}
+                {visibleColumns.includes('sheetNo') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 pl-5">Sheet Ref</th>}
+                {visibleColumns.includes('beneficiaryName') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Name of Beneficiary</th>}
+                {visibleColumns.includes('tradeVendorName') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Vendor Name</th>}
+                {visibleColumns.includes('bankDetails') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Bank Name &amp; A/C</th>}
+                {visibleColumns.includes('ifscCode') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">IFSC Code</th>}
+                {visibleColumns.includes('category') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Purpose</th>}
+                {visibleColumns.includes('proof') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Cheque / Proof</th>}
+                {visibleColumns.includes('remark') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Remark</th>}
+                {visibleColumns.includes('approvalStatus') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Approval Status</th>}
+                {visibleColumns.includes('beneficiaryEntry') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Beneficiary Entry Status</th>}
+                {visibleColumns.includes('additionStatus') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Addition Status</th>}
+                {visibleColumns.includes('actions') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 text-right pr-5">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

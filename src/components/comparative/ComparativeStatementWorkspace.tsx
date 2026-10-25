@@ -1816,9 +1816,9 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
         </div>
 
         {/* Matrix Spreadsheet Table */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] relative">
           <table className="w-full text-left text-xs border-collapse">
-            <thead>
+            <thead className="sticky top-0 z-20 bg-slate-100 shadow-xs border-b border-slate-300">
               {/* Row 1: Group Headers */}
               <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
                 <th colSpan={6} className="py-2.5 px-3 border-r-2 border-slate-300 uppercase tracking-wider text-[11px]">
@@ -1873,7 +1873,7 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
               </tr>
 
               {/* Row 2: Sub-column Headers */}
-              <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 text-[10px] uppercase">
+              <tr className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-300 text-[10px] uppercase">
                 <th className="py-2 px-2 border-r border-slate-200 text-center w-10">S.N.</th>
                 <th className="py-2 px-3 border-r border-slate-200 min-w-[200px]">Material / Spare Description</th>
                 <th className="py-2 px-2 border-r border-slate-200 min-w-[100px]">Brand / Make</th>
@@ -2099,15 +2099,15 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
           </span>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] relative">
           <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
-                <th className="py-2 px-2 border-r border-slate-200 text-center w-10">S.N.</th>
-                <th className="py-2 px-3 border-r border-slate-200 min-w-[200px]">Item Description</th>
-                <th className="py-2 px-3 border-r border-slate-200 text-right min-w-[100px]">L-1 Rate</th>
+            <thead className="sticky top-0 z-20 bg-slate-100 text-slate-700 font-bold border-b border-slate-300 text-[11px] shadow-xs">
+              <tr>
+                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2 px-2 border-r border-slate-200 text-center w-10">S.N.</th>
+                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2 px-3 border-r border-slate-200 min-w-[200px]">Item Description</th>
+                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2 px-3 border-r border-slate-200 text-right min-w-[100px]">L-1 Rate</th>
                 {cs.vendors.map((vendor) => (
-                  <th key={vendor.vendorId} className="py-2.5 px-3 border-r border-slate-200 text-center font-extrabold text-slate-900 text-xs">
+                  <th key={vendor.vendorId} className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 border-r border-slate-200 text-center font-extrabold text-slate-900 text-xs">
                     {vendor.vendorName}
                   </th>
                 ))}
@@ -2176,13 +2176,13 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
           </span>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] relative">
           <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
-                <th className="py-2.5 px-3 border-r border-slate-200 w-44">Evaluation Parameter</th>
+            <thead className="sticky top-0 z-20 bg-slate-100 text-slate-700 font-bold border-b border-slate-300 text-[11px] shadow-xs">
+              <tr>
+                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 border-r border-slate-200 w-44">Evaluation Parameter</th>
                 {cs.vendors.map((v) => (
-                  <th key={v.vendorId} className="py-2.5 px-3 border-r border-slate-200 text-center font-extrabold text-slate-900 text-xs">
+                  <th key={v.vendorId} className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 border-r border-slate-200 text-center font-extrabold text-slate-900 text-xs">
                     {v.vendorName}
                   </th>
                 ))}

@@ -250,7 +250,7 @@ export const ComparativeDirectoryView: React.FC<ComparativeDirectoryViewProps> =
       </div>
 
       {/* 2. FILTER & SEARCH CONTROL BAR */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
+      <div className="sticky top-0 z-30 bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           {/* Search Input */}
           <div className="relative flex-1">
@@ -349,21 +349,21 @@ export const ComparativeDirectoryView: React.FC<ComparativeDirectoryViewProps> =
         </div>
 
         {/* Table Body */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] relative">
           <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-100 text-slate-700 text-[10px] font-black uppercase tracking-wider border-b border-slate-300">
+            <thead className="sticky top-0 z-20 bg-slate-100 text-slate-700 text-[10px] font-black uppercase tracking-wider border-b border-slate-300 shadow-xs">
               <tr>
-                <th className="py-2.5 px-3 w-12 text-center border-r border-slate-200">S.N.</th>
-                <th className="py-2.5 px-3 border-r border-slate-200">SITE</th>
-                <th className="py-2.5 px-3 border-r border-slate-200">INDENT NO &amp; DATE</th>
-                <th className="py-2.5 px-3 border-r border-slate-200 min-w-[180px]">EQUIPMENT / PURPOSE</th>
-                <th className="py-2.5 px-2.5 text-center border-r border-slate-200 w-16">ITEMS</th>
-                <th className="py-2.5 px-2.5 text-center border-r border-slate-200 w-20">VENDORS</th>
-                <th className="py-2.5 px-3 border-r border-slate-200 min-w-[160px]">SINGLE L-1 SUPPLIER</th>
-                <th className="py-2.5 px-3 text-right border-r border-slate-200 font-mono">AWARD VALUE (₹)</th>
-                <th className="py-2.5 px-3 text-center border-r border-slate-200">STATUS</th>
-                <th className="py-2.5 px-3 text-center border-r border-slate-200 min-w-[140px]">SIGNATORY</th>
-                <th className="py-2.5 px-3 text-center w-36">ACTIONS</th>
+                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 w-12 text-center border-r border-slate-200">S.N.</th>
+                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 border-r border-slate-200">SITE</th>
+                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 border-r border-slate-200">INDENT NO &amp; DATE</th>
+                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 border-r border-slate-200 min-w-[180px]">EQUIPMENT / PURPOSE</th>
+                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-2.5 text-center border-r border-slate-200 w-16">ITEMS</th>
+                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-2.5 text-center border-r border-slate-200 w-20">VENDORS</th>
+                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 border-r border-slate-200 min-w-[160px]">SINGLE L-1 SUPPLIER</th>
+                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 text-right border-r border-slate-200 font-mono">AWARD VALUE (₹)</th>
+                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 text-center border-r border-slate-200">STATUS</th>
+                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 text-center border-r border-slate-200 min-w-[140px]">SIGNATORY</th>
+                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 text-center w-36">ACTIONS</th>
               </tr>
             </thead>
 
