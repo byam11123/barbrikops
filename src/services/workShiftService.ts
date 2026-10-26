@@ -9,27 +9,35 @@
  */
 
 export interface WorkShiftConfig {
-  shiftStartTime: string; // e.g. "09:30"
-  shiftEndTime: string;   // e.g. "18:30"
-  lunchStartTime: string; // e.g. "13:30"
-  lunchEndTime: string;   // e.g. "14:30"
+  shiftStartTime: string; // e.g. "09:00"
+  shiftEndTime: string;   // e.g. "18:00"
+  lunchStartTime: string; // e.g. "13:00"
+  lunchEndTime: string;   // e.g. "14:00"
   workingDays: number[];  // [1, 2, 3, 4, 5, 6] (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
   timezone?: string;
+  holidays?: string[];    // list of dates as YYYY-MM-DD or DD/MM/YYYY
 }
 
 export const DEFAULT_WORK_SHIFT_CONFIG: WorkShiftConfig = {
-  shiftStartTime: '09:30',
-  shiftEndTime: '18:30',
-  lunchStartTime: '13:30',
-  lunchEndTime: '14:30',
+  shiftStartTime: '09:00', // 9:00 AM to 6:00 PM (Monday through Saturday working, Sunday off)
+  shiftEndTime: '18:00',
+  lunchStartTime: '13:00',
+  lunchEndTime: '14:00',
   workingDays: [1, 2, 3, 4, 5, 6], // Monday through Saturday working (Sunday weekly off)
+  holidays: [
+    '2026-01-26', // Republic Day
+    '2026-08-15', // Independence Day
+    '2026-10-02', // Gandhi Jayanti
+    '2026-10-20', // Dussehra
+    '2026-11-08', // Diwali
+  ]
 };
 
 /**
- * Parses time string like "09:30" or "9:30" into { hour, minute }
+ * Parses time string like "09:00" or "9:00" into { hour, minute }
  */
 export function parseTimeParts(timeStr: string): { hour: number; minute: number } {
-  if (!timeStr) return { hour: 9, minute: 30 };
+  if (!timeStr) return { hour: 9, minute: 0 };
   const parts = timeStr.split(':');
   const hour = parseInt(parts[0], 10) || 0;
   const minute = parseInt(parts[1], 10) || 0;
@@ -37,11 +45,26 @@ export function parseTimeParts(timeStr: string): { hour: number; minute: number 
 }
 
 /**
- * Checks if a given Date falls on an active working day (e.g. Mon-Sat)
+ * Checks if a given Date falls on an active working day (e.g. Mon-Sat) and not a holiday
  */
-export function isWorkingDay(date: Date, workingDays: number[] = DEFAULT_WORK_SHIFT_CONFIG.workingDays): boolean {
+export function isWorkingDay(
+  date: Date, 
+  workingDays: number[] = DEFAULT_WORK_SHIFT_CONFIG.workingDays,
+  holidays: string[] = DEFAULT_WORK_SHIFT_CONFIG.holidays || []
+): boolean {
   const dayOfWeek = date.getDay(); // 0 is Sunday, 1 is Monday ...
-  return workingDays.includes(dayOfWeek);
+  if (!workingDays.includes(dayOfWeek)) return false;
+
+  if (holidays && holidays.length > 0) {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const ymd = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    const dmy = `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
+    if (holidays.includes(ymd) || holidays.includes(dmy)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /**
@@ -52,10 +75,10 @@ export function getMinutesFromMidnight(date: Date): number {
 }
 
 /**
- * Checks if a date time is within working shift hours (excluding lunch)
+ * Checks if a date time is within working shift hours (excluding lunch and holidays)
  */
 export function isWorkingShiftTime(date: Date, config: WorkShiftConfig = DEFAULT_WORK_SHIFT_CONFIG): boolean {
-  if (!isWorkingDay(date, config.workingDays)) return false;
+  if (!isWorkingDay(date, config.workingDays, config.holidays)) return false;
 
   const currentMin = getMinutesFromMidnight(date);
   const shiftStart = parseTimeParts(config.shiftStartTime);
@@ -81,7 +104,7 @@ export function isWorkingShiftTime(date: Date, config: WorkShiftConfig = DEFAULT
 }
 
 /**
- * Advances a Date to the very next working minute if it's currently outside shift, in lunch, or on a weekend
+ * Advances a Date to the very next working minute if it's currently outside shift, in lunch, on a weekend, or holiday
  */
 export function moveToNextWorkingWindow(date: Date, config: WorkShiftConfig = DEFAULT_WORK_SHIFT_CONFIG): Date {
   const cur = new Date(date.getTime());
@@ -95,11 +118,11 @@ export function moveToNextWorkingWindow(date: Date, config: WorkShiftConfig = DE
   const lunchStartMin = lunchStart.hour * 60 + lunchStart.minute;
   const lunchEndMin = lunchEnd.hour * 60 + lunchEnd.minute;
 
-  // Maximum loop guard of 14 days
-  let safetyDays = 14;
+  // Maximum loop guard of 28 days (allows for holidays and consecutive off-days)
+  let safetyDays = 28;
   while (safetyDays > 0) {
-    // 1. If not a working day (e.g. Sunday), move to next day at shift start
-    if (!isWorkingDay(cur, config.workingDays)) {
+    // 1. If not a working day (e.g. Sunday or holiday), move to next day at shift start
+    if (!isWorkingDay(cur, config.workingDays, config.holidays)) {
       cur.setDate(cur.getDate() + 1);
       cur.setHours(shiftStart.hour, shiftStart.minute, 0, 0);
       safetyDays--;

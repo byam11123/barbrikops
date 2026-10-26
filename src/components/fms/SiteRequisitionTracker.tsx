@@ -363,9 +363,9 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
         ) : (
           <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] relative">
             <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-slate-50 border-b border-slate-300 text-slate-700 font-bold uppercase tracking-wider text-[11px] sticky top-0 z-20 shadow-xs">
+              <thead className="bg-slate-50 border-b border-slate-300 text-slate-700 font-bold uppercase tracking-wider text-[11px] sticky top-0 z-30 shadow-xs">
                 <tr>
-                  <th className="w-28 min-w-[110px] px-3 py-3.5 sticky left-0 top-0 z-30 bg-slate-50 border-r border-slate-200 border-b border-slate-300 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap">
+                  <th className="px-3 py-3.5 sticky left-0 top-0 z-40 bg-slate-50 border-r border-slate-200 border-b border-slate-300 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap min-w-[125px] w-auto">
                     <div className="flex items-center gap-2.5">
                       <input
                         type="checkbox"
@@ -483,7 +483,7 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+              <tbody className="divide-y divide-slate-100 font-medium text-slate-800 relative">
                 {sortedFlows.map((flow) => {
                   const currentStageObj = flow.stages?.[flow.currentStageIndex || 0];
                   const currentStageName = currentStageObj?.stageName || flow.status;
@@ -503,17 +503,17 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
                       className={`hover:bg-indigo-50/50 transition-colors cursor-pointer group ${isChecked ? 'bg-indigo-50/40' : ''}`}
                     >
                       <td
-                        className={`w-28 min-w-[110px] px-3 py-3.5 sticky left-0 z-10 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap ${
-                          isChecked ? 'bg-indigo-50' : 'bg-white group-hover:bg-indigo-50/50'
+                        className={`px-3 py-3.5 sticky left-0 z-10 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap min-w-[125px] w-auto align-middle ${
+                          isChecked ? '!bg-indigo-50' : 'bg-white group-hover:bg-slate-50'
                         }`}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 shrink-0 whitespace-nowrap h-full min-h-[32px]">
                           <input
                             type="checkbox"
                             checked={isChecked}
                             onChange={() => handleToggleRow(flow.id)}
-                            className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
                           />
                           <button
                             type="button"
@@ -521,10 +521,10 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
                               e.stopPropagation();
                               setSelectedFlowModal(flow);
                             }}
-                            className="px-2 py-1 bg-slate-100 hover:bg-indigo-100 text-slate-700 hover:text-indigo-700 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1 cursor-pointer border border-slate-200 shadow-2xs"
+                            className="px-2 py-1 bg-slate-100 hover:bg-indigo-100 text-slate-700 hover:text-indigo-700 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1 cursor-pointer border border-slate-200 shadow-2xs whitespace-nowrap shrink-0"
                             title="View Requisition Timeline"
                           >
-                            <Eye className="w-3.5 h-3.5" />
+                            <Eye className="w-3.5 h-3.5 shrink-0" />
                             <span>View</span>
                           </button>
                         </div>

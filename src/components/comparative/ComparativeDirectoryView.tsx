@@ -351,23 +351,23 @@ export const ComparativeDirectoryView: React.FC<ComparativeDirectoryViewProps> =
         {/* Table Body */}
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] relative">
           <table className="w-full text-left text-xs border-collapse">
-            <thead className="sticky top-0 z-20 bg-slate-100 text-slate-700 text-[10px] font-black uppercase tracking-wider border-b border-slate-300 shadow-xs">
+            <thead className="sticky top-0 z-30 bg-slate-100 text-slate-700 text-[10px] font-black uppercase tracking-wider border-b border-slate-300 shadow-xs">
               <tr>
-                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 w-12 text-center border-r border-slate-200">S.N.</th>
-                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 border-r border-slate-200">SITE</th>
-                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 border-r border-slate-200">INDENT NO &amp; DATE</th>
-                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 border-r border-slate-200 min-w-[180px]">EQUIPMENT / PURPOSE</th>
-                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-2.5 text-center border-r border-slate-200 w-16">ITEMS</th>
-                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-2.5 text-center border-r border-slate-200 w-20">VENDORS</th>
-                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 border-r border-slate-200 min-w-[160px]">SINGLE L-1 SUPPLIER</th>
-                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 text-right border-r border-slate-200 font-mono">AWARD VALUE (₹)</th>
-                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 text-center border-r border-slate-200">STATUS</th>
-                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 text-center border-r border-slate-200 min-w-[140px]">SIGNATORY</th>
-                <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 py-2.5 px-3 text-center w-36">ACTIONS</th>
+                <th className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 py-2.5 px-3 w-12 text-center border-r border-slate-200">S.N.</th>
+                <th className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 py-2.5 px-3 border-r border-slate-200">SITE</th>
+                <th className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 py-2.5 px-3 border-r border-slate-200">INDENT NO &amp; DATE</th>
+                <th className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 py-2.5 px-3 border-r border-slate-200 min-w-[180px]">EQUIPMENT / PURPOSE</th>
+                <th className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 py-2.5 px-2.5 text-center border-r border-slate-200 w-16">ITEMS</th>
+                <th className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 py-2.5 px-2.5 text-center border-r border-slate-200 w-20">VENDORS</th>
+                <th className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 py-2.5 px-3 border-r border-slate-200 min-w-[160px]">SINGLE L-1 SUPPLIER</th>
+                <th className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 py-2.5 px-3 text-right border-r border-slate-200 font-mono">AWARD VALUE (₹)</th>
+                <th className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 py-2.5 px-3 text-center border-r border-slate-200">STATUS</th>
+                <th className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 py-2.5 px-3 text-center border-r border-slate-200 min-w-[140px]">SIGNATORY</th>
+                <th className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 py-2.5 px-3 text-center w-36">ACTIONS</th>
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 relative">
               {filteredStatements.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="py-12 text-center text-slate-400 space-y-2">

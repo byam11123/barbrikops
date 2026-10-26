@@ -26,7 +26,10 @@ import {
   FileSpreadsheet,
   Scale,
   Layers,
-  FileText
+  FileText,
+  Truck,
+  FileCheck,
+  CreditCard
 } from 'lucide-react';
 import { NavTab } from './Sidebar';
 import { UserProfile, FmsInstance, isUserSuperAdmin, isUserAdmin, isUserAdminOrSuperAdmin, hasModulePermission, ChecklistItem, DelegationTask } from '../../types';
@@ -343,6 +346,21 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
       label: 'Comparative Statement',
       icon: Scale,
     },
+    {
+      id: 'bank-payments' as NavTab,
+      label: 'Bank Payments',
+      icon: Landmark,
+    },
+    {
+      id: 'vendor-directory' as NavTab,
+      label: 'Vendor Directory',
+      icon: Users,
+    },
+    {
+      id: 'credit-ledger' as NavTab,
+      label: 'Credit Ledger',
+      icon: CreditCard,
+    },
   ];
 
   const systemNavItems = [
@@ -453,46 +471,27 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
             </div>
           </div>
 
-          {/* User Profile Card & (Super Admin & Administrative User) Switcher */}
-          <div className="mt-3 p-2 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2">
-            <div 
-              onClick={() => {
-                onTabChange('profile');
-                onClose();
-              }}
-              className="flex items-center justify-between cursor-pointer hover:bg-slate-50 p-1.5 rounded-lg transition-colors group"
-              title="Open My Profile & Settings"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <UserAvatar user={currentUser} size="sm" showOnlineStatus />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold text-slate-900 truncate group-hover:text-indigo-600 transition-colors">{currentUser.name}</p>
-                  <p className="text-[10px] text-indigo-600 font-semibold truncate">{currentUser.role} · {currentUser.departmentName}</p>
-                </div>
-              </div>
-              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all shrink-0 ml-1" />
+          {/* Staff Switcher for Admin & Super Admin */}
+          {isAdminOrSuperAdmin && (
+            <div className="mt-3 p-2 bg-white rounded-xl border border-slate-200 shadow-2xs">
+              <label className="text-[10px] text-slate-400 font-semibold uppercase block mb-1">Switch Staff Profile</label>
+              <select
+                aria-label="Active Staff Profile"
+                value={currentUser.userId}
+                onChange={(e) => {
+                  const found = availableUsers.find((u) => u.userId === e.target.value);
+                  if (found) onUserChange(found);
+                }}
+                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-2 font-semibold text-slate-800"
+              >
+                {availableUsers.map((user) => (
+                  <option key={user.userId} value={user.userId}>
+                    {user.name} ({user.departmentName})
+                  </option>
+                ))}
+              </select>
             </div>
-            {isAdminOrSuperAdmin && (
-              <div>
-                <label className="text-[10px] text-slate-400 font-semibold uppercase block mb-1">Switch Staff Profile</label>
-                <select
-                  aria-label="Active Staff Profile"
-                  value={currentUser.userId}
-                  onChange={(e) => {
-                    const found = availableUsers.find((u) => u.userId === e.target.value);
-                    if (found) onUserChange(found);
-                  }}
-                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-2 font-semibold text-slate-800"
-                >
-                  {availableUsers.map((user) => (
-                    <option key={user.userId} value={user.userId}>
-                      {user.name} ({user.departmentName})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
+          )}
 
           {/* Scope and PC Desk toggles - Super Admin & Administrative User */}
           {isAdminOrSuperAdmin && (
@@ -887,6 +886,61 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                               )}
                             </button>
                           </div>
+
+                          {/* 4. Dedicated Store Department Ledgers */}
+                          {dept.key === 'STORE' && (
+                            <div className="pt-1.5 border-t border-slate-200/60 space-y-1">
+                              {/* STN Ledger */}
+                              <button
+                                onClick={() => handleNavigate('stn-ledger')}
+                                className={`w-full flex items-center justify-between px-2 py-1 rounded-md text-left transition-all ${
+                                  activeTab === 'stn-ledger'
+                                    ? 'bg-indigo-600 text-white font-medium shadow-xs'
+                                    : 'text-slate-700 hover:bg-slate-100 font-semibold'
+                                }`}
+                              >
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <Truck className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'stn-ledger' ? 'text-white' : 'text-indigo-600'}`} />
+                                  <span className="text-[11px] truncate">STN Ledger</span>
+                                </div>
+                              </button>
+
+                              {/* GRN Ledger */}
+                              <button
+                                onClick={() => handleNavigate('grn-ledger')}
+                                className={`w-full flex items-center justify-between px-2 py-1 rounded-md text-left transition-all ${
+                                  activeTab === 'grn-ledger'
+                                    ? 'bg-emerald-600 text-white font-medium shadow-xs'
+                                    : 'text-slate-700 hover:bg-slate-100 font-semibold'
+                                }`}
+                              >
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <FileCheck className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'grn-ledger' ? 'text-white' : 'text-emerald-600'}`} />
+                                  <span className="text-[11px] truncate">GRN Ledger</span>
+                                </div>
+                              </button>
+                            </div>
+                          )}
+
+                          {/* 5. Dedicated Accounts Department Ledgers */}
+                          {dept.key === 'ACCOUNTS' && (
+                            <div className="pt-1.5 border-t border-slate-200/60 space-y-1">
+                              {/* Credit Ledger */}
+                              <button
+                                onClick={() => handleNavigate('credit-ledger')}
+                                className={`w-full flex items-center justify-between px-2 py-1 rounded-md text-left transition-all ${
+                                  activeTab === 'credit-ledger'
+                                    ? 'bg-amber-600 text-white font-medium shadow-xs'
+                                    : 'text-slate-700 hover:bg-slate-100 font-semibold'
+                                }`}
+                              >
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <CreditCard className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'credit-ledger' ? 'text-white' : 'text-amber-600'}`} />
+                                  <span className="text-[11px] truncate">Credit Ledger</span>
+                                </div>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -955,37 +1009,35 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
           </div>
         )}
 
-        {/* Bottom User Profile Card - For standard user view (matching sidebar redesign) */}
-        {!isSuperAdmin && (
-          <div className="mt-auto p-3 border-t border-slate-200 bg-slate-50/80 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                onTabChange('profile');
-                onClose();
-              }}
-              className={`w-full flex items-center justify-between p-2 rounded-xl text-left transition-all text-xs font-semibold cursor-pointer border shadow-2xs group ${
-                activeTab === 'profile'
-                  ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-500/20 text-indigo-950'
-                  : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-200 hover:border-slate-300'
-              }`}
-              title="Open My Profile & Settings"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <UserAvatar user={currentUser} size="sm" showOnlineStatus />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold text-slate-900 truncate group-hover:text-indigo-600 transition-colors">
-                    {currentUser.name}
-                  </p>
-                  <p className="text-[10px] text-slate-500 truncate font-medium">
-                    {currentUser.role}
-                  </p>
-                </div>
+        {/* Bottom User Profile Card - Always fixed to bottom */}
+        <div className="mt-auto p-2.5 border-t border-slate-200 bg-white/95 backdrop-blur-xs shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              onTabChange('profile');
+              onClose();
+            }}
+            className={`w-full flex items-center justify-between p-2 rounded-xl text-left transition-all text-xs font-semibold cursor-pointer border shadow-2xs group ${
+              activeTab === 'profile'
+                ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-500/20 text-indigo-950'
+                : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-200 hover:border-slate-300'
+            }`}
+            title="Open My Profile & Settings"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <UserAvatar user={currentUser} size="sm" showOnlineStatus />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-slate-900 truncate group-hover:text-indigo-600 transition-colors">
+                  {currentUser.name}
+                </p>
+                <p className="text-[10px] text-slate-500 truncate font-medium">
+                  {currentUser.role}
+                </p>
               </div>
-              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-700 group-hover:translate-x-0.5 transition-all shrink-0 ml-1.5" />
-            </button>
-          </div>
-        )}
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-700 group-hover:translate-x-0.5 transition-all shrink-0 ml-1.5" />
+          </button>
+        </div>
       </div>
     </div>
   );

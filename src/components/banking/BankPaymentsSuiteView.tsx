@@ -59,21 +59,21 @@ export const BankPaymentsSuiteView: React.FC<BankPaymentsSuiteViewProps> = ({
           </div>
         </div>
 
-        {/* 3 Switchers */}
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+        {/* 3 Switchers - Scrollable on mobile without squishing */}
+        <div className="w-full sm:w-auto overflow-x-auto flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl no-scrollbar whitespace-nowrap">
           <button
             type="button"
             onClick={() => setActiveSwitcher('PAYMENTS')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-2 ${
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap ${
               activeSwitcher === 'PAYMENTS'
                 ? 'bg-indigo-600 text-white shadow-xs'
                 : 'text-slate-700 hover:bg-slate-200/60'
             }`}
           >
-            <Landmark className="w-3.5 h-3.5" />
+            <Landmark className="w-3.5 h-3.5 shrink-0" />
             <span>Bank Payments</span>
             {pendingPaymentsCount > 0 && (
-              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
                 activeSwitcher === 'PAYMENTS' ? 'bg-white text-indigo-700' : 'bg-amber-500 text-white'
               }`}>
                 {pendingPaymentsCount}
@@ -84,16 +84,16 @@ export const BankPaymentsSuiteView: React.FC<BankPaymentsSuiteViewProps> = ({
           <button
             type="button"
             onClick={() => setActiveSwitcher('BENEFICIARIES')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-2 ${
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap ${
               activeSwitcher === 'BENEFICIARIES'
                 ? 'bg-indigo-600 text-white shadow-xs'
                 : 'text-slate-700 hover:bg-slate-200/60'
             }`}
           >
-            <Building2 className="w-3.5 h-3.5" />
+            <Building2 className="w-3.5 h-3.5 shrink-0" />
             <span>Beneficiary Master</span>
             {pendingBenCount > 0 && (
-              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
                 activeSwitcher === 'BENEFICIARIES' ? 'bg-white text-indigo-700' : 'bg-amber-500 text-white'
               }`}>
                 {pendingBenCount}
@@ -104,16 +104,16 @@ export const BankPaymentsSuiteView: React.FC<BankPaymentsSuiteViewProps> = ({
           <button
             type="button"
             onClick={() => setActiveSwitcher('IBT')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-2 ${
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap ${
               activeSwitcher === 'IBT'
                 ? 'bg-indigo-600 text-white shadow-xs'
                 : 'text-slate-700 hover:bg-slate-200/60'
             }`}
           >
-            <ArrowRightLeft className="w-3.5 h-3.5" />
+            <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
             <span>Interbank Transfer</span>
             {pendingIbtCount > 0 && (
-              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
                 activeSwitcher === 'IBT' ? 'bg-white text-indigo-700' : 'bg-amber-500 text-white'
               }`}>
                 {pendingIbtCount}

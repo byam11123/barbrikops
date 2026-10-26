@@ -283,21 +283,21 @@ export const CreditLedgerView: React.FC<CreditLedgerViewProps> = ({
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto relative">
           <table className="w-full text-left text-xs text-slate-700 border-collapse">
-            <thead className="bg-slate-100 text-slate-900 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
+            <thead className="sticky top-0 z-30 bg-slate-100 text-slate-900 font-bold uppercase tracking-wider text-[11px] border-b border-slate-300 shadow-xs">
               <tr>
                 {/* Sticky Column 1: Action */}
-                <th className="p-3.5 pl-4 sticky left-0 z-20 bg-slate-100 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] w-32 min-w-[120px] whitespace-nowrap">
+                <th className="p-3.5 pl-4 sticky left-0 top-0 z-40 bg-slate-100 border-r border-slate-200 border-b border-slate-300 shadow-[2px_0_4px_rgba(0,0,0,0.05)] min-w-[150px] w-auto whitespace-nowrap">
                   Action
                 </th>
-                <th className="p-3.5 w-[16%]">PO Number</th>
-                <th className="p-3.5 w-[26%]">Vendor Name</th>
-                <th className="p-3.5 w-[12%]">PO Date</th>
-                <th className="p-3.5 w-[14%] text-right">PO Amount (₹)</th>
-                <th className="p-3.5 w-[16%]">Indent Ref</th>
-                <th className="p-3.5 w-[16%]">Status</th>
+                <th className="p-3.5 w-[16%] sticky top-0 z-30 bg-slate-100 border-b border-slate-300">PO Number</th>
+                <th className="p-3.5 w-[26%] sticky top-0 z-30 bg-slate-100 border-b border-slate-300">Vendor Name</th>
+                <th className="p-3.5 w-[12%] sticky top-0 z-30 bg-slate-100 border-b border-slate-300">PO Date</th>
+                <th className="p-3.5 w-[14%] text-right sticky top-0 z-30 bg-slate-100 border-b border-slate-300">PO Amount (₹)</th>
+                <th className="p-3.5 w-[16%] sticky top-0 z-30 bg-slate-100 border-b border-slate-300">Indent Ref</th>
+                <th className="p-3.5 w-[16%] sticky top-0 z-30 bg-slate-100 border-b border-slate-300">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 relative">
               {filteredRecords.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="text-center py-12 text-slate-400">
@@ -310,25 +310,25 @@ export const CreditLedgerView: React.FC<CreditLedgerViewProps> = ({
                 filteredRecords.map((rec) => (
                   <tr key={rec.id} className="hover:bg-amber-50/30 transition-colors">
                     {/* Sticky Column 1: Action */}
-                    <td className="p-3.5 pl-4 sticky left-0 z-10 bg-white group-hover:bg-amber-50/30 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] w-32 min-w-[120px] whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
+                    <td className="p-3.5 pl-4 sticky left-0 z-10 bg-white group-hover:bg-slate-50 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] min-w-[150px] w-auto whitespace-nowrap align-middle">
+                      <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap h-full min-h-[32px]">
                         <button
                           type="button"
                           onClick={() => setSelectedRecord(rec)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0"
                         >
-                          <Eye className="w-3 h-3" />
+                          <Eye className="w-3 h-3 shrink-0" />
                           <span>Details</span>
                         </button>
                         {rec.linkedFlowId && onSelectFlowDetail && (
                           <button
                             type="button"
                             onClick={() => onSelectFlowDetail(rec.linkedFlowId)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0"
                             title="Open Linked Workflow"
                           >
                             <span>Flow</span>
-                            <ArrowRight className="w-3 h-3" />
+                            <ArrowRight className="w-3 h-3 shrink-0" />
                           </button>
                         )}
                       </div>

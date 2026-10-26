@@ -303,25 +303,25 @@ export const StnLedgerView: React.FC<StnLedgerViewProps> = ({
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs text-slate-700">
-            <thead className="bg-slate-100 text-slate-900 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
+            <thead className="sticky top-0 z-30 bg-slate-100 text-slate-900 font-bold uppercase tracking-wider text-[11px] border-b border-slate-300 shadow-xs">
               <tr>
                 {/* Sticky Left Column 1: STN No */}
-                <th className="sticky left-0 bg-slate-100 z-20 p-3.5 pl-4 border-r border-slate-200/80 min-w-[170px] shadow-xs">
+                <th className="sticky left-0 top-0 bg-slate-100 z-40 p-3.5 pl-4 border-r border-slate-200/80 min-w-[170px] shadow-xs">
                   STN No
                 </th>
-                <th className="p-3.5 min-w-[110px]">Date</th>
-                <th className="p-3.5 min-w-[160px]">Source</th>
-                <th className="p-3.5 min-w-[160px]">Destination</th>
-                <th className="p-3.5 text-center min-w-[100px]">Items (Count)</th>
-                <th className="p-3.5 text-center min-w-[110px]">Total Qty</th>
-                <th className="p-3.5 min-w-[130px]">Status</th>
+                <th className="p-3.5 min-w-[110px] sticky top-0 z-30 bg-slate-100 border-b border-slate-300">Date</th>
+                <th className="p-3.5 min-w-[160px] sticky top-0 z-30 bg-slate-100 border-b border-slate-300">Source</th>
+                <th className="p-3.5 min-w-[160px] sticky top-0 z-30 bg-slate-100 border-b border-slate-300">Destination</th>
+                <th className="p-3.5 text-center min-w-[100px] sticky top-0 z-30 bg-slate-100 border-b border-slate-300">Items (Count)</th>
+                <th className="p-3.5 text-center min-w-[110px] sticky top-0 z-30 bg-slate-100 border-b border-slate-300">Total Qty</th>
+                <th className="p-3.5 min-w-[130px] sticky top-0 z-30 bg-slate-100 border-b border-slate-300">Status</th>
                 {/* Sticky Right Column: Action */}
-                <th className="sticky right-0 bg-slate-100 z-20 p-3.5 pr-4 text-right border-l border-slate-200/80 min-w-[110px] shadow-xs">
+                <th className="sticky right-0 top-0 bg-slate-100 z-40 p-3.5 pr-4 text-right border-l border-slate-200/80 min-w-[110px] shadow-xs">
                   Action
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 relative">
               {filteredRecords.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="p-10 text-center text-slate-400 font-medium">
@@ -343,7 +343,7 @@ export const StnLedgerView: React.FC<StnLedgerViewProps> = ({
                       className="hover:bg-indigo-50/40 transition-colors cursor-pointer group"
                     >
                       {/* Sticky Left: STN No */}
-                      <td className="sticky left-0 bg-white group-hover:bg-indigo-50/40 z-10 p-3.5 pl-4 border-r border-slate-200/80">
+                      <td className="sticky left-0 bg-white group-hover:bg-slate-50 z-10 p-3.5 pl-4 border-r border-slate-200/80 align-middle">
                         <span className="font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/70 px-2 py-0.5 rounded-md">
                           {r.stnNumber}
                         </span>
@@ -410,7 +410,7 @@ export const StnLedgerView: React.FC<StnLedgerViewProps> = ({
                       </td>
 
                       {/* Sticky Right: Action */}
-                      <td className="sticky right-0 bg-white group-hover:bg-indigo-50/40 z-10 p-3.5 pr-4 text-right border-l border-slate-200/80">
+                      <td className="sticky right-0 bg-white group-hover:bg-slate-50 z-10 p-3.5 pr-4 text-right border-l border-slate-200/80 align-middle">
                         <button
                           type="button"
                           onClick={(e) => {

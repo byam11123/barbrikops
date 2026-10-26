@@ -510,7 +510,7 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto max-h-[70vh] scrollbar-thin">
           <table className="w-full text-left text-xs border-collapse">
-            <thead className="sticky top-0 z-20 bg-slate-900 text-white select-none">
+            <thead className="sticky top-0 z-30 bg-slate-900 text-white select-none shadow-xs">
               {/* TIER 1: STAGE NAMES (WHAT) */}
               <tr className="border-b border-slate-800">
                 <th colSpan={7} className="py-2 px-3 bg-slate-950 text-white font-black uppercase tracking-wider border-r border-slate-800 text-[11px]">
@@ -602,7 +602,7 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
                     className="rounded text-indigo-600 cursor-pointer"
                   />
                 </th>
-                <th className="py-2 px-3 border-r border-slate-200 whitespace-nowrap sticky left-0 bg-slate-100 z-10 min-w-[155px]">
+                <th className="py-2 px-3 border-r border-slate-200 whitespace-nowrap sticky left-0 top-0 bg-slate-100 z-40 min-w-[155px]">
                   Ref Identifier / Actions
                 </th>
                 <th className="py-2 px-2.5 border-r border-slate-200 whitespace-nowrap min-w-[90px]">Date</th>
@@ -633,7 +633,7 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 relative">
               {paginatedFlows.length > 0 ? (
                 paginatedFlows.map((flow) => {
                   const isChecked = selectedFlowIds.includes(flow.id);
@@ -656,7 +656,7 @@ export const FmsStageMatrixTableView: React.FC<FmsStageMatrixTableViewProps> = (
                       </td>
 
                       {/* Sticky Left Ref Code */}
-                      <td className="py-2.5 px-3 font-mono font-bold text-slate-900 border-r border-slate-200 whitespace-nowrap sticky left-0 bg-white z-10 shadow-2xs">
+                      <td className="py-2.5 px-3 font-mono font-bold text-slate-900 border-r border-slate-200 whitespace-nowrap sticky left-0 bg-white z-10 shadow-2xs align-middle">
                         <div className="flex items-center justify-between gap-1.5">
                           <button
                             type="button"

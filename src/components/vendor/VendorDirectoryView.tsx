@@ -501,9 +501,9 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                <th className="px-3 py-3.5 sticky left-0 top-0 z-20 bg-slate-50 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap w-36 min-w-[130px]">
+            <thead className="sticky top-0 z-30 bg-slate-50 shadow-xs border-b border-slate-200">
+              <tr className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                <th className="px-3 py-3.5 sticky left-0 top-0 z-40 bg-slate-50 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap min-w-[160px] w-auto">
                   <div className="flex items-center gap-3">
                     <input
                       type="checkbox"
@@ -582,7 +582,7 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 relative">
               {sortedVendors.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-slate-500">
@@ -607,17 +607,17 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
                       className={`hover:bg-indigo-50/40 transition-colors cursor-pointer group ${isChecked ? 'bg-indigo-50/40' : ''}`}
                     >
                       <td
-                        className={`px-3 py-3.5 sticky left-0 z-10 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap w-36 min-w-[130px] ${
-                          isChecked ? 'bg-indigo-50' : 'bg-white group-hover:bg-indigo-50/40'
+                        className={`px-3 py-3.5 sticky left-0 z-10 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap min-w-[160px] w-auto align-middle ${
+                          isChecked ? '!bg-indigo-50' : 'bg-white group-hover:bg-slate-50'
                         }`}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <div className="flex items-center gap-2.5">
+                        <div className="flex items-center gap-2.5 shrink-0 whitespace-nowrap h-full min-h-[32px]">
                           <input
                             type="checkbox"
                             checked={isChecked}
                             onChange={() => handleToggleRow(vendor.id)}
-                            className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
                           />
                           <button
                             type="button"
@@ -625,10 +625,10 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
                               e.stopPropagation();
                               setSelectedVendorId(vendor.id);
                             }}
-                            className="px-2.5 py-1 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1 cursor-pointer border border-slate-200 shadow-2xs"
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1 cursor-pointer border border-slate-200 shadow-2xs whitespace-nowrap shrink-0"
                           >
                             <span>View Profile</span>
-                            <ChevronRight className="w-3.5 h-3.5" />
+                            <ChevronRight className="w-3.5 h-3.5 shrink-0" />
                           </button>
                         </div>
                       </td>

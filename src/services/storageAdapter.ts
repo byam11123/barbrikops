@@ -1262,10 +1262,18 @@ class StorageAdapter {
     }
 
     // Auto-heal corrupted out-of-sequence stages (e.g. if downstream stages were marked Done while upstream stages are Pending)
-    if (flow.id === 'fms-inst-pay-752' && updatedStages[1]?.status === 'Pending' && updatedStages[14]?.status === 'Done') {
-      const initial = INITIAL_FMS_FLOWS.find((f) => f.id === 'fms-inst-pay-752');
-      if (initial) {
-        return initial;
+    if (flow.id === 'fms-inst-pay-752') {
+      if (updatedStages[1]?.status === 'Pending' && updatedStages[14]?.status === 'Done') {
+        const initial = INITIAL_FMS_FLOWS.find((f) => f.id === 'fms-inst-pay-752');
+        if (initial) {
+          return initial;
+        }
+      }
+      const stg6 = updatedStages.find((s) => s.stageId === 'STG-PAY-06');
+      if (stg6 && (stg6.timeDelayHours === 0 || !stg6.timeDelayHours || stg6.timeDelayHours > 100)) {
+        stg6.timeDelayHours = 1;
+        stg6.delayHours = 1;
+        changed = true;
       }
     }
 

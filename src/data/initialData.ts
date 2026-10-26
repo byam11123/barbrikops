@@ -3691,7 +3691,8 @@ export const INITIAL_FMS_FLOWS: FmsInstance[] = [
         how: 'DIRECTOR APPROVAL DESK',
         plannedDateTime: '05/10/2026 18:30:00',
         status: 'In Progress',
-        timeDelayHours: 0
+        timeDelayHours: 1,
+        delayHours: 1
       },
       {
         stageId: 'STG-PAY-07',

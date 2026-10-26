@@ -100,7 +100,7 @@ export const Header: React.FC<HeaderProps> = ({
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
-    <header className="h-16 border-b border-slate-200 bg-white sticky top-0 z-30 flex items-center justify-between px-3 sm:px-6 shadow-xs">
+    <header className="h-16 border-b border-slate-200 bg-white sticky top-0 z-40 flex items-center justify-between px-3 sm:px-6 shadow-xs relative">
       {/* Left Title & Status */}
       <div className="flex items-center gap-2 sm:gap-4">
         {/* Mobile Hamburger Menu Button */}
@@ -124,13 +124,13 @@ export const Header: React.FC<HeaderProps> = ({
           >
             B
           </button>
-          <div>
+          <div className="hidden md:block">
             <div className="flex items-center gap-2">
               <h1 className="font-bold text-slate-900 leading-tight text-sm sm:text-base md:text-lg truncate max-w-[150px] sm:max-w-none">
                 BarbrikOne
               </h1>
             </div>
-            <p className="text-[11px] text-slate-500 font-medium leading-none mt-0.5 hidden md:block">
+            <p className="text-[11px] text-slate-500 font-medium leading-none mt-0.5">
               {getDynamicGreetingHeader(currentUser.name)}
             </p>
           </div>
@@ -184,16 +184,13 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </button>
 
-        {/* Mobile User Profile Identity badge */}
-        <div className="flex items-center gap-1.5">
+        {/* Mobile User Profile Identity Avatar */}
+        <div className="flex items-center">
           <UserAvatar
             user={currentUser}
             size="xs"
             onClick={onOpenMyProfile}
           />
-          <span className="text-[10px] bg-slate-50 border border-slate-200 rounded-lg py-1 px-1.5 font-bold text-slate-800 max-w-[90px] truncate">
-            {currentUser.name.split(' ')[0]}
-          </span>
         </div>
       </div>
 
@@ -256,7 +253,10 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Unified Single Mount Notification Popover */}
       {isNotificationOpen && (
-        <div className="absolute right-2 sm:right-6 top-14 z-50">
+        <div 
+          style={{ position: 'absolute', top: '100%', right: 0, zIndex: 9999 }}
+          className="mt-1 mr-2 sm:mr-6"
+        >
           <NotificationCenter
             isOpen={isNotificationOpen}
             onClose={() => setIsNotificationOpen(false)}

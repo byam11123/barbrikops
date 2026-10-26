@@ -469,9 +469,9 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] relative">
           <table className="w-full text-left text-xs text-slate-700">
-            <thead className="sticky top-0 z-20 bg-slate-100 text-slate-900 font-bold uppercase tracking-wider text-[11px] border-b border-slate-300 shadow-xs">
+            <thead className="sticky top-0 z-30 bg-slate-100 text-slate-900 font-bold uppercase tracking-wider text-[11px] border-b border-slate-300 shadow-xs">
               <tr>
-                <th className="px-3 py-3.5 sticky left-0 top-0 z-30 bg-slate-100 border-r border-slate-200 border-b border-slate-300 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap w-36 min-w-[130px]">
+                <th className="px-3 py-3.5 sticky left-0 top-0 z-40 bg-slate-100 border-r border-slate-200 border-b border-slate-300 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap min-w-[175px] w-auto">
                   <div className="flex items-center gap-3">
                     <input
                       type="checkbox"
@@ -486,7 +486,7 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                 {visibleColumns.includes('sheetNo') && (
                   <th
                     onClick={() => handleSort('sheetNo')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 pl-4 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[8%]"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 pl-4 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[8%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Sheet Ref</span>
@@ -501,7 +501,7 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                 {visibleColumns.includes('beneficiaryName') && (
                   <th
                     onClick={() => handleSort('beneficiaryName')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[15%] whitespace-normal"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[15%] whitespace-normal"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Name of Beneficiary</span>
@@ -516,7 +516,7 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                 {visibleColumns.includes('tradeVendorName') && (
                   <th
                     onClick={() => handleSort('tradeVendorName')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[14%] whitespace-normal"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[14%] whitespace-normal"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Vendor Name</span>
@@ -531,7 +531,7 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                 {visibleColumns.includes('bankDetails') && (
                   <th
                     onClick={() => handleSort('bankDetails')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[15%] whitespace-normal"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[15%] whitespace-normal"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Bank Name &amp; A/C</span>
@@ -546,7 +546,7 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                 {visibleColumns.includes('ifscCode') && (
                   <th
                     onClick={() => handleSort('ifscCode')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[9%]"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[9%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>IFSC Code</span>
@@ -561,7 +561,7 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                 {visibleColumns.includes('category') && (
                   <th
                     onClick={() => handleSort('category')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[9%]"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[9%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Purpose</span>
@@ -573,11 +573,11 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                     </div>
                   </th>
                 )}
-                {visibleColumns.includes('proof') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 w-[7%]">Cheque / Proof</th>}
+                {visibleColumns.includes('proof') && <th className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 w-[7%]">Cheque / Proof</th>}
                 {visibleColumns.includes('remark') && (
                   <th
                     onClick={() => handleSort('remark')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Remark</span>
@@ -592,7 +592,7 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                 {visibleColumns.includes('approvalStatus') && (
                   <th
                     onClick={() => handleSort('approvalStatus')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Approval Status</span>
@@ -607,7 +607,7 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                 {visibleColumns.includes('beneficiaryEntry') && (
                   <th
                     onClick={() => handleSort('beneficiaryEntry')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Beneficiary Entry Status</span>
@@ -622,7 +622,7 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                 {visibleColumns.includes('additionStatus') && (
                   <th
                     onClick={() => handleSort('additionStatus')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Addition Status</span>
@@ -636,7 +636,7 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                 )}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 relative">
               {sortedBeneficiaries.length === 0 ? (
                 <tr>
                   <td colSpan={visibleColumns.length + 1} className="p-10 text-center text-slate-400 font-medium">
@@ -653,38 +653,38 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                     <tr key={b.id} className={`hover:bg-indigo-50/40 transition-colors group ${isChecked ? 'bg-indigo-50/40' : ''}`}>
                       {/* Sticky left checkbox + actions column */}
                       <td
-                        className={`px-3 py-3.5 sticky left-0 z-20 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap ${
-                          isChecked ? 'bg-indigo-50' : 'bg-white group-hover:bg-indigo-50/50'
+                        className={`px-3 py-3.5 sticky left-0 z-10 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap min-w-[175px] w-auto align-middle ${
+                          isChecked ? '!bg-indigo-50' : 'bg-white group-hover:bg-slate-50'
                         }`}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <div className="flex items-center gap-2.5">
+                        <div className="flex items-center gap-2.5 h-full min-h-[32px]">
                           <input
                             type="checkbox"
                             checked={isChecked}
                             onChange={() => handleToggleRow(b.id)}
-                            className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
                           />
-                          <div className="flex items-center gap-1.5 flex-wrap">
+                          <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
                             {/* Step 1: Approval Pending -> Show ONLY Approve & Reject buttons */}
                             {(b.approvalStatus === 'PENDING' || !b.approvalStatus) && (
                               <>
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateApprovalStatus(b, 'APPROVED')}
-                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0"
                                   title="Approve Beneficiary Registration"
                                 >
-                                  <Check className="w-3.5 h-3.5" />
+                                  <Check className="w-3.5 h-3.5 shrink-0" />
                                   <span>Approve</span>
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateApprovalStatus(b, 'REJECTED')}
-                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0"
                                   title="Reject Beneficiary Registration"
                                 >
-                                  <X className="w-3.5 h-3.5" />
+                                  <X className="w-3.5 h-3.5 shrink-0" />
                                   <span>Reject</span>
                                 </button>
                               </>
@@ -696,19 +696,19 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateEntryStatus(b, 'DONE')}
-                                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0"
                                   title="Mark Beneficiary Entry as Done"
                                 >
-                                  <Check className="w-3.5 h-3.5" />
+                                  <Check className="w-3.5 h-3.5 shrink-0" />
                                   <span>Done</span>
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateEntryStatus(b, 'CANCELLED')}
-                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0"
                                   title="Mark Beneficiary Entry as Cancelled"
                                 >
-                                  <X className="w-3.5 h-3.5" />
+                                  <X className="w-3.5 h-3.5 shrink-0" />
                                   <span>Cancelled</span>
                                 </button>
                               </>
@@ -720,19 +720,19 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateAdditionStatus(b, 'DONE')}
-                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0"
                                   title="Mark Addition Status as Done"
                                 >
-                                  <Check className="w-3.5 h-3.5" />
+                                  <Check className="w-3.5 h-3.5 shrink-0" />
                                   <span>Done</span>
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateAdditionStatus(b, 'CANCELLED')}
-                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0"
                                   title="Mark Addition Status as Cancelled"
                                 >
-                                  <X className="w-3.5 h-3.5" />
+                                  <X className="w-3.5 h-3.5 shrink-0" />
                                   <span>Cancelled</span>
                                 </button>
                               </>
@@ -743,10 +743,10 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                               <button
                                 type="button"
                                 onClick={() => setViewingRecord(b)}
-                                className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 border border-slate-200 shadow-2xs"
+                                className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 border border-slate-200 shadow-2xs whitespace-nowrap shrink-0"
                                 title="View Complete Beneficiary Details"
                               >
-                                <Eye className="w-3.5 h-3.5 text-slate-500" />
+                                <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                                 <span>View</span>
                               </button>
                             )}

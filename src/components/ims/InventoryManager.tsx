@@ -312,9 +312,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-white text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+              <thead className="sticky top-0 z-30 bg-slate-50 text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px] shadow-xs">
                 <tr>
-                  <th className="w-10 min-w-[40px] py-3 px-3 text-center sticky left-0 z-20 bg-white border-r border-slate-200">
+                  <th className="w-10 min-w-[40px] py-3 px-3 text-center sticky left-0 top-0 z-40 bg-slate-50 border-r border-slate-200 border-b border-slate-200">
                     <input
                       type="checkbox"
                       checked={sortedItems.length > 0 && selectedRowIds.length === sortedItems.length}
@@ -430,7 +430,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                   <th className="py-3 px-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 relative">
                 {sortedItems.length > 0 ? (
                   sortedItems.map((item) => {
                     const isLow = item.currentStock <= item.minThreshold;
@@ -440,8 +440,8 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                     return (
                       <tr key={item.id} className={`hover:bg-slate-50 transition-colors group ${isChecked ? 'bg-indigo-50/40' : ''}`}>
                         <td
-                          className={`w-10 min-w-[40px] py-3 px-3 text-center sticky left-0 z-10 border-r border-slate-200/60 ${
-                            isChecked ? 'bg-indigo-50' : 'bg-white group-hover:bg-slate-50'
+                          className={`w-10 min-w-[40px] py-3 px-3 text-center sticky left-0 z-10 border-r border-slate-200/60 align-middle ${
+                            isChecked ? '!bg-indigo-50' : 'bg-white group-hover:bg-slate-50'
                           }`}
                           onClick={(e) => e.stopPropagation()}
                         >

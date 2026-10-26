@@ -105,6 +105,481 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
     refreshData();
   };
 
+  const renderRowAction = (p: BankPaymentRecord) => {
+    // 1. Director role: strictly sees Approve & Reject if pending, otherwise View Details
+    if (isDirector && !isAccounts) {
+      if (p.approvalStatus === 'PENDING') {
+        return (
+          <div className="flex items-center gap-1.5 flex-nowrap shrink-0">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                storageAdapter.updateBankPaymentStatus(p.id, 'approvalStatus', 'APPROVED', currentUser);
+                refreshData();
+              }}
+              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0"
+              title="Director Approve Request"
+            >
+              <Check className="w-3.5 h-3.5 shrink-0" />
+              <span>Approve</span>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                storageAdapter.updateBankPaymentStatus(p.id, 'approvalStatus', 'REJECTED', currentUser);
+                refreshData();
+              }}
+              className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0"
+              title="Director Reject Request"
+            >
+              <X className="w-3.5 h-3.5 shrink-0" />
+              <span>Reject</span>
+            </button>
+          </div>
+        );
+      }
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedPayment(p);
+            setIsDrawerOpen(true);
+          }}
+          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 border border-slate-200 shadow-2xs whitespace-nowrap shrink-0"
+          title="View Details"
+        >
+          <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+          <span>View</span>
+        </button>
+      );
+    }
+
+    // 2. Accounts role: sees Verify (if new beneficiary) OR Record UTR (if approved & pending settlement) OR View
+    if (isAccounts && !isDirector) {
+      if (p.beneficiaryMasterStatus === 'NEEDS_ADDITION') {
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedPayment(p);
+              setIsDrawerOpen(true);
+            }}
+            className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0"
+            title="Verify New Beneficiary"
+          >
+            <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+            <span>Verify</span>
+          </button>
+        );
+      }
+      if (p.approvalStatus === 'APPROVED' && p.paymentStatus === 'PENDING') {
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedPayment(p);
+              setIsDrawerOpen(true);
+            }}
+            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0"
+            title="Record UTR / Bank Settlement"
+          >
+            <Check className="w-3.5 h-3.5 shrink-0" />
+            <span>Record UTR</span>
+          </button>
+        );
+      }
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedPayment(p);
+            setIsDrawerOpen(true);
+          }}
+          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 border border-slate-200 shadow-2xs whitespace-nowrap shrink-0"
+          title="View Details"
+        >
+          <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+          <span>View</span>
+        </button>
+      );
+    }
+
+    // 3. User with Both permissions / Super Admin / Viewer:
+    // Strictly show only ONE action corresponding to current state:
+    if (p.approvalStatus === 'PENDING') {
+      return (
+        <div className="flex items-center gap-1.5 flex-nowrap shrink-0">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              storageAdapter.updateBankPaymentStatus(p.id, 'approvalStatus', 'APPROVED', currentUser);
+              refreshData();
+            }}
+            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0"
+            title="Director Approve Request"
+          >
+            <Check className="w-3.5 h-3.5 shrink-0" />
+            <span>Approve</span>
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              storageAdapter.updateBankPaymentStatus(p.id, 'approvalStatus', 'REJECTED', currentUser);
+              refreshData();
+            }}
+            className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0"
+            title="Director Reject Request"
+          >
+            <X className="w-3.5 h-3.5 shrink-0" />
+            <span>Reject</span>
+          </button>
+        </div>
+      );
+    }
+
+    if (p.beneficiaryMasterStatus === 'NEEDS_ADDITION') {
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedPayment(p);
+            setIsDrawerOpen(true);
+          }}
+          className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0"
+          title="Verify New Beneficiary"
+        >
+          <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+          <span>Verify</span>
+        </button>
+      );
+    }
+
+    if (p.approvalStatus === 'APPROVED' && p.paymentStatus === 'PENDING') {
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedPayment(p);
+            setIsDrawerOpen(true);
+          }}
+          className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0"
+          title="Record UTR / Bank Settlement"
+        >
+          <Check className="w-3.5 h-3.5 shrink-0" />
+          <span>Record UTR</span>
+        </button>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setSelectedPayment(p);
+          setIsDrawerOpen(true);
+        }}
+        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 border border-slate-200 shadow-2xs whitespace-nowrap shrink-0"
+        title="View Details"
+      >
+        <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+        <span>View</span>
+      </button>
+    );
+  };
+
+  const getMobileStatusBadge = (p: BankPaymentRecord) => {
+    if (p.paymentStatus === 'DONE') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80 shrink-0">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+          <span>Paid</span>
+        </span>
+      );
+    }
+    if (p.approvalStatus === 'APPROVED') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/80 shrink-0">
+          <Landmark className="w-3.5 h-3.5 text-indigo-600" />
+          <span>Approved</span>
+        </span>
+      );
+    }
+    if (p.approvalStatus === 'REJECTED') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200/80 shrink-0">
+          <X className="w-3.5 h-3.5 text-rose-600" />
+          <span>Rejected</span>
+        </span>
+      );
+    }
+    if (p.approvalStatus === 'PENDING_GRN') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200/80 shrink-0">
+          <Clock className="w-3.5 h-3.5 text-blue-600" />
+          <span>Credit Pending</span>
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200/80 shrink-0">
+        <Clock className="w-3.5 h-3.5 text-amber-600" />
+        <span>Pending Sanction</span>
+      </span>
+    );
+  };
+
+  const renderMobileCardAction = (p: BankPaymentRecord) => {
+    // 1. Director role: strictly sees Approve & Reject if pending, otherwise View Details
+    if (isDirector && !isAccounts) {
+      if (p.approvalStatus === 'PENDING') {
+        return (
+          <div className="grid grid-cols-2 gap-2 w-full">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                storageAdapter.updateBankPaymentStatus(p.id, 'approvalStatus', 'APPROVED', currentUser);
+                refreshData();
+              }}
+              className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-all"
+              title="Director Approve Request"
+            >
+              <Check className="w-4 h-4 shrink-0" />
+              <span>Approve</span>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                storageAdapter.updateBankPaymentStatus(p.id, 'approvalStatus', 'REJECTED', currentUser);
+                refreshData();
+              }}
+              className="py-2.5 px-3 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-all"
+              title="Director Reject Request"
+            >
+              <X className="w-4 h-4 shrink-0" />
+              <span>Reject</span>
+            </button>
+          </div>
+        );
+      }
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedPayment(p);
+            setIsDrawerOpen(true);
+          }}
+          className="w-full py-2.5 px-3 bg-slate-100 hover:bg-slate-200 active:scale-[0.98] text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 border border-slate-200 shadow-2xs"
+        >
+          <Eye className="w-4 h-4 text-slate-500 shrink-0" />
+          <span>View Payment Details</span>
+        </button>
+      );
+    }
+
+    // 2. Accounts role: sees Verify (if new beneficiary) OR Record UTR (if approved & pending settlement) OR View
+    if (isAccounts && !isDirector) {
+      if (p.beneficiaryMasterStatus === 'NEEDS_ADDITION') {
+        return (
+          <div className="flex items-center gap-2 w-full">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedPayment(p);
+                setIsDrawerOpen(true);
+              }}
+              className="flex-1 py-2.5 px-3 bg-amber-600 hover:bg-amber-700 active:scale-[0.98] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-all"
+            >
+              <ShieldAlert className="w-4 h-4 shrink-0" />
+              <span>Verify Beneficiary</span>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedPayment(p);
+                setIsDrawerOpen(true);
+              }}
+              className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 active:scale-[0.98] text-slate-700 rounded-xl text-xs font-bold border border-slate-200 flex items-center justify-center gap-1 cursor-pointer"
+            >
+              <Eye className="w-3.5 h-3.5 text-slate-500" />
+              <span>Details</span>
+            </button>
+          </div>
+        );
+      }
+      if (p.approvalStatus === 'APPROVED' && p.paymentStatus === 'PENDING') {
+        return (
+          <div className="flex items-center gap-2 w-full">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedPayment(p);
+                setIsDrawerOpen(true);
+              }}
+              className="flex-1 py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-all"
+            >
+              <Check className="w-4 h-4 shrink-0" />
+              <span>Record UTR</span>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedPayment(p);
+                setIsDrawerOpen(true);
+              }}
+              className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 active:scale-[0.98] text-slate-700 rounded-xl text-xs font-bold border border-slate-200 flex items-center justify-center gap-1 cursor-pointer"
+            >
+              <Eye className="w-3.5 h-3.5 text-slate-500" />
+              <span>Details</span>
+            </button>
+          </div>
+        );
+      }
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedPayment(p);
+            setIsDrawerOpen(true);
+          }}
+          className="w-full py-2.5 px-3 bg-slate-100 hover:bg-slate-200 active:scale-[0.98] text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 border border-slate-200 shadow-2xs"
+        >
+          <Eye className="w-4 h-4 text-slate-500 shrink-0" />
+          <span>View Payment Details</span>
+        </button>
+      );
+    }
+
+    // 3. Super Admin / Multi-role
+    if (p.approvalStatus === 'PENDING') {
+      return (
+        <div className="grid grid-cols-2 gap-2 w-full">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              storageAdapter.updateBankPaymentStatus(p.id, 'approvalStatus', 'APPROVED', currentUser);
+              refreshData();
+            }}
+            className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-all"
+            title="Director Approve Request"
+          >
+            <Check className="w-4 h-4 shrink-0" />
+            <span>Approve</span>
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              storageAdapter.updateBankPaymentStatus(p.id, 'approvalStatus', 'REJECTED', currentUser);
+              refreshData();
+            }}
+            className="py-2.5 px-3 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-all"
+            title="Director Reject Request"
+          >
+            <X className="w-4 h-4 shrink-0" />
+            <span>Reject</span>
+          </button>
+        </div>
+      );
+    }
+
+    if (p.beneficiaryMasterStatus === 'NEEDS_ADDITION') {
+      return (
+        <div className="flex items-center gap-2 w-full">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedPayment(p);
+              setIsDrawerOpen(true);
+            }}
+            className="flex-1 py-2.5 px-3 bg-amber-600 hover:bg-amber-700 active:scale-[0.98] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-all"
+          >
+            <ShieldAlert className="w-4 h-4 shrink-0" />
+            <span>Verify Beneficiary</span>
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedPayment(p);
+              setIsDrawerOpen(true);
+            }}
+            className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 active:scale-[0.98] text-slate-700 rounded-xl text-xs font-bold border border-slate-200 flex items-center justify-center gap-1 cursor-pointer"
+          >
+            <Eye className="w-3.5 h-3.5 text-slate-500" />
+            <span>Details</span>
+          </button>
+        </div>
+      );
+    }
+
+    if (p.approvalStatus === 'APPROVED' && p.paymentStatus === 'PENDING') {
+      return (
+        <div className="flex items-center gap-2 w-full">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedPayment(p);
+              setIsDrawerOpen(true);
+            }}
+            className="flex-1 py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-all"
+          >
+            <Check className="w-4 h-4 shrink-0" />
+            <span>Record UTR</span>
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedPayment(p);
+              setIsDrawerOpen(true);
+            }}
+            className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 active:scale-[0.98] text-slate-700 rounded-xl text-xs font-bold border border-slate-200 flex items-center justify-center gap-1 cursor-pointer"
+          >
+            <Eye className="w-3.5 h-3.5 text-slate-500" />
+            <span>Details</span>
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setSelectedPayment(p);
+          setIsDrawerOpen(true);
+        }}
+        className="w-full py-2.5 px-3 bg-slate-100 hover:bg-slate-200 active:scale-[0.98] text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 border border-slate-200 shadow-2xs"
+      >
+        <Eye className="w-4 h-4 text-slate-500 shrink-0" />
+        <span>View Payment Details</span>
+      </button>
+    );
+  };
+
   const handleExportCsv = () => {
     const rows = [
       ['Sheet Ref', 'Date', 'Vendor Name', 'Name of Beneficiary', 'Name Mismatch', 'Amount (₹)', 'Mode', 'Site', 'Purpose', 'Approval Status', 'Approved By', 'Portal Entry', 'Settlement Status', 'UTR Number', 'Requested By'],
@@ -254,8 +729,8 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* 4 Interactive Stat Cards (2 Count Cards + 2 Amount Cards) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+      {/* 4 Interactive Stat Cards (Horizontally Scrollable on Mobile, Grid on Desktop) */}
+      <div className="flex overflow-x-auto no-scrollbar gap-2.5 pb-1 md:grid md:grid-cols-4 md:gap-4 md:pb-0">
         {/* Count Card 1: Pending Sanctions */}
         <div 
           onClick={() => {
@@ -263,7 +738,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
             setMismatchOnly(false);
           }}
           title="Click to filter by Pending Sanction"
-          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all ${
+          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all shrink-0 w-[210px] sm:w-[240px] md:w-auto ${
             statusFilter === 'PENDING' 
               ? 'bg-amber-500 text-white shadow-md ring-2 ring-amber-400/50 scale-[1.01]' 
               : 'bg-white border-slate-200 hover:border-amber-300 hover:shadow-xs text-slate-900'
@@ -296,7 +771,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
             setMismatchOnly(false);
           }}
           title="Click to filter by Awaiting NetBanking Punch"
-          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all ${
+          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all shrink-0 w-[210px] sm:w-[240px] md:w-auto ${
             statusFilter === 'APPROVED' 
               ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-400/50 scale-[1.01]' 
               : 'bg-white border-slate-200 hover:border-indigo-300 hover:shadow-xs text-slate-900'
@@ -329,7 +804,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
             setMismatchOnly(false);
           }}
           title="Click to filter by Pending Sanction Value"
-          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all ${
+          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all shrink-0 w-[210px] sm:w-[240px] md:w-auto ${
             statusFilter === 'PENDING' 
               ? 'bg-amber-600 text-white shadow-md ring-2 ring-amber-400/50 scale-[1.01]' 
               : 'bg-white border-slate-200 hover:border-amber-300 hover:shadow-xs text-slate-900'
@@ -362,7 +837,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
             setMismatchOnly(false);
           }}
           title="Click to filter by Settled Disbursements"
-          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all ${
+          className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all shrink-0 w-[210px] sm:w-[240px] md:w-auto ${
             statusFilter === 'DONE' 
               ? 'bg-emerald-600 text-white shadow-md ring-2 ring-emerald-400/50 scale-[1.01]' 
               : 'bg-white border-slate-200 hover:border-emerald-300 hover:shadow-xs text-slate-900'
@@ -442,13 +917,15 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
               <option value="MISMATCH">Name Mismatch ({mismatchList.length})</option>
             </select>
 
-            {/* Column Customizer */}
-            <ColumnCustomizerPopover
-              storageKey={STORAGE_KEY}
-              availableColumns={BANK_PAYMENT_COLUMNS}
-              visibleColumns={visibleColumns}
-              onChange={setVisibleColumns}
-            />
+            {/* Column Customizer (Desktop only) */}
+            <div className="hidden md:block">
+              <ColumnCustomizerPopover
+                storageKey={STORAGE_KEY}
+                availableColumns={BANK_PAYMENT_COLUMNS}
+                visibleColumns={visibleColumns}
+                onChange={setVisibleColumns}
+              />
+            </div>
 
             {/* Export CSV */}
             <button
@@ -473,13 +950,13 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
         </div>
       </div>
 
-      {/* Main Data Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+      {/* Main Data Table (Desktop only) */}
+      <div className="hidden md:block bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] relative">
           <table className="w-full text-left text-xs text-slate-700">
-            <thead className="sticky top-0 z-20 bg-slate-100 text-slate-900 font-bold uppercase tracking-wider text-[11px] border-b border-slate-300 shadow-xs">
+            <thead className="sticky top-0 z-30 bg-slate-100 text-slate-900 font-bold uppercase tracking-wider text-[11px] border-b border-slate-300 shadow-xs">
               <tr>
-                <th className="px-3 py-3.5 sticky left-0 top-0 z-30 bg-slate-100 border-r border-slate-200 border-b border-slate-300 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap w-36 min-w-[130px]">
+                <th className="px-3 py-3.5 sticky left-0 top-0 z-40 bg-slate-100 border-r border-slate-200 border-b border-slate-300 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap min-w-[170px] w-auto">
                   <div className="flex items-center gap-3">
                     <input
                       type="checkbox"
@@ -494,7 +971,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                 {visibleColumns.includes('sheetNo') && (
                   <th
                     onClick={() => handleSort('sheetNo')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 pl-4 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[9%]"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 pl-4 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[9%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Sheet Ref</span>
@@ -509,7 +986,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                 {visibleColumns.includes('vendorName') && (
                   <th
                     onClick={() => handleSort('vendorName')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[16%] whitespace-normal"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[16%] whitespace-normal"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Vendor Name</span>
@@ -524,7 +1001,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                 {visibleColumns.includes('beneficiaryName') && (
                   <th
                     onClick={() => handleSort('beneficiaryName')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[16%] whitespace-normal"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[16%] whitespace-normal"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Name of Beneficiary</span>
@@ -539,7 +1016,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                 {visibleColumns.includes('amount') && (
                   <th
                     onClick={() => handleSort('amount')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[11%]"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[11%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Amount (₹)</span>
@@ -554,7 +1031,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                 {visibleColumns.includes('mode') && (
                   <th
                     onClick={() => handleSort('mode')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[7%]"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[7%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Mode</span>
@@ -569,7 +1046,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                 {visibleColumns.includes('site') && (
                   <th
                     onClick={() => handleSort('site')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[10%] whitespace-normal"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[10%] whitespace-normal"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Site</span>
@@ -581,11 +1058,11 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                     </div>
                   </th>
                 )}
-                {visibleColumns.includes('proof') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 w-[8%]">Cheque / Proof</th>}
+                {visibleColumns.includes('proof') && <th className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 w-[8%]">Cheque / Proof</th>}
                 {visibleColumns.includes('approvalStatus') && (
                   <th
                     onClick={() => handleSort('approvalStatus')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Approval Status</span>
@@ -600,7 +1077,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                 {visibleColumns.includes('paymentEntry') && (
                   <th
                     onClick={() => handleSort('paymentEntry')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Bank Entry Status</span>
@@ -615,7 +1092,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                 {visibleColumns.includes('paymentStatus') && (
                   <th
                     onClick={() => handleSort('paymentStatus')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-30 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Payment Status</span>
@@ -629,7 +1106,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                 )}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 relative">
               {sortedPayments.length === 0 ? (
                 <tr>
                   <td colSpan={visibleColumns.length + 1} className="p-10 text-center text-slate-400 font-medium">
@@ -646,103 +1123,20 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                       className={`hover:bg-indigo-50/50 transition-colors cursor-pointer group ${isChecked ? 'bg-indigo-50/40' : ''}`}
                     >
                       <td
-                        className={`px-3 py-3.5 sticky left-0 z-20 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap ${
-                          isChecked ? 'bg-indigo-50' : 'bg-white group-hover:bg-indigo-50/50'
+                        className={`px-3 py-3 sticky left-0 z-10 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.06)] whitespace-nowrap min-w-[170px] w-auto align-middle ${
+                          isChecked ? '!bg-indigo-50' : 'bg-white group-hover:bg-slate-50'
                         }`}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <div className="flex items-center gap-2.5">
+                        <div className="flex items-center gap-2.5 h-full min-h-[32px]">
                           <input
                             type="checkbox"
                             checked={isChecked}
                             onChange={() => handleToggleRow(p.id)}
-                            className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
                           />
-                          <div className="flex items-center gap-1.5">
-                            {/* Director Role: Approve / Reject Pending Payments */}
-                            {isDirector && p.approvalStatus === 'PENDING' && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    storageAdapter.updateBankPaymentStatus(p.id, 'approvalStatus', 'APPROVED', currentUser);
-                                    refreshData();
-                                  }}
-                                  className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                                  title="Director Approve Request"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>Approve</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    storageAdapter.updateBankPaymentStatus(p.id, 'approvalStatus', 'REJECTED', currentUser);
-                                    refreshData();
-                                  }}
-                                  className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                                  title="Director Reject Request"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                  <span>Reject</span>
-                                </button>
-                              </>
-                            )}
-
-                            {/* Accounts Role: Verify Beneficiary */}
-                            {isAccounts && p.beneficiaryMasterStatus === 'NEEDS_ADDITION' && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedPayment(p);
-                                  setIsDrawerOpen(true);
-                                }}
-                                className="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                                title="Verify New Beneficiary"
-                              >
-                                <ShieldAlert className="w-3.5 h-3.5" />
-                                <span>Verify</span>
-                              </button>
-                            )}
-
-                            {/* Accounts Role: Record UTR for Approved Pending Payments */}
-                            {isAccounts && p.approvalStatus === 'APPROVED' && p.paymentStatus === 'PENDING' && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedPayment(p);
-                                  setIsDrawerOpen(true);
-                                }}
-                                className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                                title="Record UTR / Bank Settlement"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                                <span>Record UTR</span>
-                              </button>
-                            )}
-
-                            {/* View Details action */}
-                            {!(isDirector && p.approvalStatus === 'PENDING') &&
-                             !(isAccounts && p.beneficiaryMasterStatus === 'NEEDS_ADDITION') &&
-                             !(isAccounts && p.approvalStatus === 'APPROVED' && p.paymentStatus === 'PENDING') && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedPayment(p);
-                                  setIsDrawerOpen(true);
-                                }}
-                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 border border-slate-200 shadow-2xs"
-                                title="View Details"
-                              >
-                                <Eye className="w-3.5 h-3.5 text-slate-500" />
-                                <span>View</span>
-                              </button>
-                            )}
+                          <div className="flex items-center gap-1.5 shrink-0 flex-nowrap">
+                            {renderRowAction(p)}
                           </div>
                         </div>
                       </td>
@@ -897,6 +1291,101 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Mobile Card List (< 768px) */}
+      <div className="flex flex-col gap-3.5 md:hidden">
+        {sortedPayments.length === 0 ? (
+          <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-2xs text-slate-400">
+            <Landmark className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+            <p className="font-bold text-slate-700 text-sm">No payment records found</p>
+            <p className="text-xs text-slate-400 mt-1">Try adjusting your search terms or filter.</p>
+          </div>
+        ) : (
+          sortedPayments.map((p) => {
+            const isChecked = selectedRowIds.includes(p.id);
+            return (
+              <div
+                key={p.id}
+                onClick={() => handleRowClick(p)}
+                className={`bg-white p-4 rounded-2xl border transition-all shadow-2xs cursor-pointer ${
+                  isChecked
+                    ? 'border-indigo-500 bg-indigo-50/20 ring-1 ring-indigo-500'
+                    : 'border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                {/* Top Row: Checkbox + Amount + Status Badge */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => handleToggleRow(p.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer w-4 h-4 shrink-0"
+                      title="Select record"
+                    />
+                    <span className="text-xl font-black text-slate-900 font-mono tracking-tight">
+                      ₹{p.amountToBePaid?.toLocaleString('en-IN') || 0}
+                    </span>
+                  </div>
+                  <div>
+                    {getMobileStatusBadge(p)}
+                  </div>
+                </div>
+
+                {/* Middle: Vendor Name and Sheet Ref */}
+                <div className="mt-2.5 space-y-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-bold text-slate-900 text-sm leading-snug break-words">
+                      {p.vendorName}
+                    </p>
+                    <span className="font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/70 px-2 py-0.5 rounded text-[11px] shrink-0">
+                      {p.sheetNo}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 pt-1">
+                    {p.site && (
+                      <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-700 font-medium">
+                        Site: {p.site}
+                      </span>
+                    )}
+                    {p.modeOfPayment && (
+                      <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-700 font-semibold uppercase">
+                        {p.modeOfPayment}
+                      </span>
+                    )}
+                    {p.timestamp && (
+                      <span className="text-slate-400">
+                        {p.timestamp.slice(0, 10)}
+                      </span>
+                    )}
+                  </div>
+
+                  {p.beneficiaryName && p.beneficiaryName !== p.vendorName && (
+                    <p className="text-[11px] text-slate-600 truncate pt-0.5">
+                      <span className="text-slate-400">Beneficiary: </span>
+                      <span className="font-semibold text-slate-700">{p.beneficiaryName}</span>
+                    </p>
+                  )}
+
+                  {p.isNameMismatch && (
+                    <div className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded mt-1">
+                      <ShieldAlert className="w-3 h-3 text-rose-600" />
+                      <span>Name Mismatch: Vendor vs Beneficiary</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Bottom: Action Button(s) */}
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  {renderMobileCardAction(p)}
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* Bulk Action Bar */}

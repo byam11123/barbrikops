@@ -1587,7 +1587,7 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
         {/* Desktop Matrix Spreadsheet Table */}
         <div className="hidden md:block overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] relative">
           <table className="w-full text-left text-xs border-collapse">
-            <thead className="sticky top-0 z-20 bg-slate-100 shadow-xs border-b border-slate-300">
+            <thead className="sticky top-0 z-30 bg-slate-100 shadow-xs border-b border-slate-300">
               {/* Row 1: Group Headers */}
               <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
                 <th colSpan={6} className="py-2.5 px-3 border-r-2 border-slate-300 uppercase tracking-wider text-[11px]">
@@ -1643,8 +1643,8 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
 
               {/* Row 2: Sub-column Headers */}
               <tr className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-300 text-[10px] uppercase">
-                <th className="py-2 px-2 border-r border-slate-200 text-center w-10 min-w-[40px] sticky left-0 z-30 bg-slate-100">S.N.</th>
-                <th className="py-2 px-3 border-r border-slate-200 min-w-[220px] sticky left-10 z-30 bg-slate-100 shadow-[2px_0_4px_rgba(0,0,0,0.05)]">Material / Spare Description</th>
+                <th className="py-2 px-2 border-r border-slate-200 text-center w-10 min-w-[40px] sticky left-0 z-40 bg-slate-100">S.N.</th>
+                <th className="py-2 px-3 border-r border-slate-200 min-w-[220px] sticky left-10 z-40 bg-slate-100 shadow-[2px_0_4px_rgba(0,0,0,0.05)]">Material / Spare Description</th>
                 <th className="py-2 px-2 border-r border-slate-200 min-w-[100px]">Brand / Make</th>
                 <th className="py-2 px-2 border-r border-slate-200 text-center w-14">Unit</th>
                 <th className="py-2 px-2 border-r border-slate-200 text-right w-14">Qty</th>
@@ -1666,7 +1666,7 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-slate-200">
+            <tbody className="divide-y divide-slate-200 relative">
               {cs.items.map((item, idx) => {
                 const l1Info = itemL1Map[item.id];
                 const awardedVendorId = cs.awardedVendorMap?.[item.id] || l1Info?.l1VendorId;
@@ -1674,12 +1674,12 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
                 return (
                   <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
                     {/* S.N. */}
-                    <td className="py-2 px-2 border-r border-slate-200 text-center font-mono font-bold text-slate-500 w-10 min-w-[40px] sticky left-0 z-10 bg-white">
+                    <td className="py-2 px-2 border-r border-slate-200 text-center font-mono font-bold text-slate-500 w-10 min-w-[40px] sticky left-0 z-10 bg-white align-middle">
                       {idx + 1}
                     </td>
 
                     {/* Item Name + Delete Action */}
-                    <td className="py-1.5 px-3 border-r border-slate-200 font-semibold text-slate-800 min-w-[220px] sticky left-10 z-10 bg-white shadow-[2px_0_4px_rgba(0,0,0,0.05)]">
+                    <td className="py-1.5 px-3 border-r border-slate-200 font-semibold text-slate-800 min-w-[220px] sticky left-10 z-10 bg-white shadow-[2px_0_4px_rgba(0,0,0,0.05)] align-middle">
                       <div className="flex items-center gap-1.5">
                         {!isRatesLocked && cs.items.length > 1 && (
                           <button
