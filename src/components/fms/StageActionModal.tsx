@@ -29,7 +29,8 @@ import {
   TrendingUp,
   Sparkles,
   Split,
-  Eye
+  Eye,
+  MinusCircle
 } from 'lucide-react';
 import { FmsInstance, FmsLineItem, FmsStageExecution, FmsStageFieldConfig, UserProfile, FmsStageTemplate, ComparativeStatement, BankPaymentRecord, BeneficiaryRecord, isUserSuperAdmin, isUserAdminOrSuperAdmin } from '../../types';
 import { storageAdapter } from '../../services/storageAdapter';
@@ -513,9 +514,38 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
     stage &&
     (stage.stageId === 'STG-PAY-06' || stageIndex === 5 || stage.stageName.toLowerCase().includes('payment approval'))
   );
+
+  const isBeneficiaryFlow = Boolean(
+    flow &&
+      (flow.flowType === 'BENEFICIARY_APPROVAL' ||
+        flow.templateKey === 'BENEFICIARY_APPROVAL' ||
+        flow.templateKey === 'tpl_beneficiary_approval' ||
+        flow.flowId?.includes('/BEN/') ||
+        flow.flowId?.includes('-BEN-') ||
+        flow.id?.includes('flow-ben-'))
+  );
+
+  const isBeneficiaryStage = Boolean(
+    stage &&
+      (isBeneficiaryFlow ||
+        stage.stageId === 'STG-BEN-01' ||
+        stage.stageId === 'STG-BEN-02' ||
+        stage.stageId === 'STG-PAY-02' ||
+        stage.stageId === 'STG-PAY-03' ||
+        stage.stageName?.toLowerCase().includes('beneficiary'))
+  );
+
+  const isBeneficiaryApprovalStage = Boolean(
+    isBeneficiaryStage &&
+      (stage?.stageId === 'STG-BEN-01' ||
+        stage?.stageId === 'STG-BEN-02' ||
+        stage?.stageId === 'STG-PAY-03' ||
+        stage?.stageName?.toLowerCase().includes('approval') ||
+        stage?.stageName?.toLowerCase().includes('verification'))
+  );
   const [isPriorStagesExpanded, setIsPriorStagesExpanded] = useState(false);
 
-  // Look up matching BankPaymentRecord and BeneficiaryRecord for Stage 5 Payment Approval
+  // Look up matching BankPaymentRecord and BeneficiaryRecord
   const targetPaymentRecord = useMemo(() => {
     if (!flow) return null;
     const bankPayments = storageAdapter.getBankPayments();
@@ -532,28 +562,87 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
     if (!flow && !targetPaymentRecord) return null;
     const beneficiaries = storageAdapter.getBeneficiaryRecords();
     return beneficiaries.find(
-      (b: BeneficiaryRecord) => (targetPaymentRecord?.linkedBeneficiarySheetNo && b.sheetNo === targetPaymentRecord.linkedBeneficiarySheetNo) ||
-             (targetPaymentRecord?.vendorId && b.vendorId === targetPaymentRecord.vendorId) ||
-             (targetPaymentRecord?.vendorName && b.beneficiaryName && b.beneficiaryName.toLowerCase().trim() === targetPaymentRecord.vendorName.toLowerCase().trim()) ||
-             (flow?.vendorName && b.beneficiaryName && b.beneficiaryName.toLowerCase().trim() === flow.vendorName.toLowerCase().trim())
+      (b: BeneficiaryRecord) =>
+        (targetPaymentRecord?.linkedBeneficiarySheetNo && b.sheetNo === targetPaymentRecord.linkedBeneficiarySheetNo) ||
+        (targetPaymentRecord?.vendorId && b.vendorId === targetPaymentRecord.vendorId) ||
+        (targetPaymentRecord?.vendorName && b.beneficiaryName && b.beneficiaryName.toLowerCase().trim() === targetPaymentRecord.vendorName.toLowerCase().trim()) ||
+        (flow?.vendorName && b.beneficiaryName && b.beneficiaryName.toLowerCase().trim() === flow.vendorName.toLowerCase().trim()) ||
+        (flow?.beneficiaryName && b.beneficiaryName && b.beneficiaryName.toLowerCase().trim() === flow.beneficiaryName.toLowerCase().trim()) ||
+        (flow?.indentNo && (b.sheetNo === flow.indentNo || b.id === flow.indentNo)) ||
+        (flow?.requisitionNumber && (b.sheetNo === flow.requisitionNumber || b.id === flow.requisitionNumber)) ||
+        (flow?.flowId && (b.sheetNo === flow.flowId || b.id === flow.flowId)) ||
+        (flow?.instanceDataPool?.beneficiaryId && b.id === flow.instanceDataPool.beneficiaryId)
     ) || null;
   }, [targetPaymentRecord, flow]);
 
   const paymentVendorName = targetPaymentRecord?.vendorName || flow?.vendorName || 'Awarded Vendor';
   const paymentAmount = targetPaymentRecord?.amountToBePaid ?? flow?.poAmount ?? 0;
-  const paymentPurpose = targetPaymentRecord?.purposeOfPayment || flow?.remarks || flow?.instanceDataPool?.purposeOfPayment || 'Operational Payment Requisition';
+  const paymentPurpose = targetPaymentRecord?.purposeOfPayment || flow?.remarks || (flow?.instanceDataPool?.purposeOfPayment as string) || (flow?.instanceDataPool?.purpose as string) || (targetBeneficiaryRecord?.purpose as string) || 'Operational Payment Requisition';
   const paymentSite = targetPaymentRecord?.site || flow?.siteName || 'Siladehi Site';
   const paymentRequestedBy = targetPaymentRecord?.requestedBy || targetPaymentRecord?.requestedByUserId || flow?.submittedBy || flow?.createdBy || 'Purchaser';
-  const paymentPoRef = targetPaymentRecord?.billNoPo || flow?.poNumber || flow?.requisitionNumber || flow?.indentNo || '—';
+  const paymentPoRef = targetPaymentRecord?.billNoPo || flow?.poNumber || flow?.requisitionNumber || flow?.indentNo || targetBeneficiaryRecord?.sheetNo || '—';
 
-  const benLegalTitle = targetPaymentRecord?.beneficiaryName || targetBeneficiaryRecord?.beneficiaryName || flow?.beneficiaryName || paymentVendorName;
-  const benBankName = targetPaymentRecord?.bankName || targetBeneficiaryRecord?.bankName || flow?.beneficiaryBankName || 'State Bank of India';
-  const rawAccountNo = targetPaymentRecord?.accountNo || targetPaymentRecord?.accountNoMasked || targetBeneficiaryRecord?.accountNo || flow?.beneficiaryAccountNo || '';
+  const rawAccountNo =
+    targetPaymentRecord?.accountNo ||
+    targetPaymentRecord?.accountNoMasked ||
+    targetBeneficiaryRecord?.accountNo ||
+    flow?.beneficiaryAccountNo ||
+    (flow?.instanceDataPool?.accountNo as string) ||
+    (flow?.stages?.[1]?.submittedData?.accountNo as string) ||
+    (flow?.stages?.[0]?.submittedData?.accountNo as string) ||
+    (flow?.stages?.find((s) => s.submittedData?.accountNo)?.submittedData?.accountNo as string) ||
+    (formData.accountNo as string) ||
+    '';
+
+  const paymentChequeProof =
+    targetPaymentRecord?.cancelledChequeUrl ||
+    targetBeneficiaryRecord?.cancelledChequeUrl ||
+    flow?.cancelledChequeUrl ||
+    (flow?.instanceDataPool?.cancelledChequeUrl as string) ||
+    (flow?.instanceDataPool?.chequeCopyUrl as string) ||
+    (flow?.stages?.[1]?.submittedData?.cancelledChequeUrl as string) ||
+    (flow?.stages?.[0]?.submittedData?.cancelledChequeUrl as string) ||
+    (flow?.stages?.[0]?.submittedData?.chequeCopyUrl as string) ||
+    (flow?.stages?.find((s) => s.submittedData?.cancelledChequeUrl || s.submittedData?.chequeCopyUrl)?.submittedData?.cancelledChequeUrl as string) ||
+    (flow?.stages?.find((s) => s.submittedData?.cancelledChequeUrl || s.submittedData?.chequeCopyUrl)?.submittedData?.chequeCopyUrl as string) ||
+    (formData.cancelledChequeUrl as string) ||
+    (formData.chequeCopyUrl as string);
+
+  const benLegalTitle =
+    targetPaymentRecord?.beneficiaryName ||
+    targetBeneficiaryRecord?.beneficiaryName ||
+    flow?.beneficiaryName ||
+    flow?.vendorName ||
+    (flow?.instanceDataPool?.beneficiaryName as string) ||
+    (flow?.stages?.[1]?.submittedData?.beneficiaryName as string) ||
+    (flow?.stages?.[0]?.submittedData?.beneficiaryName as string) ||
+    (flow?.stages?.find((s) => s.submittedData?.beneficiaryName)?.submittedData?.beneficiaryName as string) ||
+    paymentVendorName;
+
+  const benBankName =
+    targetPaymentRecord?.bankName ||
+    targetBeneficiaryRecord?.bankName ||
+    flow?.beneficiaryBankName ||
+    (flow?.instanceDataPool?.bankName as string) ||
+    (flow?.stages?.[1]?.submittedData?.bankName as string) ||
+    (flow?.stages?.[0]?.submittedData?.bankName as string) ||
+    (flow?.stages?.find((s) => s.submittedData?.bankName)?.submittedData?.bankName as string) ||
+    (formData.bankName as string) ||
+    'State Bank of India';
+
   const benAccountMasked = rawAccountNo
     ? (rawAccountNo.startsWith('••') ? rawAccountNo : `•••• •••• ${rawAccountNo.slice(-4)}`)
     : '•••• •••• 1923';
-  const benIfsc = targetPaymentRecord?.ifscCode || targetBeneficiaryRecord?.ifscCode || flow?.beneficiaryIfsc || 'SBIN0001292';
-  const paymentChequeProof = targetPaymentRecord?.cancelledChequeUrl || targetBeneficiaryRecord?.cancelledChequeUrl || flow?.cancelledChequeUrl;
+  const benIfsc =
+    targetPaymentRecord?.ifscCode ||
+    targetBeneficiaryRecord?.ifscCode ||
+    flow?.beneficiaryIfsc ||
+    (flow?.instanceDataPool?.ifscCode as string) ||
+    (flow?.stages?.[1]?.submittedData?.ifscCode as string) ||
+    (flow?.stages?.[0]?.submittedData?.ifscCode as string) ||
+    (flow?.stages?.find((s) => s.submittedData?.ifscCode)?.submittedData?.ifscCode as string) ||
+    (formData.ifscCode as string) ||
+    'SBIN0001292';
   const paymentPoProof = targetPaymentRecord?.poUpload || (Array.isArray(formData.poList) && formData.poList[0]?.poDocumentUrl) || formData.erpPoDocument;
 
   const handleDirectorPaymentDecision = (decision: 'Yes' | 'No') => {
@@ -579,6 +668,59 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
       approvedBy: currentUser.name,
       approvedByUserId: currentUser.userId,
       approvalTimestamp: new Date().toISOString(),
+      _checkpoints: checkedCheckpoints,
+      _totalCheckpoints: checkpoints.length,
+    };
+
+    onSubmitStage(flow, stageIndex, payload, decision);
+    onClose();
+  };
+
+  const handleDirectorBeneficiaryDecision = (decision: 'Yes' | 'No') => {
+    if (!flow) return;
+    const isApproved = decision === 'Yes';
+    const statusVal = isApproved ? 'APPROVED' : 'REJECTED';
+    const remarks = formData.approvalRemarks?.trim() || (isApproved ? 'Beneficiary approved by Director' : 'Beneficiary rejected by Director');
+
+    const benIdOrSheet =
+      targetBeneficiaryRecord?.id ||
+      targetBeneficiaryRecord?.sheetNo ||
+      (targetPaymentRecord?.linkedBeneficiarySheetNo as string) ||
+      flow.linkedBeneficiarySheetNo ||
+      flow.indentNo ||
+      flow.requisitionNumber ||
+      flow.flowId ||
+      (flow.instanceDataPool?.beneficiaryId as string);
+
+    if (benIdOrSheet) {
+      try {
+        storageAdapter.approveBeneficiaryRecord(benIdOrSheet, isApproved, currentUser, remarks);
+      } catch (err) {
+        console.error('Failed to sync beneficiary record approval:', err);
+      }
+    }
+
+    if (targetPaymentRecord) {
+      try {
+        storageAdapter.verifyBankPaymentBeneficiary(targetPaymentRecord.id, isApproved, currentUser);
+      } catch (err) {
+        console.error('Failed to sync bank payment beneficiary status:', err);
+      }
+    }
+
+    const payload: Record<string, any> = {
+      ...formData,
+      status: statusVal,
+      approvalStatus: statusVal,
+      approvalRemarks: remarks,
+      approvedBy: currentUser.name,
+      approvedByUserId: currentUser.userId,
+      approvalTimestamp: new Date().toISOString(),
+      beneficiaryName: benLegalTitle,
+      bankName: benBankName,
+      accountNo: rawAccountNo,
+      ifscCode: benIfsc,
+      cancelledChequeUrl: paymentChequeProof,
       _checkpoints: checkedCheckpoints,
       _totalCheckpoints: checkpoints.length,
     };
@@ -1335,35 +1477,35 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
 
           {/* Dedicated Director Payment Approval Summary Card (PO_TO_PAYMENT Stage 5) */}
           {isPaymentApprovalStage && (
-            <div className="p-5 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl shadow-xl border border-indigo-500/40 space-y-4">
+            <div className="p-5 bg-white text-slate-900 rounded-2xl shadow-sm border border-slate-200 space-y-4">
               {/* Header & Net Payable Big Badge */}
-              <div className="flex items-start justify-between flex-wrap gap-4 border-b border-indigo-800/60 pb-4">
+              <div className="flex items-start justify-between flex-wrap gap-4 border-b border-slate-200 pb-4">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
                       Director Payment Authorization Required
                     </span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 font-mono">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 font-mono">
                       Stage 6 of 9
                     </span>
                   </div>
-                  <h4 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
-                    <Building2 className="w-5 h-5 text-amber-300 shrink-0" />
+                  <h4 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
+                    <Building2 className="w-5 h-5 text-indigo-600 shrink-0" />
                     <span>{paymentVendorName}</span>
                   </h4>
-                  <p className="text-xs text-indigo-200 flex items-center gap-2">
-                    <span>PO Ref: <strong className="text-white font-mono">{paymentPoRef}</strong></span>
+                  <p className="text-xs text-slate-600 flex items-center gap-2">
+                    <span>PO Ref: <strong className="text-slate-900 font-mono">{paymentPoRef}</strong></span>
                     <span>•</span>
-                    <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-slate-400" /> {paymentSite}</span>
+                    <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-slate-500" /> {paymentSite}</span>
                   </p>
                 </div>
 
-                <div className="bg-slate-900/90 border border-emerald-500/40 rounded-xl px-4 py-2.5 text-right shadow-inner">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl px-4 py-2.5 text-right shadow-2xs">
+                  <span className="text-[10px] uppercase font-bold text-emerald-800 block tracking-wider">
                     Net Payable Amount
                   </span>
-                  <span className="text-2xl sm:text-3xl font-black text-emerald-400 tracking-tight font-mono">
+                  <span className="text-2xl sm:text-3xl font-black text-emerald-600 tracking-tight font-mono">
                     ₹{Number(paymentAmount).toLocaleString('en-IN')}
                   </span>
                 </div>
@@ -1371,55 +1513,55 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
 
               {/* Primary Metadata Details Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                <div className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700/80">
-                  <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">PO / Bill Voucher</span>
-                  <span className="text-white font-bold font-mono truncate block mt-0.5" title={paymentPoRef}>
+                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-500 font-bold block uppercase tracking-wider">PO / Bill Voucher</span>
+                  <span className="text-slate-900 font-bold font-mono truncate block mt-0.5" title={paymentPoRef}>
                     {paymentPoRef}
                   </span>
                 </div>
 
-                <div className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700/80">
-                  <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Project / Site</span>
-                  <span className="text-white font-bold truncate block mt-0.5" title={paymentSite}>
+                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-500 font-bold block uppercase tracking-wider">Project / Site</span>
+                  <span className="text-slate-900 font-bold truncate block mt-0.5" title={paymentSite}>
                     {paymentSite}
                   </span>
                 </div>
 
-                <div className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700/80">
-                  <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Requested By</span>
-                  <span className="text-white font-bold truncate block mt-0.5" title={paymentRequestedBy}>
+                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-500 font-bold block uppercase tracking-wider">Requested By</span>
+                  <span className="text-slate-900 font-bold truncate block mt-0.5" title={paymentRequestedBy}>
                     {paymentRequestedBy}
                   </span>
                 </div>
 
-                <div className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700/80">
-                  <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Payment Vehicle</span>
-                  <span className="text-amber-300 font-black block mt-0.5 truncate">
+                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-500 font-bold block uppercase tracking-wider">Payment Vehicle</span>
+                  <span className="text-indigo-700 font-black block mt-0.5 truncate">
                     {targetPaymentRecord?.modeOfPayment || flow?.paymentMode || 'ACCOUNT'}
                   </span>
                 </div>
               </div>
 
               {/* Purpose of Payment Box */}
-              <div className="p-3 bg-indigo-900/40 border border-indigo-700/50 rounded-xl text-xs space-y-1">
-                <div className="flex items-center gap-1.5 text-indigo-300 text-[10px] font-bold uppercase tracking-wider">
-                  <Info className="w-3.5 h-3.5 text-indigo-400" />
+              <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl text-xs space-y-1">
+                <div className="flex items-center gap-1.5 text-indigo-700 text-[10px] font-bold uppercase tracking-wider">
+                  <Info className="w-3.5 h-3.5 text-indigo-600" />
                   <span>Purpose of Payment / Work Particulars</span>
                 </div>
-                <p className="text-slate-100 font-medium text-xs leading-relaxed">
+                <p className="text-slate-700 font-medium text-xs leading-relaxed">
                   {paymentPurpose}
                 </p>
               </div>
 
               {/* Beneficiary Bank Account Details Card */}
-              <div className="p-3.5 bg-slate-950/70 border border-slate-700/80 rounded-xl space-y-2.5">
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
-                    <Landmark className="w-4 h-4 text-emerald-400" />
-                    <span className="text-xs font-black text-white uppercase tracking-wider">
+                    <Landmark className="w-4 h-4 text-emerald-600" />
+                    <span className="text-xs font-black text-slate-900 uppercase tracking-wider">
                       Verified Beneficiary Bank Account
                     </span>
-                    <span className="px-2 py-0.5 rounded text-[9px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    <span className="px-2 py-0.5 rounded text-[9px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
                       VERIFIED
                     </span>
                   </div>
@@ -1429,7 +1571,7 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                       <button
                         type="button"
                         onClick={() => setPreviewFile({ url: paymentChequeProof, name: `Cancelled_Cheque_${paymentVendorName}.jpg` })}
-                        className="text-[11px] font-bold text-indigo-300 hover:text-white inline-flex items-center gap-1 underline cursor-pointer"
+                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 inline-flex items-center gap-1 underline cursor-pointer"
                       >
                         <Paperclip className="w-3 h-3" />
                         <span>View Cheque</span>
@@ -1439,7 +1581,7 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                       <button
                         type="button"
                         onClick={() => setPreviewFile({ url: paymentPoProof, name: `Voucher_${paymentPoRef}.pdf` })}
-                        className="text-[11px] font-bold text-amber-300 hover:text-white inline-flex items-center gap-1 underline cursor-pointer"
+                        className="text-[11px] font-bold text-amber-700 hover:text-amber-900 inline-flex items-center gap-1 underline cursor-pointer"
                       >
                         <FileText className="w-3 h-3" />
                         <span>View Invoice/PO</span>
@@ -1450,46 +1592,161 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                   <div>
-                    <span className="text-[10px] text-slate-400 block font-semibold">Beneficiary Legal Name</span>
-                    <span className="text-slate-200 font-bold truncate block">{benLegalTitle}</span>
+                    <span className="text-[10px] text-slate-500 block font-semibold">Beneficiary Legal Name</span>
+                    <span className="text-slate-800 font-bold truncate block">{benLegalTitle}</span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-400 block font-semibold">Bank Name</span>
-                    <span className="text-slate-200 font-bold truncate block">{benBankName}</span>
+                    <span className="text-[10px] text-slate-500 block font-semibold">Bank Name</span>
+                    <span className="text-slate-800 font-bold truncate block">{benBankName}</span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-400 block font-semibold">Account Number</span>
-                    <span className="text-emerald-400 font-mono font-bold flex items-center gap-1">
+                    <span className="text-[10px] text-slate-500 block font-semibold">Account Number</span>
+                    <span className="text-emerald-700 font-mono font-bold flex items-center gap-1">
                       <Lock className="w-3 h-3 text-slate-400 shrink-0" />
                       {benAccountMasked}
                     </span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-400 block font-semibold">IFSC Code</span>
-                    <span className="text-white font-mono font-bold">{benIfsc}</span>
+                    <span className="text-[10px] text-slate-500 block font-semibold">IFSC Code</span>
+                    <span className="text-slate-900 font-mono font-bold">{benIfsc}</span>
                   </div>
                 </div>
               </div>
             </div>
           )}
 
+          {/* Dedicated Beneficiary Verification & Bank Audit Card (BENEFICIARY_APPROVAL or PO_TO_PAYMENT Stages 2/3) */}
+          {!isPaymentApprovalStage && isBeneficiaryStage && (
+            <div className="p-4 bg-white text-slate-900 rounded-2xl shadow-sm border border-slate-200 space-y-3.5">
+              <div className="flex items-start justify-between flex-wrap gap-3 border-b border-slate-200 pb-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      Director Beneficiary Verification &amp; Audit
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 font-mono">
+                      {stage.stageName}
+                    </span>
+                  </div>
+                  <h4 className="text-base sm:text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
+                    <Building2 className="w-5 h-5 text-indigo-600 shrink-0" />
+                    <span>{benLegalTitle}</span>
+                  </h4>
+                  <p className="text-xs text-slate-600 flex items-center gap-2">
+                    <span>Reference: <strong className="text-slate-900 font-mono">{paymentPoRef}</strong></span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-slate-500" /> {paymentSite}</span>
+                  </p>
+                </div>
+
+                {paymentChequeProof && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewFile({ url: paymentChequeProof, name: `Cancelled_Cheque_${benLegalTitle}.jpg` })}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Inspect Cancelled Cheque</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Beneficiary Coordinates Grid */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-500 block font-semibold">Beneficiary Legal Name</span>
+                    <span className="text-slate-900 font-bold truncate block">{benLegalTitle}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block font-semibold">Bank Name</span>
+                    <span className="text-slate-900 font-bold truncate block">{benBankName}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block font-semibold">Account Number</span>
+                    <span className="text-emerald-700 font-mono font-black text-sm tracking-wide flex items-center gap-1">
+                      <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      {rawAccountNo || 'Pending Entry'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block font-semibold">IFSC Code</span>
+                    <span className="text-slate-900 font-mono font-bold">{benIfsc}</span>
+                  </div>
+                </div>
+
+                {/* Cancelled Cheque Proof Display */}
+                <div className="mt-2 pt-2.5 border-t border-slate-200 flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <Paperclip className="w-3.5 h-3.5 text-indigo-600" />
+                    <span className="text-[11px] font-semibold text-slate-700">
+                      Cancelled Cheque / Bank Proof Attachment:
+                    </span>
+                    {paymentChequeProof ? (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                        Document Uploaded
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                        No Cheque Attached
+                      </span>
+                    )}
+                  </div>
+
+                  {paymentChequeProof && (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewFile({ url: paymentChequeProof, name: `Cancelled_Cheque_${benLegalTitle}.jpg` })}
+                      className="text-xs font-bold text-indigo-600 hover:text-indigo-800 underline cursor-pointer flex items-center gap-1"
+                    >
+                      <Eye className="w-3 h-3" />
+                      <span>View Full Cheque Image</span>
+                    </button>
+                  )}
+                </div>
+
+                {paymentChequeProof && (
+                  <div className="mt-2 p-2 bg-white rounded-lg border border-slate-200 shadow-2xs flex items-center gap-3">
+                    <img 
+                      src={paymentChequeProof} 
+                      alt="Cancelled Cheque Proof" 
+                      className="w-24 h-14 object-cover rounded border border-slate-300 cursor-pointer hover:opacity-90"
+                      onClick={() => setPreviewFile({ url: paymentChequeProof, name: `Cancelled_Cheque_${benLegalTitle}.jpg` })}
+                    />
+                    <div className="text-[11px] text-slate-600">
+                      <p className="font-semibold text-slate-900">Bank Verification Document</p>
+                      <p className="text-[10px] text-slate-500">Click thumbnail to inspect account holder name and MICR band before sanctioning.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Purpose & Remarks */}
+              <div className="p-2.5 bg-indigo-50/70 border border-indigo-100 rounded-xl text-xs">
+                <span className="text-[10px] text-indigo-700 font-bold uppercase tracking-wider block">Purpose of Registration / Work Notes</span>
+                <p className="text-slate-700 mt-0.5">{paymentPurpose}</p>
+              </div>
+            </div>
+          )}
+
           {/* Stage 6 Logistics Summary: Dispatch Readiness Card */}
           {(stage.stageId === 'STG-06' || (stageIndex === 5 && (flow.flowType === 'INDENT_PURCHASE' || flow.flowType === 'INDENT_TO_PO'))) && (
-            <div className="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl shadow-md border border-indigo-500/40 space-y-3">
+            <div className="p-4 bg-white text-slate-900 rounded-2xl shadow-sm border border-slate-200 space-y-3">
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-500/30 border border-indigo-400/40 text-amber-300 flex items-center justify-center font-bold">
-                    <Truck className="w-5 h-5 text-amber-300" />
+                  <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center font-bold">
+                    <Truck className="w-5 h-5 text-amber-600" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h4 className="font-black text-sm text-white">Dispatch Readiness &amp; Logistics Summary</h4>
-                      <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded text-[10px] font-bold">
+                      <h4 className="font-black text-sm text-slate-900">Dispatch Readiness &amp; Logistics Summary</h4>
+                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[10px] font-bold">
                         PO Issued &amp; Ready
                       </span>
                     </div>
-                    <p className="text-[11px] text-indigo-200 mt-0.5">
-                      Vendor: <strong className="text-amber-300">{flow.vendorName || (Array.isArray(formData.poList) && formData.poList[0]?.vendorName) || 'Awarded Vendor'}</strong> • PO Ref: <strong className="text-white font-mono">{flow.poNumber || `BPL/PO/${flow.indentNo}`}</strong>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      Vendor: <strong className="text-slate-900">{flow.vendorName || (Array.isArray(formData.poList) && formData.poList[0]?.vendorName) || 'Awarded Vendor'}</strong> • PO Ref: <strong className="text-slate-900 font-mono">{flow.poNumber || `BPL/PO/${flow.indentNo}`}</strong>
                     </p>
                   </div>
                 </div>
@@ -1500,7 +1757,7 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                     const docUrl = (Array.isArray(formData.poList) && formData.poList[0]?.poDocumentUrl) || formData.erpPoDocument || 'https://pdfobject.com/pdf/sample.pdf';
                     setPreviewFile({ url: docUrl, name: `ERP_PO_${flow.poNumber || flow.indentNo}.pdf` });
                   }}
-                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
                 >
                   <FileText className="w-4 h-4" />
                   <span>View ERP PO PDF</span>
@@ -1509,11 +1766,11 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
 
               {/* Items to Collect */}
               {Array.isArray(flow.lineItems) && flow.lineItems.length > 0 && (
-                <div className="pt-2 border-t border-slate-800 text-xs space-y-1">
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Items to Collect ({flow.lineItems.length} Items):</span>
+                <div className="pt-2 border-t border-slate-200 text-xs space-y-1">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Items to Collect ({flow.lineItems.length} Items):</span>
                   <div className="flex flex-wrap gap-1.5 pt-1">
                     {flow.lineItems.map((it, idx) => (
-                      <span key={idx} className="px-2 py-0.5 bg-slate-800 border border-slate-700 text-slate-200 rounded-md text-[11px] font-medium">
+                      <span key={idx} className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 rounded-md text-[11px] font-medium">
                         {it.itemDescription || (it as any).itemName || `Item #${idx+1}`} ({it.requestedQty || it.qty || 1} {it.unit || 'Nos'})
                       </span>
                     ))}
@@ -1525,21 +1782,21 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
 
           {/* Stage 9 Purchaser Intimation: Send Payment Details to Get Material */}
           {isPoToPaymentFlow && (stage.stageId === 'STG-PAY-09' || stageIndex === 8) && (
-            <div className="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl shadow-md border border-emerald-500/40 space-y-3">
+            <div className="p-4 bg-white text-slate-900 rounded-2xl shadow-sm border border-slate-200 space-y-3">
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 flex items-center justify-center font-bold">
-                    <Truck className="w-5 h-5 text-emerald-400" />
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center font-bold">
+                    <Truck className="w-5 h-5 text-emerald-600" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h4 className="font-black text-sm text-white">Send Payment Details &amp; Material Collection Intimation</h4>
-                      <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded text-[10px] font-bold">
+                      <h4 className="font-black text-sm text-slate-900">Send Payment Details &amp; Material Collection Intimation</h4>
+                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[10px] font-bold">
                         Payment Disbursed
                       </span>
                     </div>
-                    <p className="text-[11px] text-indigo-200 mt-0.5">
-                      Assigned to Purchaser (<strong className="text-amber-300">{stage.assignee || 'Shyam Rao Sureshe / Vivek'}</strong>) • Intimate vendor with UTR and schedule material collection / dispatch
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      Assigned to Purchaser (<strong className="text-slate-900">{stage.assignee || 'Shyam Rao Sureshe / Vivek'}</strong>) • Intimate vendor with UTR and schedule material collection / dispatch
                     </p>
                   </div>
                 </div>
@@ -1552,9 +1809,9 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                         const url = formData.poAttachmentUrl || targetPaymentRecord?.poUpload;
                         setPreviewFile({ url, name: `PO_Voucher_${formData.billNoOrPo || flow.poNumber}.pdf` });
                       }}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-lg text-xs border border-slate-700 flex items-center gap-1.5 cursor-pointer"
+                      className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-bold rounded-lg text-xs border border-slate-300 shadow-2xs flex items-center gap-1.5 cursor-pointer"
                     >
-                      <Paperclip className="w-3.5 h-3.5 text-indigo-400" />
+                      <Paperclip className="w-3.5 h-3.5 text-indigo-600" />
                       <span>View PO</span>
                     </button>
                   )}
@@ -1565,7 +1822,7 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                         const url = formData.paymentDoneScreenshot || targetPaymentRecord?.paymentDoneProof;
                         setPreviewFile({ url, name: `Payment_Screenshot_${formData.billNoOrPo || flow.poNumber}.jpg` });
                       }}
-                      className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded-lg text-xs shadow-sm flex items-center gap-1.5 cursor-pointer"
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs shadow-sm flex items-center gap-1.5 cursor-pointer"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       <span>View Payment Screenshot</span>
@@ -1575,34 +1832,34 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
               </div>
 
               {/* Grid of Key Payment & Requisition Fields */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-1 border-t border-slate-800">
-                <div className="p-2 bg-slate-800/80 rounded-lg">
-                  <span className="text-[10px] text-slate-400 block font-semibold">Bill / PO No.</span>
-                  <span className="text-white font-mono font-bold truncate block">{formData.billNoOrPo || flow.poNumber || '—'}</span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-1 border-t border-slate-200">
+                <div className="p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                  <span className="text-[10px] text-slate-500 block font-semibold">Bill / PO No.</span>
+                  <span className="text-slate-900 font-mono font-bold truncate block">{formData.billNoOrPo || flow.poNumber || '—'}</span>
                 </div>
-                <div className="p-2 bg-slate-800/80 rounded-lg">
-                  <span className="text-[10px] text-slate-400 block font-semibold">Vendor Name</span>
-                  <span className="text-amber-300 font-bold truncate block">{formData.vendorName || flow.vendorName || '—'}</span>
+                <div className="p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                  <span className="text-[10px] text-slate-500 block font-semibold">Vendor Name</span>
+                  <span className="text-slate-900 font-bold truncate block">{formData.vendorName || flow.vendorName || '—'}</span>
                 </div>
-                <div className="p-2 bg-slate-800/80 rounded-lg">
-                  <span className="text-[10px] text-slate-400 block font-semibold">Indent No.</span>
-                  <span className="text-white font-mono font-bold truncate block">{formData.indentNo || flow.indentNo || '—'}</span>
+                <div className="p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                  <span className="text-[10px] text-slate-500 block font-semibold">Indent No.</span>
+                  <span className="text-slate-900 font-mono font-bold truncate block">{formData.indentNo || flow.indentNo || '—'}</span>
                 </div>
-                <div className="p-2 bg-slate-800/80 rounded-lg">
-                  <span className="text-[10px] text-slate-400 block font-semibold">PO Date</span>
-                  <span className="text-slate-200 font-bold truncate block">{formData.poDate || flow.poDate || '—'}</span>
+                <div className="p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                  <span className="text-[10px] text-slate-500 block font-semibold">PO Date</span>
+                  <span className="text-slate-700 font-bold truncate block">{formData.poDate || flow.poDate || '—'}</span>
                 </div>
-                <div className="p-2 bg-slate-800/80 rounded-lg">
-                  <span className="text-[10px] text-slate-400 block font-semibold">Disbursed Amount</span>
-                  <span className="text-emerald-400 font-mono font-bold truncate block">₹{Number(formData.poAmount || flow.poAmount || 0).toLocaleString('en-IN')}</span>
+                <div className="p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                  <span className="text-[10px] text-slate-500 block font-semibold">Disbursed Amount</span>
+                  <span className="text-emerald-600 font-mono font-bold truncate block">₹{Number(formData.poAmount || flow.poAmount || 0).toLocaleString('en-IN')}</span>
                 </div>
-                <div className="p-2 bg-slate-800/80 rounded-lg">
-                  <span className="text-[10px] text-slate-400 block font-semibold">Delivery Site</span>
-                  <span className="text-slate-200 font-bold truncate block">{formData.siteName || flow.siteName || '—'}</span>
+                <div className="p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                  <span className="text-[10px] text-slate-500 block font-semibold">Delivery Site</span>
+                  <span className="text-slate-700 font-bold truncate block">{formData.siteName || flow.siteName || '—'}</span>
                 </div>
-                <div className="p-2 bg-slate-800/80 rounded-lg col-span-2">
-                  <span className="text-[10px] text-slate-400 block font-semibold">Settlement UTR Ref</span>
-                  <span className="text-white font-mono font-bold truncate block">{formData.utrNumber || flow.instanceDataPool?.utrNumber || targetPaymentRecord?.remarks || 'UTR Confirmed'}</span>
+                <div className="p-2 bg-slate-50 border border-slate-200 rounded-lg col-span-2">
+                  <span className="text-[10px] text-slate-500 block font-semibold">Settlement UTR Ref</span>
+                  <span className="text-slate-900 font-mono font-bold truncate block">{formData.utrNumber || flow.instanceDataPool?.utrNumber || targetPaymentRecord?.remarks || 'UTR Confirmed'}</span>
                 </div>
               </div>
             </div>
@@ -1708,15 +1965,15 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
           )}
           
           {(flow.isClosed || flow.status === 'CLOSED') && (
-            <div className="p-3.5 bg-slate-900 text-white rounded-xl border border-slate-800 text-xs flex items-center justify-between gap-3">
+            <div className="p-3.5 bg-slate-50 text-slate-800 rounded-xl border border-slate-200 text-xs flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
-                <Lock className="w-4 h-4 text-emerald-400 shrink-0" />
+                <Lock className="w-4 h-4 text-emerald-600 shrink-0" />
                 <div>
-                  <span className="font-bold text-emerald-400">Workflow Verified & Closed: </span>
-                  <span className="text-slate-300">This FMS is locked. All stage actions and form edits are disabled.</span>
+                  <span className="font-bold text-emerald-700">Workflow Verified &amp; Closed: </span>
+                  <span className="text-slate-600">This FMS is locked. All stage actions and form edits are disabled.</span>
                 </div>
               </div>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">CLOSED</span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">CLOSED</span>
             </div>
           )}
 
@@ -1952,42 +2209,60 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
 
             if (isPoToPaymentFlow) {
               return (
-                <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 sm:p-4">
                   <button
                     type="button"
                     onClick={() => setIsPriorStagesExpanded(!isPriorStagesExpanded)}
-                    className="w-full px-4 py-2.5 flex items-center justify-between text-left hover:bg-slate-100 transition-colors cursor-pointer"
+                    className="w-full flex items-center justify-between text-left hover:opacity-80 transition-opacity cursor-pointer"
                   >
-                    <div className="flex items-center gap-2">
-                      <History className="w-4 h-4 text-indigo-600" />
-                      <span className="font-bold text-xs text-slate-800">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <History className="w-4 h-4 text-indigo-600 shrink-0" />
+                      <span className="font-bold text-xs sm:text-sm text-slate-800">
                         Beneficiary Setup &amp; Upstream Workflow History
                       </span>
                       <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700">
                         {priorStages.length} Stages Handled
                       </span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600">
-                      <span>{isPriorStagesExpanded ? 'Hide History' : 'View History Details'}</span>
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 shrink-0">
+                      <span>{isPriorStagesExpanded ? 'Hide History Details' : 'View History Details'}</span>
                       <span className="text-slate-400 font-mono text-[10px]">{isPriorStagesExpanded ? '▲' : '▼'}</span>
                     </div>
                   </button>
 
-                  {!isPriorStagesExpanded && (
-                    <div className="px-4 py-2 border-t border-slate-200/60 bg-white flex items-center gap-1.5 overflow-x-auto text-[11px]">
-                      {priorStages.map((prior, idx) => (
-                        <span key={prior.stageId || idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0 font-medium">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-                          <span>{prior.stageName}</span>
-                          {prior.actualDateTime && <span className="text-[10px] text-emerald-600/80">({prior.actualDateTime.split(' ')[0]})</span>}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
                   {isPriorStagesExpanded && (
-                    <div className="p-3.5 space-y-3 border-t border-slate-200 bg-slate-100/40">
-                      {priorStagesCards}
+                    <div className="flex flex-col gap-2 mt-3">
+                      {priorStages.map((prior, idx) => {
+                        const isSkipped = prior.status === 'Skipped';
+                        const dateDisplay = prior.actualDateTime || (prior.actualTimestamp ? new Date(prior.actualTimestamp).toLocaleDateString('en-GB') : (isSkipped ? 'Skipped' : 'Completed'));
+                        const assigneeName = prior.doerName || prior.assignee || 'Assigned Staff';
+
+                        return (
+                          <div
+                            key={prior.stageId || idx}
+                            className="bg-white border border-slate-100 border-b-slate-200 rounded-lg p-3 flex items-center justify-between gap-3 shadow-2xs"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              {isSkipped ? (
+                                <MinusCircle className="w-4 h-4 text-slate-400 shrink-0" />
+                              ) : (
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                              )}
+                              <div className="min-w-0">
+                                <div className="font-bold text-slate-900 text-xs sm:text-sm truncate">
+                                  {prior.stageName}
+                                </div>
+                                <div className="text-xs text-slate-500 truncate">
+                                  {assigneeName}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-xs text-slate-500 shrink-0 font-medium text-right">
+                              {dateDisplay}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -2833,19 +3108,19 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                     }
 
                     return (
-                      <div key={field.id} className="sm:col-span-2 p-4 bg-slate-900 border border-indigo-500/40 rounded-2xl text-white space-y-4">
-                        <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-800">
+                      <div key={field.id} className="sm:col-span-2 p-4 bg-white border border-slate-200 shadow-sm rounded-2xl text-slate-900 space-y-4">
+                        <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-200">
                           <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-400">
-                              <Building2 className="w-4 h-4 text-indigo-400" />
+                            <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600">
+                              <Building2 className="w-4 h-4 text-indigo-600" />
                             </div>
                             <div>
-                              <h4 className="font-bold text-xs text-white uppercase tracking-wider">{field.label || 'Awarded Vendor PO Generation'}</h4>
-                              <p className="text-[11px] text-slate-400">Auto-split Purchase Orders generated from locked CS statement</p>
+                              <h4 className="font-bold text-xs text-slate-900 uppercase tracking-wider">{field.label || 'Awarded Vendor PO Generation'}</h4>
+                              <p className="text-[11px] text-slate-500">Auto-split Purchase Orders generated from locked CS statement</p>
                             </div>
                           </div>
                           {awardedVendorGroups.length > 0 && (
-                            <span className="px-2.5 py-1 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-lg text-[11px] font-bold">
+                            <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-[11px] font-bold">
                               {awardedVendorGroups.length} Split PO{awardedVendorGroups.length > 1 ? 's' : ''} Ready
                             </span>
                           )}
@@ -2854,49 +3129,49 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                         {awardedVendorGroups.length > 0 ? (
                           <div className="space-y-3">
                             {awardedVendorGroups.map((grp, gIdx) => (
-                              <div key={grp.vendorId} className="p-3 bg-slate-800/80 border border-slate-700 rounded-xl space-y-2">
+                              <div key={grp.vendorId} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                                 <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
                                   <div className="flex items-center gap-2">
                                     <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-black flex items-center justify-center">
                                       {gIdx + 1}
                                     </span>
-                                    <span className="font-black text-amber-300">{grp.vendorName}</span>
+                                    <span className="font-black text-slate-900">{grp.vendorName}</span>
                                   </div>
                                   <div className="flex items-center gap-3">
-                                    <span className="text-[11px] text-slate-400 font-mono">PO Ref: <strong className="text-white">{grp.suggestedPoNo}</strong></span>
-                                    <span className="font-black font-mono text-emerald-400">₹{grp.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                    <span className="text-[11px] text-slate-500 font-mono">PO Ref: <strong className="text-slate-900">{grp.suggestedPoNo}</strong></span>
+                                    <span className="font-black font-mono text-emerald-600">₹{grp.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                   </div>
                                 </div>
 
                                 <div className="overflow-x-auto">
                                   <table className="w-full text-left text-[11px]">
                                     <thead>
-                                      <tr className="text-slate-400 border-b border-slate-700/60">
+                                      <tr className="text-slate-500 border-b border-slate-200">
                                         <th className="py-1 px-1.5 font-medium">Item Description</th>
                                         <th className="py-1 px-1.5 font-medium text-center">Qty</th>
                                         <th className="py-1 px-1.5 font-medium text-right">Landed Rate</th>
                                         <th className="py-1 px-1.5 font-medium text-right">Amount (₹)</th>
                                       </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-800">
+                                    <tbody className="divide-y divide-slate-200">
                                       {grp.items.map((it, itIdx) => (
-                                        <tr key={itIdx} className="text-slate-300">
-                                          <td className="py-1 px-1.5 font-medium text-white">{it.itemName}</td>
+                                        <tr key={itIdx} className="text-slate-700">
+                                          <td className="py-1 px-1.5 font-medium text-slate-900">{it.itemName}</td>
                                           <td className="py-1 px-1.5 text-center font-mono">{it.qty} {it.unit}</td>
                                           <td className="py-1 px-1.5 text-right font-mono">₹{it.rate.toLocaleString('en-IN')}</td>
-                                          <td className="py-1 px-1.5 text-right font-mono font-bold text-slate-200">₹{it.amount.toLocaleString('en-IN')}</td>
+                                          <td className="py-1 px-1.5 text-right font-mono font-bold text-slate-900">₹{it.amount.toLocaleString('en-IN')}</td>
                                         </tr>
                                       ))}
                                     </tbody>
                                   </table>
                                 </div>
-                                <div className="pt-2 border-t border-slate-700/60 flex items-center justify-between flex-wrap gap-2">
+                                <div className="pt-2 border-t border-slate-200 flex items-center justify-between flex-wrap gap-2">
                                   <div className="flex items-center gap-3 flex-wrap">
-                                    <span className="text-[11px] text-slate-400 font-medium">Split PO for: <strong className="text-white">{grp.vendorName}</strong></span>
+                                    <span className="text-[11px] text-slate-500 font-medium">Split PO for: <strong className="text-slate-900">{grp.vendorName}</strong></span>
                                     
                                     {/* Mandatory Payment Terms Dropdown */}
                                     <div className="flex items-center gap-1.5">
-                                      <label className="text-[11px] font-bold text-slate-300">Payment Terms <span className="text-amber-400">*</span>:</label>
+                                      <label className="text-[11px] font-bold text-slate-700">Payment Terms <span className="text-amber-500">*</span>:</label>
                                       <select
                                         value={formData.vendorPaymentTerms?.[grp.vendorId] || 'ADVANCE'}
                                         onChange={(e) => {
@@ -2904,7 +3179,7 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                                           const prevTerms = formData.vendorPaymentTerms || {};
                                           handleFieldChange('vendorPaymentTerms', { ...prevTerms, [grp.vendorId]: val });
                                         }}
-                                        className="px-2 py-1 bg-slate-900 border border-slate-700 text-amber-300 text-xs font-bold rounded-lg focus:ring-2 focus:ring-amber-400 outline-none cursor-pointer"
+                                        className="px-2 py-1 bg-white border border-slate-300 text-slate-900 text-xs font-bold rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
                                       >
                                         <option value="ADVANCE">ADVANCE (Initiate Upfront Payment)</option>
                                         <option value="CREDIT">CREDIT (Payment Triggered on GRN Clearance)</option>
@@ -2912,8 +3187,8 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                                     </div>
 
                                     {(formData.vendorPaymentTerms?.[grp.vendorId] || 'ADVANCE') === 'ADVANCE' && isVendorInitiated(grp.vendorId, grp.vendorName) && (
-                                      <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded text-[10px] font-bold flex items-center gap-1">
-                                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[10px] font-bold flex items-center gap-1">
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                                         <span>Payment Initiated</span>
                                       </span>
                                     )}
@@ -2930,12 +3205,12 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                                       }}
                                       className={
                                         isVendorInitiated(grp.vendorId, grp.vendorName)
-                                          ? "px-3 py-1.5 bg-slate-800 text-slate-400 border border-slate-700 font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-not-allowed opacity-75"
+                                          ? "px-3 py-1.5 bg-slate-100 text-slate-400 border border-slate-200 font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-not-allowed opacity-75"
                                           : "px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
                                       }
                                     >
                                       {isVendorInitiated(grp.vendorId, grp.vendorName) ? (
-                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                                       ) : (
                                         <Upload className="w-3.5 h-3.5" />
                                       )}
@@ -2949,8 +3224,8 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                                     /* Credit PO Fields: PO Number Input and Upload ERP PO PDF Button */
                                     <div className="flex items-center gap-3 flex-wrap">
                                       <div className="flex items-center gap-1.5">
-                                        <label className="text-[11px] font-bold text-slate-300 whitespace-nowrap">
-                                          PO Number <span className="text-amber-400">*</span>:
+                                        <label className="text-[11px] font-bold text-slate-700 whitespace-nowrap">
+                                          PO Number <span className="text-amber-500">*</span>:
                                         </label>
                                         <input
                                           type="text"
@@ -2963,24 +3238,24 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                                             handleCreditPoFieldChange(grp, val, formData.vendorPoDocuments?.[grp.vendorId] || '', newNums, formData.vendorPoDocuments);
                                           }}
                                           placeholder="e.g. BPL/PO/..."
-                                          className="px-2.5 py-1 bg-slate-900 border border-slate-600 text-amber-200 text-xs font-mono font-bold rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none w-48"
+                                          className="px-2.5 py-1 bg-white border border-slate-300 text-slate-900 text-xs font-mono font-bold rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none w-48"
                                         />
                                       </div>
 
                                       <div className="flex items-center gap-1.5">
-                                        <label className="text-[11px] font-bold text-slate-300 whitespace-nowrap">
-                                          Upload ERP PO <span className="text-amber-400">*</span>:
+                                        <label className="text-[11px] font-bold text-slate-700 whitespace-nowrap">
+                                          Upload ERP PO <span className="text-amber-500">*</span>:
                                         </label>
                                         {formData.vendorPoDocuments?.[grp.vendorId] ? (
-                                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-950/80 border border-emerald-500/40 rounded-lg text-xs">
-                                            <Paperclip className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                                            <span className="text-emerald-200 font-bold truncate max-w-[130px]">
+                                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-lg text-xs">
+                                            <Paperclip className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                            <span className="text-emerald-800 font-bold truncate max-w-[130px]">
                                               PO Uploaded
                                             </span>
                                             <button
                                               type="button"
                                               onClick={() => setPreviewFile({ url: formData.vendorPoDocuments[grp.vendorId], name: `ERP PO - ${grp.vendorName}` })}
-                                              className="text-emerald-400 hover:text-emerald-200 p-0.5 rounded cursor-pointer"
+                                              className="text-emerald-700 hover:text-emerald-900 p-0.5 rounded cursor-pointer"
                                               title="Preview PO PDF"
                                             >
                                               <Eye className="w-3.5 h-3.5" />
@@ -2993,7 +3268,7 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                                                 const poNum = formData.vendorPoNumbers?.[grp.vendorId] !== undefined ? formData.vendorPoNumbers[grp.vendorId] : grp.suggestedPoNo;
                                                 handleCreditPoFieldChange(grp, poNum, '', formData.vendorPoNumbers, newDocs);
                                               }}
-                                              className="text-slate-400 hover:text-rose-400 p-0.5 rounded cursor-pointer"
+                                              className="text-slate-400 hover:text-rose-500 p-0.5 rounded cursor-pointer"
                                               title="Remove file"
                                             >
                                               <X className="w-3.5 h-3.5" />
@@ -3039,35 +3314,35 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                             ))}
                           </div>
                         ) : (
-                          <div className="p-3.5 bg-slate-800/40 border border-dashed border-slate-700 rounded-xl text-center space-y-1">
-                            <p className="text-xs text-slate-300 font-medium">Split PO Groups Pending</p>
-                            <p className="text-[11px] text-slate-400">Awarded vendor POs will populate automatically based on the Director's locked L1 allocation from Stage 3.</p>
+                          <div className="p-3.5 bg-slate-50 border border-dashed border-slate-300 rounded-xl text-center space-y-1">
+                            <p className="text-xs text-slate-700 font-medium">Split PO Groups Pending</p>
+                            <p className="text-[11px] text-slate-500">Awarded vendor POs will populate automatically based on the Director's locked L1 allocation from Stage 3.</p>
                           </div>
                         )}
 
                         {/* Mandatory PO Assign To Dropdown for Material Collection (for both Advance and Credit) */}
-                        <div className="p-3.5 bg-slate-800/90 border border-slate-700 rounded-xl space-y-2">
+                        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                           <div className="flex items-center justify-between flex-wrap gap-1">
-                            <label className="text-xs font-bold text-white flex items-center gap-1.5">
-                              <User className="w-3.5 h-3.5 text-indigo-400" />
+                            <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                              <User className="w-3.5 h-3.5 text-indigo-600" />
                               <span>PO Assign To (Material Collection)</span>
-                              <span className="text-amber-400">*</span>
+                              <span className="text-amber-500">*</span>
                             </label>
-                            <span className="text-[11px] text-indigo-300 font-medium">
-                              Auto-selected (least pending tasks): <strong className="text-amber-300 font-bold">{bestAssistantName}</strong>
+                            <span className="text-[11px] text-slate-600 font-medium">
+                              Auto-selected (least pending tasks): <strong className="text-indigo-700 font-bold">{bestAssistantName}</strong>
                             </span>
                           </div>
                           <select
                             value={formData.poAssignTo || bestAssistantName}
                             onChange={(e) => handleFieldChange('poAssignTo', e.target.value)}
                             required
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-600 text-amber-200 text-xs font-bold rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 text-slate-900 text-xs font-bold rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
                           >
                             <option value="Rajendra">Rajendra (Purchaser Assistant)</option>
                             <option value="Vivek">Vivek (Purchaser Assistant)</option>
                             <option value="Rajnikant">Rajnikant (Purchaser Assistant)</option>
                           </select>
-                          <p className="text-[11px] text-slate-400">
+                          <p className="text-[11px] text-slate-500">
                             The selected assistant will receive the Stage 5 Material Collection handover in their inbox. Shyam can override the auto-selected assignee if needed.
                           </p>
                         </div>
@@ -3312,6 +3587,35 @@ export const StageActionModal: React.FC<StageActionModalProps> = ({
                   >
                     <ShieldCheck className="w-4 h-4 stroke-[2.5]" />
                     <span>Approve Payment</span>
+                  </button>
+                </>
+              )}
+            </div>
+          ) : isBeneficiaryApprovalStage ? (
+            <div className="flex items-center gap-2.5">
+              {stage.status === 'Done' || stage.status === 'Skipped' ? (
+                <span className="px-4 py-2 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl font-bold text-xs flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>Beneficiary Approved by Director (Read-Only)</span>
+                </span>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleDirectorBeneficiaryDecision('No')}
+                    className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <X className="w-4 h-4 stroke-[2.5]" />
+                    <span>Reject Beneficiary</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDirectorBeneficiaryDecision('Yes')}
+                    className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 active:from-emerald-800 active:to-emerald-900 text-white font-black rounded-xl text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <ShieldCheck className="w-4 h-4 stroke-[2.5]" />
+                    <span>Approve Beneficiary</span>
                   </button>
                 </>
               )}

@@ -503,18 +503,21 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                <th className="w-10 min-w-[40px] p-3.5 sticky left-0 top-0 z-20 bg-slate-50 border-r border-slate-200 text-center">
-                  <input
-                    type="checkbox"
-                    checked={sortedVendors.length > 0 && selectedRowIds.length === sortedVendors.length}
-                    onChange={toggleSelectAll}
-                    className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                    title="Select / Deselect All"
-                  />
+                <th className="px-3 py-3.5 sticky left-0 top-0 z-20 bg-slate-50 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap w-36 min-w-[130px]">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={sortedVendors.length > 0 && selectedRowIds.length === sortedVendors.length}
+                      onChange={toggleSelectAll}
+                      className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                      title="Select / Deselect All"
+                    />
+                    <span>Action</span>
+                  </div>
                 </th>
                 <th
                   onClick={() => handleSort('vendorCode')}
-                  className="p-3.5 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                  className="p-3.5 cursor-pointer hover:bg-slate-100 transition-colors select-none w-[28%]"
                 >
                   <div className="flex items-center gap-1.5">
                     <span>Vendor Code &amp; Trade Name</span>
@@ -527,7 +530,7 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
                 </th>
                 <th
                   onClick={() => handleSort('category')}
-                  className="p-3.5 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                  className="p-3.5 cursor-pointer hover:bg-slate-100 transition-colors select-none w-[18%]"
                 >
                   <div className="flex items-center gap-1.5">
                     <span>Category &amp; Region</span>
@@ -540,7 +543,7 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
                 </th>
                 <th
                   onClick={() => handleSort('gstin')}
-                  className="p-3.5 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                  className="p-3.5 cursor-pointer hover:bg-slate-100 transition-colors select-none w-[16%]"
                 >
                   <div className="flex items-center gap-1.5">
                     <span>Tax IDs (GSTIN / PAN)</span>
@@ -553,7 +556,7 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
                 </th>
                 <th
                   onClick={() => handleSort('bank')}
-                  className="p-3.5 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                  className="p-3.5 cursor-pointer hover:bg-slate-100 transition-colors select-none w-[24%]"
                 >
                   <div className="flex items-center gap-1.5">
                     <span>Primary Bank Details</span>
@@ -566,7 +569,7 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
                 </th>
                 <th
                   onClick={() => handleSort('bankingStatus')}
-                  className="p-3.5 text-center cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                  className="p-3.5 text-center cursor-pointer hover:bg-slate-100 transition-colors select-none w-[14%]"
                 >
                   <div className="flex items-center justify-center gap-1.5">
                     <span>Banking Status</span>
@@ -577,7 +580,6 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
                     )}
                   </div>
                 </th>
-                <th className="p-3.5 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -605,22 +607,35 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
                       className={`hover:bg-indigo-50/40 transition-colors cursor-pointer group ${isChecked ? 'bg-indigo-50/40' : ''}`}
                     >
                       <td
-                        className={`w-10 min-w-[40px] p-3.5 sticky left-0 z-10 border-r border-slate-200/60 text-center ${
+                        className={`px-3 py-3.5 sticky left-0 z-10 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap w-36 min-w-[130px] ${
                           isChecked ? 'bg-indigo-50' : 'bg-white group-hover:bg-indigo-50/40'
                         }`}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => handleToggleRow(vendor.id)}
-                          className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                        />
+                        <div className="flex items-center gap-2.5">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggleRow(vendor.id)}
+                            className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          />
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedVendorId(vendor.id);
+                            }}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1 cursor-pointer border border-slate-200 shadow-2xs"
+                          >
+                            <span>View Profile</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                       {/* Vendor Code & Trade Name */}
-                      <td className="p-3.5">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded border border-slate-200">
+                      <td className="p-3.5 whitespace-normal break-words">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded border border-slate-200 shrink-0">
                             {vendor.vendorCode}
                           </span>
                           <span className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">
@@ -628,14 +643,14 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
                           </span>
                         </div>
                         {vendor.legalName && vendor.legalName !== vendor.tradeName && (
-                          <div className="text-[11px] text-slate-500 mt-0.5">
+                          <div className="text-[11px] text-slate-500 mt-0.5 break-words">
                             Legal: {vendor.legalName}
                           </div>
                         )}
                       </td>
 
                       {/* Category & Region */}
-                      <td className="p-3.5">
+                      <td className="p-3.5 whitespace-normal break-words">
                         <div className="font-semibold text-slate-800">{vendor.category}</div>
                         <div className="text-[11px] text-slate-500 mt-0.5">
                           {vendor.city || 'Raipur'}, {vendor.state || 'CG'}
@@ -657,7 +672,7 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
                       </td>
 
                       {/* Primary Bank Details */}
-                      <td className="p-3.5">
+                      <td className="p-3.5 whitespace-normal break-words">
                         {hasBank ? (
                           <div className="space-y-0.5">
                             <div className="font-semibold text-slate-900 flex items-center gap-1.5">
@@ -709,21 +724,6 @@ export const VendorDirectoryView: React.FC<VendorDirectoryViewProps> = ({ curren
                             <span>Missing Bank</span>
                           </span>
                         )}
-                      </td>
-
-                      {/* Action */}
-                      <td className="p-3.5 text-right">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedVendorId(vendor.id);
-                          }}
-                          className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1 cursor-pointer"
-                        >
-                          <span>View Profile</span>
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
                       </td>
                     </tr>
                   );

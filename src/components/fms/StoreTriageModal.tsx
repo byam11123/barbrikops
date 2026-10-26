@@ -321,7 +321,7 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-5xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+      <div className="bg-white rounded-2xl max-w-5xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Modal Header */}
         <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -336,7 +336,7 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
                 <span className="text-xs text-slate-400">Indent #{flow.indentNo || flow.requisitionNumber}</span>
               </div>
               <h2 className="text-base font-bold text-white mt-0.5">
-                Multi-Store Stock Triage & Pipeline Split
+                Multi-Store Stock Triage &amp; Pipeline Split
               </h2>
             </div>
           </div>
@@ -349,45 +349,53 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
         </div>
 
         {/* Triage Overview Metrics */}
-        <div className="px-6 py-3 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs shrink-0">
-          <div className="p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center gap-2.5">
-            <Layers className="w-4 h-4 text-slate-500 shrink-0" />
+        <div className="px-6 py-3 bg-slate-50 border-b border-slate-200 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs shrink-0">
+          <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-2xs flex items-center gap-2.5">
+            <div className="p-2 bg-slate-100 rounded-lg text-slate-600">
+              <Layers className="w-4 h-4 text-slate-600 shrink-0" />
+            </div>
             <div>
-              <p className="text-slate-500 dark:text-slate-400 font-medium">Total Line Items</p>
-              <p className="text-sm font-bold text-slate-900 dark:text-white">{lineItems.length} Items</p>
+              <p className="text-slate-500 font-medium">Total Line Items</p>
+              <p className="text-sm font-bold text-slate-900">{lineItems.length} Items</p>
             </div>
           </div>
-          <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800/50 flex items-center gap-2.5">
-            <Truck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <div className="p-2.5 bg-white rounded-xl border border-emerald-200 shadow-2xs flex items-center gap-2.5">
+            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+              <Truck className="w-4 h-4 text-emerald-600 shrink-0" />
+            </div>
             <div>
-              <p className="text-emerald-700 dark:text-emerald-400 font-medium">Store Dispatch</p>
-              <p className="text-sm font-bold text-emerald-800 dark:text-emerald-300">{storeCount} Items</p>
+              <p className="text-emerald-700 font-medium">Store Dispatch</p>
+              <p className="text-sm font-bold text-emerald-800">{storeCount} Items</p>
             </div>
           </div>
-          <div className="p-2.5 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800/50 flex items-center gap-2.5">
-            <ShoppingCart className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+          <div className="p-2.5 bg-white rounded-xl border border-amber-200 shadow-2xs flex items-center gap-2.5">
+            <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
+              <ShoppingCart className="w-4 h-4 text-amber-600 shrink-0" />
+            </div>
             <div>
-              <p className="text-amber-700 dark:text-amber-400 font-medium">Purchase Pipeline</p>
-              <p className="text-sm font-bold text-amber-800 dark:text-amber-300">{purchaseCount} Items</p>
+              <p className="text-amber-700 font-medium">Purchase Pipeline</p>
+              <p className="text-sm font-bold text-amber-800">{purchaseCount} Items</p>
             </div>
           </div>
-          <div className="p-2.5 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-300 dark:border-slate-700 flex items-center gap-2.5">
-            <Archive className="w-4 h-4 text-slate-600 dark:text-slate-400 shrink-0" />
+          <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-2xs flex items-center gap-2.5">
+            <div className="p-2 bg-slate-100 text-slate-600 rounded-lg">
+              <Archive className="w-4 h-4 text-slate-600 shrink-0" />
+            </div>
             <div>
-              <p className="text-slate-600 dark:text-slate-400 font-medium">Archived / Hold</p>
-              <p className="text-sm font-bold text-slate-900 dark:text-white">{archivedCount} Items</p>
+              <p className="text-slate-500 font-medium">Archived / Hold</p>
+              <p className="text-sm font-bold text-slate-900">{archivedCount} Items</p>
             </div>
           </div>
         </div>
 
         {/* Line Item Triage Table */}
-        <div className="p-6 overflow-y-auto space-y-4 flex-1">
+        <div className="p-6 overflow-y-auto space-y-4 flex-1 bg-white">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <span>Requested Material Line Breakdown</span>
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5">
                 Type physical stock counts at CSR and other sites. Routing and Purchase Qty are locked to mathematical stock balance.
               </p>
             </div>
@@ -395,12 +403,12 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
               <button
                 type="button"
                 onClick={() => setIsQuickAddOpen(true)}
-                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
+                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-2xs transition-colors flex items-center gap-1 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Quick Add SKU</span>
               </button>
-              <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium bg-indigo-50 dark:bg-indigo-950/40 px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800/40">
+              <span className="text-xs text-indigo-700 font-semibold bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
                 ⚡ Multi-Store Triage Active
               </span>
             </div>
@@ -421,22 +429,22 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
             }}
           />
 
-          <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
+          <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs bg-white">
             <table className="w-full text-xs text-left">
-              <thead className="bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-800">
+              <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
                 <tr>
                   <th className="py-2.5 px-3 w-8">#</th>
                   <th className="py-2.5 px-3 min-w-[160px]">Material Description</th>
                   <th className="py-2.5 px-3 w-20 text-center">Req Qty</th>
-                  <th className="py-2.5 px-3 w-24 text-center bg-indigo-50/50 dark:bg-indigo-950/20">CSR Stock</th>
-                  <th className="py-2.5 px-3 w-28 text-center bg-blue-50/50 dark:bg-blue-950/20">Other Site Stock</th>
+                  <th className="py-2.5 px-3 w-24 text-center bg-indigo-50/70 text-indigo-950 font-bold">CSR Stock</th>
+                  <th className="py-2.5 px-3 w-28 text-center bg-blue-50/70 text-blue-950 font-bold">Other Site Stock</th>
                   <th className="py-2.5 px-3 w-36 text-center">Stock Site Name</th>
                   <th className="py-2.5 px-3 w-24 text-center">Total Avail</th>
                   <th className="py-2.5 px-3 w-24 text-center">Purchase Qty</th>
                   <th className="py-2.5 px-3 text-center">Triage Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900">
+              <tbody className="divide-y divide-slate-200 bg-white">
                 {lineItems.map((item, idx) => {
                   const csrStockVal = item.csrStock ?? 0;
                   const otherStockVal = item.otherSiteStock ?? 0;
@@ -464,13 +472,13 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
                   }
 
                   return (
-                    <tr key={item.id || idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                    <tr key={item.id || idx} className="hover:bg-slate-50 transition-colors">
                       <td className="py-3 px-3 font-mono text-slate-500">{idx + 1}</td>
                       <td className="py-3 px-3">
-                        <p className="font-semibold text-slate-900 dark:text-white">{item.itemDescription}</p>
+                        <p className="font-semibold text-slate-900">{item.itemDescription}</p>
                         {item.remark && <p className="text-[11px] text-slate-500 mt-0.5">{item.remark}</p>}
                         {!isArchived && dispatchPreviewStr && (
-                          <p className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1">
+                          <p className="text-[11px] font-bold text-emerald-600 mt-1 flex items-center gap-1">
                             <Truck className="w-3 h-3" />
                             <span>{dispatchPreviewStr}</span>
                           </p>
@@ -482,32 +490,32 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
                           </p>
                         )}
                       </td>
-                      <td className="py-3 px-3 text-center font-bold text-slate-900 dark:text-white">
+                      <td className="py-3 px-3 text-center font-bold text-slate-900">
                         {reqQty} {item.unit}
                       </td>
 
                       {/* 1. CSR Stock Column */}
-                      <td className="py-3 px-3 text-center bg-indigo-50/30 dark:bg-indigo-950/10">
+                      <td className="py-3 px-3 text-center bg-indigo-50/30">
                         <input
                           type="number"
                           min={0}
                           value={csrStockVal}
                           disabled={readOnly}
                           onChange={(e) => handleCsrStockChange(idx, parseInt(e.target.value) || 0)}
-                          className="w-16 text-center py-1 px-1 border border-indigo-200 dark:border-indigo-800 rounded bg-white dark:bg-slate-800 font-bold text-indigo-900 dark:text-indigo-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                          className="w-16 text-center py-1 px-1 border border-slate-300 rounded bg-white font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                           title="Central Store / Raipur Workshop physical stock count"
                         />
                       </td>
 
                       {/* 2. Other Site Stock Column */}
-                      <td className="py-3 px-3 text-center bg-blue-50/30 dark:bg-blue-950/10">
+                      <td className="py-3 px-3 text-center bg-blue-50/30">
                         <input
                           type="number"
                           min={0}
                           value={otherStockVal}
                           disabled={readOnly}
                           onChange={(e) => handleOtherSiteStockChange(idx, parseInt(e.target.value) || 0)}
-                          className="w-16 text-center py-1 px-1 border border-blue-200 dark:border-blue-800 rounded bg-white dark:bg-slate-800 font-bold text-blue-900 dark:text-blue-200 focus:ring-2 focus:ring-blue-500 outline-none"
+                          className="w-16 text-center py-1 px-1 border border-slate-300 rounded bg-white font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                           title="Stock available at other sites"
                         />
                       </td>
@@ -518,7 +526,7 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
                           value={item.stockSiteName || defaultOtherSite}
                           disabled={readOnly || !(otherStockVal > 0)}
                           onChange={(e) => handleStockSiteNameChange(idx, e.target.value)}
-                          className="w-full text-xs py-1 px-1.5 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-white disabled:opacity-40 cursor-pointer"
+                          className="w-full text-xs py-1 px-1.5 border border-slate-300 rounded bg-white text-slate-900 disabled:opacity-40 cursor-pointer focus:ring-2 focus:ring-indigo-500 outline-none"
                         >
                           {masterSites.map((site) => (
                             <option key={site} value={site}>
@@ -533,10 +541,10 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
                         <span
                           className={`inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded text-xs ${
                             totalAvail >= reqQty
-                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                               : totalAvail > 0
-                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                              : 'bg-slate-100 text-slate-600 border border-slate-200'
                           }`}
                         >
                           {totalAvail} {item.unit}
@@ -554,10 +562,10 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
                           disabled
                           className={`w-16 text-center py-1 px-1 border rounded font-bold text-xs ${
                             isArchived
-                              ? 'bg-slate-100 text-slate-400 border-slate-200 dark:bg-slate-800 opacity-50 cursor-not-allowed'
+                              ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-60 cursor-not-allowed'
                               : purchaseQty === 0
-                              ? 'bg-slate-100 text-slate-400 border-slate-200 dark:bg-slate-800 opacity-60 font-semibold cursor-not-allowed'
-                              : 'bg-amber-50 text-amber-900 border-amber-300 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-700'
+                              ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-60 font-semibold cursor-not-allowed'
+                              : 'bg-amber-50 text-amber-900 border-amber-300'
                           }`}
                           title={
                             totalAvail >= reqQty
@@ -567,10 +575,10 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
                         />
                       </td>
 
-                      {/* Triage Action Buttons - Strict Mathematical Radio Behavior */}
+                      {/* Triage Action Buttons - Standard App Colors: Green / Indigo / Red */}
                       <td className="py-3 px-3">
                         <div className="flex items-center justify-center gap-1">
-                          {/* 1. Store Dispatch Button */}
+                          {/* 1. Store Dispatch Button (Green) */}
                           {(() => {
                             const isFullStock = totalAvail >= reqQty;
                             const isPartialStock = totalAvail > 0 && totalAvail < reqQty;
@@ -588,8 +596,8 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
                                 }}
                                 className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 ${
                                   isStoreActive
-                                    ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/40'
-                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 opacity-50 cursor-not-allowed'
+                                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                                    : 'bg-slate-100 text-slate-400 opacity-50 cursor-not-allowed'
                                 }`}
                                 title={
                                   isZeroStock
@@ -607,7 +615,7 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
                             );
                           })()}
 
-                          {/* 2. Purchase Button */}
+                          {/* 2. Purchase Button (Indigo) */}
                           {(() => {
                             const isFullStock = totalAvail >= reqQty;
                             const isPartialStock = totalAvail > 0 && totalAvail < reqQty;
@@ -625,8 +633,8 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
                                 }}
                                 className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 ${
                                   isPurchaseActive
-                                    ? 'bg-amber-600 text-white shadow-xs ring-2 ring-amber-500/40'
-                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 opacity-50 cursor-not-allowed'
+                                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
+                                    : 'bg-slate-100 text-slate-400 opacity-50 cursor-not-allowed'
                                 }`}
                                 title={
                                   isFullStock
@@ -644,7 +652,7 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
                             );
                           })()}
 
-                          {/* 3. Archive Button (Manual Override Only) */}
+                          {/* 3. Archive Button (Red) */}
                           {(() => {
                             return (
                               <button
@@ -653,8 +661,8 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
                                 onClick={() => handleToggleArchive(idx)}
                                 className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
                                   isArchived
-                                    ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs ring-2 ring-slate-400'
-                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200'
+                                    ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-xs'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
                                 }`}
                                 title={isArchived ? 'Archived / On Hold (Click to restore stock math route)' : 'Manual Override: Put on Hold / Archive'}
                               >
@@ -674,7 +682,7 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
 
           {/* Triage Remarks */}
           <div className="mt-4">
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
               Store Manager Remarks / Triage Notes
             </label>
             <textarea
@@ -683,22 +691,22 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
               disabled={readOnly}
               onChange={(e) => setTriageNotes(e.target.value)}
               placeholder="e.g. Dispatched 2 units from Central Store and transferred 3 units from Bijetala Site..."
-              className="w-full text-xs p-2.5 border border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-60"
+              className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-60"
             />
           </div>
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
-          <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-            <Info className="w-4 h-4 text-indigo-500 shrink-0" />
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+          <p className="text-xs text-slate-600 flex items-center gap-1.5">
+            <Info className="w-4 h-4 text-indigo-600 shrink-0" />
             <span>{readOnly ? 'Stage 2 Store Triage Complete (Read-Only View).' : 'Routing and Purchase Qty are strictly locked to mathematical stock balance.'}</span>
           </p>
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+              className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
             >
               {readOnly ? 'Close Details' : 'Cancel'}
             </button>
@@ -707,7 +715,7 @@ export const StoreTriageModal: React.FC<StoreTriageModalProps> = ({
                 type="button"
                 onClick={handleSubmitTriage}
                 disabled={isSubmitting}
-                className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer"
+                className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl shadow-sm transition-all flex items-center gap-2 cursor-pointer"
               >
                 <Save className="w-4 h-4" />
                 <span>{isSubmitting ? 'Launching Parallel Sub-Tracks...' : 'Confirm Stock Triage & Launch Sub-Tracks'}</span>

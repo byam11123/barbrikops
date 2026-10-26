@@ -285,19 +285,16 @@ export const CreditLedgerView: React.FC<CreditLedgerViewProps> = ({
           <table className="w-full text-left text-xs text-slate-700 border-collapse">
             <thead className="bg-slate-100 text-slate-900 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
               <tr>
-                {/* Sticky Column 1: PO Number */}
-                <th className="p-3.5 pl-5 sticky left-0 z-20 bg-slate-100 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] min-w-[170px]">
-                  PO Number
-                </th>
-                <th className="p-3.5 min-w-[200px]">Vendor Name</th>
-                <th className="p-3.5 min-w-[110px]">PO Date</th>
-                <th className="p-3.5 min-w-[130px] text-right">PO Amount (₹)</th>
-                <th className="p-3.5 min-w-[150px]">Indent Ref</th>
-                <th className="p-3.5 min-w-[180px]">Status</th>
-                {/* Sticky Column Right: Action */}
-                <th className="p-3.5 pr-5 sticky right-0 z-20 bg-slate-100 text-right shadow-[-2px_0_4px_-1px_rgba(0,0,0,0.06)] min-w-[130px]">
+                {/* Sticky Column 1: Action */}
+                <th className="p-3.5 pl-4 sticky left-0 z-20 bg-slate-100 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] w-32 min-w-[120px] whitespace-nowrap">
                   Action
                 </th>
+                <th className="p-3.5 w-[16%]">PO Number</th>
+                <th className="p-3.5 w-[26%]">Vendor Name</th>
+                <th className="p-3.5 w-[12%]">PO Date</th>
+                <th className="p-3.5 w-[14%] text-right">PO Amount (₹)</th>
+                <th className="p-3.5 w-[16%]">Indent Ref</th>
+                <th className="p-3.5 w-[16%]">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -312,8 +309,33 @@ export const CreditLedgerView: React.FC<CreditLedgerViewProps> = ({
               ) : (
                 filteredRecords.map((rec) => (
                   <tr key={rec.id} className="hover:bg-amber-50/30 transition-colors">
-                    {/* Sticky Column 1: PO Number */}
-                    <td className="p-3.5 pl-5 font-bold text-slate-900 sticky left-0 z-10 bg-white group-hover:bg-amber-50/30 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]">
+                    {/* Sticky Column 1: Action */}
+                    <td className="p-3.5 pl-4 sticky left-0 z-10 bg-white group-hover:bg-amber-50/30 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] w-32 min-w-[120px] whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedRecord(rec)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>Details</span>
+                        </button>
+                        {rec.linkedFlowId && onSelectFlowDetail && (
+                          <button
+                            type="button"
+                            onClick={() => onSelectFlowDetail(rec.linkedFlowId)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                            title="Open Linked Workflow"
+                          >
+                            <span>Flow</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Column 2: PO Number */}
+                    <td className="p-3.5 pl-4 font-bold text-slate-900">
                       <div className="flex items-center gap-1.5">
                         <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                         <span className="font-mono text-xs">{rec.poNumber}</span>
@@ -321,7 +343,7 @@ export const CreditLedgerView: React.FC<CreditLedgerViewProps> = ({
                     </td>
 
                     {/* Vendor Name */}
-                    <td className="p-3.5">
+                    <td className="p-3.5 whitespace-normal break-words">
                       <div className="flex items-center gap-1.5">
                         <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <span className="font-semibold text-slate-800">{rec.vendorName}</span>
@@ -349,31 +371,6 @@ export const CreditLedgerView: React.FC<CreditLedgerViewProps> = ({
                     {/* Status */}
                     <td className="p-3.5">
                       {getStatusBadge(rec.status)}
-                    </td>
-
-                    {/* Sticky Column Right: Action */}
-                    <td className="p-3.5 pr-5 text-right sticky right-0 z-10 bg-white group-hover:bg-amber-50/30 shadow-[-2px_0_4px_-1px_rgba(0,0,0,0.06)]">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedRecord(rec)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                        >
-                          <Eye className="w-3 h-3" />
-                          <span>Details</span>
-                        </button>
-                        {rec.linkedFlowId && onSelectFlowDetail && (
-                          <button
-                            type="button"
-                            onClick={() => onSelectFlowDetail(rec.linkedFlowId)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                            title="Open Linked Workflow"
-                          >
-                            <span>Flow</span>
-                            <ArrowRight className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
                     </td>
                   </tr>
                 ))

@@ -36,6 +36,7 @@ import {
   Camera,
   ArrowLeft,
   Info,
+  MoreVertical,
 } from 'lucide-react';
 import { 
   ComparativeStatement, 
@@ -225,6 +226,29 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
       included: boolean;
     }>
   >([]);
+
+  // Secondary actions dropdown menu toggle
+  const [isSecondaryMenuOpen, setIsSecondaryMenuOpen] = useState(false);
+
+  // EA Brief & Director Revision Remark resolution
+  const eaBrief = useMemo(() => {
+    return (
+      (flow?.stages?.[3]?.submittedData?.eaPreReviewBrief as string) ||
+      (flow?.instanceDataPool?.eaPreReviewBrief as string) ||
+      (cs as any)?.eaBrief ||
+      (cs as any)?.eaPreReviewBrief ||
+      ''
+    );
+  }, [flow, cs]);
+
+  const directorRevisionRemark = useMemo(() => {
+    return (
+      cs.directorRevisionRemarks ||
+      (flow?.stages?.[flow.currentStageIndex]?.remarks?.replace('Director Directive: ', '')) ||
+      (flow?.currentStageId?.includes('02B') ? flow?.remarks : '') ||
+      ''
+    );
+  }, [cs.directorRevisionRemarks, flow]);
 
   // Synchronize when initialCs or flow changes
   useEffect(() => {
@@ -1167,353 +1191,130 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
 
   return (
     <>
-      <div className={`space-y-6 ${isEmbedded ? 'p-1' : ''}`}>
-      {/* 1. TOP HEADER & CORPORATE BRANDING */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 rounded-2xl shadow-sm border border-slate-800">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 bg-amber-400 text-slate-950 rounded font-mono">
-                {isEmbedded ? (effectiveMode === 'APPROVAL' ? 'FMS Stage 3 Approval' : 'FMS Stage 2 Module') : 'Official Deliverable'}
-              </span>
-              <span className="text-xs text-indigo-200 font-semibold tracking-wider uppercase">
-                Procurement &amp; Engineering Division
-              </span>
-              {isEmbedded && flow && (
-                <span className="text-[11px] font-mono font-bold px-2 py-0.5 bg-indigo-500/30 text-indigo-200 border border-indigo-400/40 rounded">
-                  Indent #{flow.indentNo} ({flow.siteName})
-                </span>
-              )}
-            </div>
-            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2.5">
-              <span>BARBRIK PROJECT LTD.</span>
-              <span className="text-slate-400 font-normal text-sm sm:text-base">|</span>
-              <span className="text-indigo-200 font-bold text-sm sm:text-lg">Comparative Statement (CS Sheet)</span>
-            </h1>
-            <p className="text-xs text-slate-300">
-              Direct L-1 Bidder Normalization, Item-Wise GST Breakdown, Split PO Optimization &amp; Commercial Evaluation
-              &bull; Prepared by: <strong className="text-amber-300 font-semibold">{cs.preparedBy || 'Shyam Rao Sureshe'}</strong>
-              &bull; Signatory: <strong className="text-emerald-300 font-semibold">Pranjal Agrawal</strong>
-            </p>
+      <div className={`space-y-6 pb-28 md:pb-24 ${isEmbedded ? 'p-1' : ''}`}>
+      {/* 1. TOP HEADER & CORPORATE BRANDING (CLEAN EXECUTIVE HEADER) */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 rounded-2xl shadow-sm border border-slate-800 flex items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 bg-amber-400 text-slate-950 rounded font-mono">
+              {isEmbedded ? (effectiveMode === 'APPROVAL' ? 'FMS Stage 3 Approval' : 'FMS Stage 2 Module') : 'Official Deliverable'}
+            </span>
+            <span className="text-xs text-indigo-200 font-semibold tracking-wider uppercase">
+              Procurement &amp; Engineering Division
+            </span>
+            <span className="text-[11px] font-mono font-bold px-2 py-0.5 bg-indigo-500/30 text-indigo-200 border border-indigo-400/40 rounded">
+              Ref ID: #{cs.indentNo || flow?.indentNo || 'N/A'} {flow?.siteName ? `(${flow.siteName})` : ''}
+            </span>
           </div>
-
-          {/* Quick Actions Bar */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Standalone Directory back button */}
-            {!isEmbedded && onBackToDirectory && (
-              <button
-                type="button"
-                onClick={onBackToDirectory}
-                className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>CS Ledger</span>
-              </button>
-            )}
-
-            {/* AI WHATSAPP & IMAGE IMPORT (Enabled in EDIT mode) */}
-            {effectiveMode === 'EDIT' && (
-              <button
-                type="button"
-                onClick={() => setIsPasteModalOpen(true)}
-                disabled={isRatesLocked}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black transition-all shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                title={isRatesLocked ? "Rates are locked" : "Upload vendor quote photo/PDF or paste WhatsApp chat to extract items & auto-fill CS"}
-              >
-                <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
-                <span>AI WhatsApp &amp; Image Import</span>
-              </button>
-            )}
-
-            {/* Auto-Fill All L-1 Button (Strictly for Director Pranjal Agrawal) */}
-            {isPranjal && (
-              <button
-                type="button"
-                onClick={handleAutoFillAllL1}
-                disabled={!isAwardEditable}
-                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Auto-award all items to their respective L-1 lowest bidder"
-              >
-                <Award className="w-3.5 h-3.5 text-amber-300" />
-                <span>Auto-Fill All L-1</span>
-              </button>
-            )}
-
-            {/* Save CS / Draft */}
-            {!isEmbedded && (
-              <button
-                type="button"
-                onClick={handleSaveSheet}
-                disabled={isRecordLocked}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Save className="w-3.5 h-3.5" />
-                <span>{isRecordLocked ? 'Saved (Locked)' : 'Save CS'}</span>
-              </button>
-            )}
-
-            {/* DIGITAL APPROVAL ACTION - STRICTLY PRANJAL AGRAWAL AS SIGNATORY */}
-            {isPranjal ? (
-              !isRecordLocked ? (
-                <button
-                  type="button"
-                  onClick={() => setIsApproveModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black transition-all shadow-md cursor-pointer"
-                  title="Digitally approve and sign CS sheet as Director Pranjal Agrawal"
-                >
-                  <UserCheck className="w-3.5 h-3.5" />
-                  <span>Sign &amp; Approve CS (Director)</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsApproveModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-emerald-900/80 text-emerald-200 border border-emerald-500/60 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
-                >
-                  <Lock className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Digitally Signed: Pranjal Agrawal</span>
-                </button>
-              )
-            ) : isRecordLocked ? (
-              <button
-                type="button"
-                disabled
-                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-900/80 text-emerald-200 border border-emerald-500/60 rounded-xl text-xs font-bold shadow-xs opacity-80 cursor-not-allowed"
-              >
-                <Lock className="w-3.5 h-3.5 text-amber-300" />
-                <span>Digitally Signed: Pranjal Agrawal</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800/80 text-slate-400 border border-slate-700 rounded-xl text-xs font-bold shadow-xs cursor-not-allowed opacity-80"
-              >
-                <Lock className="w-3.5 h-3.5 text-amber-400/80" />
-                <span>Awaiting Director Sign-off</span>
-              </button>
-            )}
-
-            {/* SPLIT PO GENERATION ACTION */}
-            {(cs.status === 'Approved' || cs.status === 'PO Created') && !isEmbedded && (
-              <button
-                type="button"
-                onClick={handleGenerateSplitPurchaseOrders}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl text-xs transition-all shadow-md cursor-pointer"
-                title="Generate discrete purchase orders for each awarded vendor in the FMS pipeline"
-              >
-                <Zap className="w-3.5 h-3.5" />
-                <span>{cs.status === 'PO Created' ? 'Re-Generate Split POs' : 'Generate Split POs'}</span>
-              </button>
-            )}
-
-            {/* COLORED PDF DOWNLOAD */}
-            <button
-              type="button"
-              onClick={() => downloadComparativeStatementPdf(cs)}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-700 hover:bg-rose-600 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
-              title="Download Barbrik Project Ltd. high-resolution colored PDF in Landscape orientation"
-            >
-              <FileDown className="w-3.5 h-3.5 text-rose-200" />
-              <span>PDF</span>
-            </button>
-
-            {/* EXCEL EXPORT */}
-            <button
-              type="button"
-              onClick={() => downloadComparativeStatementExcel(cs)}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
-              title="Download standardized Barbrik Project Ltd. Excel (.xlsx) file in Landscape with Fit-All-Columns scaling"
-            >
-              <Download className="w-3.5 h-3.5 text-amber-400" />
-              <span>Excel</span>
-            </button>
-
-            {/* Close button if embedded */}
-            {isEmbedded && onClose && (
-              <button
-                type="button"
-                onClick={onClose}
-                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors ml-1 cursor-pointer"
-                title="Close CS Modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            )}
-          </div>
+          <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2.5">
+            <span>BARBRIK PROJECT LTD.</span>
+            <span className="text-slate-400 font-normal text-sm sm:text-base">|</span>
+            <span className="text-indigo-200 font-bold text-sm sm:text-lg">Comparative Statement (CS Sheet)</span>
+          </h1>
+          <p className="text-xs text-slate-300">
+            Direct L-1 Bidder Normalization, Item-Wise GST Breakdown, Split PO Optimization &amp; Commercial Evaluation
+            &bull; Prepared by: <strong className="text-amber-300 font-semibold">{cs.preparedBy || 'Shyam Rao Sureshe'}</strong>
+            &bull; Signatory: <strong className="text-emerald-300 font-semibold">{cs.approvedBy || 'Pranjal Agrawal'}</strong>
+          </p>
         </div>
+
+        {(onClose || onBackToDirectory) && (
+          <button
+            type="button"
+            onClick={() => {
+              if (onClose) onClose();
+              else if (onBackToDirectory) onBackToDirectory();
+            }}
+            className="text-slate-400 hover:text-white hover:bg-slate-700/50 p-2 rounded-full transition-colors cursor-pointer shrink-0"
+            title="Close"
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
-      {/* STAGE 2B DIRECTIVE BANNER (IF RETURNED TO PURCHASER BY DIRECTOR) */}
-      {(isStage2B || Boolean(cs.directorRevisionRemarks) || (flow && flow.currentStageId?.includes('02B'))) && (
-        <div className="p-4 bg-amber-950/80 border border-amber-500/60 rounded-2xl flex items-start gap-3 shadow-lg animate-in fade-in">
-          <div className="p-2 bg-amber-500/20 text-amber-300 rounded-xl border border-amber-500/30 shrink-0 mt-0.5">
-            <AlertTriangle className="w-5 h-5 text-amber-400" />
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-black px-2 py-0.5 bg-amber-500/30 text-amber-300 rounded border border-amber-400/40">
-                STAGE 2B: ADDITIONAL QUOTATION DIRECTIVE
-              </span>
-              <span className="text-xs text-amber-200 font-mono font-bold bg-slate-900/60 px-2 py-0.5 rounded border border-slate-700">
-                5-Hour SLA Active (Assigned to Shyam Rao Sureshe)
-              </span>
+      {/* EXECUTIVE ALERT BOX: EA BRIEF & DIRECTOR REVISION REMARK */}
+      {(Boolean(eaBrief) || Boolean(directorRevisionRemark)) && (
+        <div className="space-y-3">
+          {Boolean(eaBrief) && (
+            <div className="p-4 bg-indigo-950/80 border-2 border-indigo-500/60 rounded-2xl flex items-start gap-3 shadow-lg animate-in fade-in">
+              <div className="p-2 bg-indigo-500/20 text-indigo-300 rounded-xl border border-indigo-500/30 shrink-0 mt-0.5">
+                <FileText className="w-5 h-5 text-indigo-400" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-black px-2 py-0.5 bg-indigo-500/30 text-indigo-300 rounded border border-indigo-400/40">
+                    EA PRE-REVIEW BRIEF
+                  </span>
+                  <span className="text-xs text-indigo-200 font-mono font-bold bg-slate-900/60 px-2 py-0.5 rounded border border-slate-700">
+                    Executive Summary for Director
+                  </span>
+                </div>
+                <div className="mt-2 p-3 bg-indigo-900/40 border border-indigo-500/40 rounded-xl">
+                  <p className="text-sm text-indigo-100 font-medium whitespace-pre-wrap">{eaBrief}</p>
+                </div>
+              </div>
             </div>
-            <div className="mt-2 p-3 bg-amber-900/40 border border-amber-500/40 rounded-xl">
-              <p className="text-sm font-black text-amber-200">
-                Director Requested Revision: <span className="font-semibold text-white">{cs.directorRevisionRemarks || (flow?.stages?.[flow.currentStageIndex]?.remarks?.replace('Director Directive: ', '')) || flow?.remarks || 'Get rate for branded item from Vendor Y'}</span>
-              </p>
+          )}
+
+          {Boolean(directorRevisionRemark) && (
+            <div className="p-4 bg-amber-950/80 border-2 border-amber-500/60 rounded-2xl flex items-start gap-3 shadow-lg animate-in fade-in">
+              <div className="p-2 bg-amber-500/20 text-amber-300 rounded-xl border border-amber-500/30 shrink-0 mt-0.5">
+                <AlertTriangle className="w-5 h-5 text-amber-400" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-black px-2 py-0.5 bg-amber-500/30 text-amber-300 rounded border border-amber-400/40">
+                    DIRECTOR REVISION REMARK
+                  </span>
+                  {isStage2B && (
+                    <span className="text-xs text-amber-200 font-mono font-bold bg-slate-900/60 px-2 py-0.5 rounded border border-slate-700">
+                      5-Hour SLA Active (Assigned to Shyam Rao Sureshe)
+                    </span>
+                  )}
+                </div>
+                <div className="mt-2 p-3 bg-amber-900/40 border border-amber-500/40 rounded-xl">
+                  <p className="text-sm font-black text-amber-200">
+                    Director Directive: <span className="font-semibold text-white">{directorRevisionRemark}</span>
+                  </p>
+                </div>
+                {isStage2B && (
+                  <p className="text-xs text-amber-300/90 mt-1.5">
+                    CS is unlocked for editing. Add the new vendor/quote and resubmit to Director Pranjal Agrawal using the action bar below.
+                  </p>
+                )}
+              </div>
             </div>
-            <p className="text-xs text-amber-300/90 mt-1.5">
-              CS is unlocked for editing. Add the new vendor/quote and click &quot;Resubmit to Director (Stage 3)&quot; below to return to Director Pranjal Agrawal.
-            </p>
-          </div>
+          )}
         </div>
       )}
 
-        {/* Embedded FMS Action Banner for STAGE 2 (EDIT) and STAGE 3 (APPROVAL) */}
-        {isEmbedded && (
-          <div className="mt-4 pt-4 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950/60 -mx-5 -mb-5 p-4 rounded-b-2xl">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-indigo-500/20 text-indigo-300 rounded-lg border border-indigo-500/30">
-                {effectiveMode === 'APPROVAL' ? <ShieldCheck className="w-4 h-4 text-emerald-400" /> : <Info className="w-4 h-4 text-amber-300" />}
-              </div>
-              <div className="text-xs space-y-0.5">
-                <div className="font-bold text-white flex items-center gap-2">
-                  <span>
-                    {effectiveMode === 'APPROVAL'
-                      ? 'FMS Stage 3: Director L1 Award Selection & Digital Sign-off'
-                      : 'FMS Stage 2: Quotation & Comparative Statement Finalization'}
-                  </span>
-                  <span className={`text-[10px] font-mono px-2 py-0.2 rounded font-bold ${analytics.splitPoOptimizedTotal > 0 && cs.vendors.length >= 2 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>
-                    {effectiveMode === 'APPROVAL'
-                      ? (isPranjal ? 'Director Mode (Rates Locked, Award Editable)' : 'Awaiting Director Approval (Read-Only)')
-                      : 'Purchaser Mode (Rates Editable)'}
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-400">
-                  Total L-1 Value: <strong className="text-emerald-400 font-mono">₹{(analytics.splitPoOptimizedTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong> &bull; {cs.items.length} items &bull; {cs.vendors.length} vendors evaluated
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2.5">
-              {effectiveMode === 'APPROVAL' ? (
-                isPranjal ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setIsRequestAdditionalQuoteModalOpen(true)}
-                      className="px-3.5 py-2 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 font-bold rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                      title="Return requisition to Purchaser (Shyam) for additional vendor quotation (5h SLA)"
-                    >
-                      <AlertTriangle className="w-4 h-4 text-amber-400" />
-                      <span>Request Additional Quotation</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleSaveDraftAwardInFms}
-                      className="px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 font-bold rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                      title="Save current award selections without signing"
-                    >
-                      <Save className="w-3.5 h-3.5" />
-                      <span>Save Award Draft</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleDigitalSignAndApprove}
-                      className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs shadow-lg transition-all flex items-center gap-2 cursor-pointer"
-                      title="Confirm award selections and digitally sign as Director Pranjal Agrawal to advance Stage 3"
-                    >
-                      <ShieldCheck className="w-4 h-4 text-amber-300" />
-                      <span>Confirm Award &amp; Digitally Sign (Director)</span>
-                    </button>
-                  </>
-                ) : (
-                  <div className="px-3.5 py-1.5 bg-amber-500/20 border border-amber-500/40 rounded-xl text-amber-300 text-xs font-bold flex items-center gap-2">
-                    <Lock className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Awaiting Director (Pranjal Agrawal) Approval</span>
-                  </div>
-                )
-              ) : isStage2B ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleSaveDraftInFms}
-                    className="px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 font-bold rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                    title="Save draft rates without advancing the stage"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    <span>Save Draft Rates</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleResubmitToDirector}
-                    disabled={isSaving}
-                    className="px-5 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-black rounded-xl text-xs shadow-lg transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                    title="Resubmit updated Comparative Statement to Director Pranjal Agrawal for Stage 3 Approval"
-                  >
-                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4 text-indigo-200" />}
-                    <span>Resubmit to Director (Stage 3)</span>
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleSaveDraftInFms}
-                    className="px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 font-bold rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                    title="Save draft rates without advancing the stage"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    <span>Save as Draft</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleSaveAndLinkToFms}
-                    disabled={isSaving}
-                    className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs shadow-lg transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Strict Validation: requires all quantities matched, >= 2 vendors, and non-zero total value"
-                  >
-                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4 text-emerald-200" />}
-                    <span>Save &amp; Link to Purchase FMS</span>
-                  </button>
-                </>
-              )}
-            </div>
+      {/* Validation Errors Notice */}
+      {validationErrors && validationErrors.length > 0 && (
+        <div className="p-3.5 bg-rose-950/80 border border-rose-500/60 rounded-xl text-rose-200 text-xs space-y-1.5 animate-in fade-in">
+          <div className="flex items-center gap-2 font-black text-rose-300">
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>Cannot Link to Purchase FMS — Stage Completion Criteria Not Met:</span>
           </div>
-        )}
+          <ul className="list-disc list-inside space-y-0.5 text-[11px] text-rose-200/90 pl-1">
+            {validationErrors.map((err, idx) => (
+              <li key={idx}>{err}</li>
+            ))}
+          </ul>
+          <p className="text-[10px] text-rose-300/80 pt-1 border-t border-rose-800/60">
+            Tip: You can click &ldquo;Save Draft&rdquo; in the bottom action bar to save work in progress without advancing the stage.
+          </p>
+        </div>
+      )}
 
-        {/* Validation Errors Notice */}
-        {validationErrors && validationErrors.length > 0 && (
-          <div className="mt-4 p-3.5 bg-rose-950/80 border border-rose-500/60 rounded-xl text-rose-200 text-xs space-y-1.5 animate-in fade-in">
-            <div className="flex items-center gap-2 font-black text-rose-300">
-              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-              <span>Cannot Link to Purchase FMS — Stage Completion Criteria Not Met:</span>
-            </div>
-            <ul className="list-disc list-inside space-y-0.5 text-[11px] text-rose-200/90 pl-1">
-              {validationErrors.map((err, idx) => (
-                <li key={idx}>{err}</li>
-              ))}
-            </ul>
-            <p className="text-[10px] text-rose-300/80 pt-1 border-t border-rose-800/60">
-              Tip: You can click &ldquo;Save as Draft&rdquo; to save work in progress without advancing the stage.
-            </p>
-          </div>
-        )}
-
-        {/* Success Toast */}
-        {saveSuccessMsg && (
-          <div className="mt-3 py-1.5 px-3 bg-emerald-500/20 border border-emerald-400/40 rounded-lg text-emerald-300 text-xs font-bold flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>{saveSuccessMsg}</span>
-          </div>
-        )}
-      </div>
+      {/* Success Toast */}
+      {saveSuccessMsg && (
+        <div className="py-2 px-3 bg-emerald-500/20 border border-emerald-400/40 rounded-xl text-emerald-300 text-xs font-bold flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{saveSuccessMsg}</span>
+        </div>
+      )}
 
       {/* RECORD LOCKED NOTICE BANNER */}
       {isRecordLocked && (
@@ -1672,7 +1473,7 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
       </div>
 
       {/* 3. PROCUREMENT KPI & SPLIT PO SAVINGS CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         {/* Single Lowest Supplier */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
           <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
@@ -1739,38 +1540,6 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
         </div>
       </div>
 
-      {/* 3.5 MULTI-VENDOR DIGITAL ALLOCATION SUMMARY (DIRECTOR STAGE 3 ONLY) */}
-      {effectiveMode === 'APPROVAL' && (
-        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 rounded-2xl border border-indigo-500/30 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <Award className="w-4 h-4 text-amber-300" />
-              <span className="font-bold text-xs uppercase tracking-wider text-amber-300">
-                Executive Multi-Vendor Award Status ({isPranjal ? 'Director Item Selection Mode Enabled' : 'Awaiting Director Sign-off'})
-              </span>
-            </div>
-            <p className="text-xs text-slate-300">
-              {isPranjal
-                ? 'Click radio buttons in the matrix below to select/uncheck awarded vendors per item, or click Auto-Fill All L-1.'
-                : 'Rates locked in Stage 3. Multi-vendor award selection and sign-off restricted to Director Pranjal Agrawal.'}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            {isPranjal && (
-              <button
-                type="button"
-                onClick={handleAutoFillAllL1}
-                disabled={!isAwardEditable}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-xl text-xs font-black transition-all shadow-xs cursor-pointer disabled:opacity-50"
-              >
-                <CheckSquare className="w-3.5 h-3.5" />
-                <span>Auto-Fill All L-1</span>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* 4. TABLE 1: COMPARATIVE STATEMENT SPREADSHEET */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
@@ -1815,8 +1584,8 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
           )}
         </div>
 
-        {/* Matrix Spreadsheet Table */}
-        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] relative">
+        {/* Desktop Matrix Spreadsheet Table */}
+        <div className="hidden md:block overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] relative">
           <table className="w-full text-left text-xs border-collapse">
             <thead className="sticky top-0 z-20 bg-slate-100 shadow-xs border-b border-slate-300">
               {/* Row 1: Group Headers */}
@@ -1874,8 +1643,8 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
 
               {/* Row 2: Sub-column Headers */}
               <tr className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-300 text-[10px] uppercase">
-                <th className="py-2 px-2 border-r border-slate-200 text-center w-10">S.N.</th>
-                <th className="py-2 px-3 border-r border-slate-200 min-w-[200px]">Material / Spare Description</th>
+                <th className="py-2 px-2 border-r border-slate-200 text-center w-10 min-w-[40px] sticky left-0 z-30 bg-slate-100">S.N.</th>
+                <th className="py-2 px-3 border-r border-slate-200 min-w-[220px] sticky left-10 z-30 bg-slate-100 shadow-[2px_0_4px_rgba(0,0,0,0.05)]">Material / Spare Description</th>
                 <th className="py-2 px-2 border-r border-slate-200 min-w-[100px]">Brand / Make</th>
                 <th className="py-2 px-2 border-r border-slate-200 text-center w-14">Unit</th>
                 <th className="py-2 px-2 border-r border-slate-200 text-right w-14">Qty</th>
@@ -1905,19 +1674,31 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
                 return (
                   <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
                     {/* S.N. */}
-                    <td className="py-2 px-2 border-r border-slate-200 text-center font-mono font-bold text-slate-500">
+                    <td className="py-2 px-2 border-r border-slate-200 text-center font-mono font-bold text-slate-500 w-10 min-w-[40px] sticky left-0 z-10 bg-white">
                       {idx + 1}
                     </td>
 
-                    {/* Item Name */}
-                    <td className="py-1.5 px-3 border-r border-slate-200 font-semibold text-slate-800">
-                      <input
-                        type="text"
-                        value={item.itemName}
-                        disabled={isRatesLocked}
-                        onChange={(e) => handleUpdateItemMeta(item.id, 'itemName', e.target.value)}
-                        className="w-full text-xs font-semibold bg-transparent focus:bg-white border-b border-transparent focus:border-indigo-500 focus:outline-none"
-                      />
+                    {/* Item Name + Delete Action */}
+                    <td className="py-1.5 px-3 border-r border-slate-200 font-semibold text-slate-800 min-w-[220px] sticky left-10 z-10 bg-white shadow-[2px_0_4px_rgba(0,0,0,0.05)]">
+                      <div className="flex items-center gap-1.5">
+                        {!isRatesLocked && cs.items.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteItem(item.id)}
+                            className="text-slate-300 hover:text-rose-600 p-0.5 rounded cursor-pointer transition-colors shrink-0"
+                            title="Delete item row"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <input
+                          type="text"
+                          value={item.itemName}
+                          disabled={isRatesLocked}
+                          onChange={(e) => handleUpdateItemMeta(item.id, 'itemName', e.target.value)}
+                          className="w-full text-xs font-semibold bg-transparent focus:bg-white border-b border-transparent focus:border-indigo-500 focus:outline-none"
+                        />
+                      </div>
                     </td>
 
                     {/* Brand / Make */}
@@ -2015,14 +1796,7 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
 
                           {/* Landed Rate */}
                           <td className={`py-1.5 px-2 border-r border-slate-200 text-right font-mono font-semibold ${isLowest ? 'bg-emerald-100 text-emerald-950 font-black' : 'text-slate-700'}`}>
-                            <div className="flex items-center justify-end gap-1">
-                              {isLowest && (
-                                <span className="text-[9px] font-black bg-emerald-600 text-white px-1 rounded">
-                                  L-1
-                                </span>
-                              )}
-                              <span>₹{quote.landedRate.toFixed(2)}</span>
-                            </div>
+                            ₹{quote.landedRate.toFixed(2)}
                           </td>
 
                           {/* Total Amount */}
@@ -2082,6 +1856,134 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
               </tr>
             </tfoot>
           </table>
+        </div>
+
+        {/* Mobile Item Cards View (md:hidden) */}
+        <div className="block md:hidden divide-y divide-slate-200">
+          {cs.items.map((item, idx) => {
+            const l1Info = itemL1Map[item.id];
+            const lowestRate = l1Info?.l1Rate || 0;
+            const awardedVendorId = cs.awardedVendorMap?.[item.id] || l1Info?.l1VendorId;
+
+            return (
+              <div key={item.id} className="p-4 space-y-3 bg-white">
+                {/* Item Header & Qty */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-0.5 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded shrink-0">
+                        #{idx + 1}
+                      </span>
+                      <h3 className="text-sm font-bold text-slate-900 leading-tight truncate">
+                        {item.itemName}
+                      </h3>
+                    </div>
+                    {item.brandMake && (
+                      <p className="text-[11px] text-slate-500 line-clamp-2">
+                        {item.brandMake}
+                      </p>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="inline-block text-xs font-mono font-black px-2 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg">
+                      {item.qty} {item.unit}
+                    </span>
+                    {l1Info && lowestRate > 0 && (
+                      <div className="text-[10px] text-emerald-700 font-bold mt-1">
+                        L-1: ₹{lowestRate.toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Nested List of Vendor Quotes */}
+                <div className="space-y-2 pt-1">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Vendor Quotations ({cs.vendors.length})
+                  </div>
+                  <div className="space-y-2">
+                    {cs.vendors.map((vendor) => {
+                      const quote = vendor.itemRates[item.id] || {
+                        baseRate: 0,
+                        gstPercent: 18,
+                        gstAmount: 0,
+                        landedRate: 0,
+                        amount: 0,
+                        isQuoted: false,
+                      };
+                      const baseRate = quote.baseRate || 0;
+                      const gstPercent = quote.gstPercent || 0;
+                      const landedRate = quote.landedRate || 0;
+                      const itemTotal = quote.amount || landedRate * item.qty;
+                      const isL1 = l1Info && l1Info.l1VendorId === vendor.vendorId && landedRate > 0;
+                      const isAwarded = awardedVendorId === vendor.vendorId;
+
+                      return (
+                        <div
+                          key={vendor.vendorId}
+                          className={`p-3 rounded-xl border transition-all ${
+                            isAwarded
+                              ? 'bg-amber-50/70 border-amber-300 ring-1 ring-amber-400'
+                              : isL1
+                              ? 'bg-emerald-50/50 border-emerald-300'
+                              : 'bg-slate-50/80 border-slate-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {/* Award radio button for Director in Stage 3 */}
+                              {isAwardEditable && (
+                                <input
+                                  type="radio"
+                                  name={`award-mobile-${item.id}`}
+                                  checked={isAwarded}
+                                  onChange={() => handleAwardVendor(item.id, vendor.vendorId)}
+                                  className="w-4 h-4 text-emerald-600 focus:ring-emerald-500 cursor-pointer shrink-0"
+                                  title={`Award item to ${vendor.vendorName}`}
+                                />
+                              )}
+                              <span className="font-bold text-xs text-slate-900 truncate">
+                                {vendor.vendorName}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {isL1 && (
+                                <span className="text-[10px] font-black px-1.5 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded">
+                                  L-1
+                                </span>
+                              )}
+                              {isAwarded && (
+                                <span className="text-[10px] font-black px-1.5 py-0.5 bg-amber-400 text-slate-950 rounded flex items-center gap-0.5">
+                                  <Award className="w-3 h-3 text-slate-950" />
+                                  AWARDED
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="mt-2 flex items-baseline justify-between text-xs pt-1.5 border-t border-slate-200/60">
+                            <div className="text-[11px] text-slate-500 space-x-1">
+                              <span>Base: ₹{baseRate.toFixed(2)}</span>
+                              <span>+ {gstPercent}% GST</span>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-mono font-black text-slate-900">
+                                ₹{landedRate.toFixed(2)} <span className="text-[10px] font-normal text-slate-500">/ {item.unit}</span>
+                              </div>
+                              <div className="text-[10px] font-mono text-slate-500">
+                                Total: ₹{itemTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -2317,6 +2219,198 @@ export const ComparativeStatementWorkspace: React.FC<ComparativeStatementWorkspa
             Prepared by: <strong className="text-slate-800">{cs.preparedBy || 'Shyam Rao Sureshe'}</strong>
           </span>
         </div>
+      </div>
+
+      {/* 8. SINGLE STICKY ACTION BAR (EXECUTIVE CHECKOUT) */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-slate-900 border-t border-slate-800 shadow-2xl px-4 py-3 sm:px-6">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
+          {/* Left: Final Total & Awarded Count */}
+          <div className="flex items-center justify-between md:justify-start gap-4">
+            <div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                {awardedSummary.totalAwardedValue > 0 ? 'Awarded Total' : 'Final Total'}
+              </div>
+              <div className="text-xl sm:text-2xl font-mono font-black text-amber-300">
+                ₹{(awardedSummary.totalAwardedValue > 0 ? awardedSummary.totalAwardedValue : (splitPoOptimizedTotal || analytics.splitPoOptimizedTotal || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </div>
+            </div>
+            <div className="text-[11px] text-slate-400 border-l border-slate-700 pl-3">
+              <div>{cs.items.length} items &bull; {cs.vendors.length} vendors</div>
+              {awardedSummary.totalAwardedValue > 0 && (
+                <div className="text-emerald-400 font-bold">{awardedSummary.totalItems} of {cs.items.length} awarded</div>
+              )}
+            </div>
+          </div>
+
+          {/* Right: Primary Buttons & Dropdown */}
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {/* 1. Request Additional Quotation (Director in Stage 3 Approval) */}
+            {effectiveMode === 'APPROVAL' && isPranjal && (
+              <button
+                type="button"
+                onClick={() => setIsRequestAdditionalQuoteModalOpen(true)}
+                className="px-3.5 py-2 bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-500/50 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                title="Return requisition to Purchaser (Shyam) for additional vendor quotation (5h SLA)"
+              >
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
+                <span>Request Additional Quotation</span>
+              </button>
+            )}
+
+            {/* 2. Save Draft */}
+            <button
+              type="button"
+              onClick={
+                isEmbedded
+                  ? (effectiveMode === 'APPROVAL' ? handleSaveDraftAwardInFms : handleSaveDraftInFms)
+                  : handleSaveSheet
+              }
+              disabled={isRecordLocked}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Save work as draft"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>{isRecordLocked ? 'Saved (Locked)' : 'Save Draft'}</span>
+            </button>
+
+            {/* 3. Primary Submit / Approval Button */}
+            {effectiveMode === 'APPROVAL' ? (
+              isPranjal ? (
+                !isRecordLocked ? (
+                  <button
+                    type="button"
+                    onClick={handleDigitalSignAndApprove}
+                    className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs shadow-lg transition-all flex items-center gap-2 cursor-pointer"
+                    title="Confirm award selections and digitally sign as Director Pranjal Agrawal"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-amber-300" />
+                    <span>Approve &amp; Digitally Sign</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsApproveModalOpen(true)}
+                    className="px-4 py-2 bg-emerald-950 text-emerald-200 border border-emerald-500/60 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs flex items-center gap-1.5"
+                  >
+                    <Lock className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Digitally Signed: Pranjal Agrawal</span>
+                  </button>
+                )
+              ) : isRecordLocked ? (
+                <button
+                  type="button"
+                  disabled
+                  className="px-4 py-2 bg-emerald-950 text-emerald-200 border border-emerald-500/60 rounded-xl text-xs font-bold shadow-xs opacity-80 cursor-not-allowed flex items-center gap-1.5"
+                >
+                  <Lock className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Digitally Signed: Pranjal Agrawal</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="px-4 py-2 bg-slate-800 text-slate-400 border border-slate-700 rounded-xl text-xs font-bold shadow-xs cursor-not-allowed opacity-80 flex items-center gap-1.5"
+                >
+                  <Lock className="w-3.5 h-3.5 text-amber-400/80" />
+                  <span>Awaiting Director Sign-off</span>
+                </button>
+              )
+            ) : isStage2B ? (
+              <button
+                type="button"
+                onClick={handleResubmitToDirector}
+                disabled={isSaving}
+                className="px-5 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-black rounded-xl text-xs shadow-lg transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                title="Resubmit updated Comparative Statement to Director Pranjal Agrawal for Stage 3 Approval"
+              >
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4 text-indigo-200" />}
+                <span>Resubmit to Director</span>
+              </button>
+            ) : isEmbedded ? (
+              <button
+                type="button"
+                onClick={handleSaveAndLinkToFms}
+                disabled={isSaving}
+                className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs shadow-lg transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Strict Validation: requires all quantities matched, >= 2 vendors, and non-zero total value"
+              >
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4 text-emerald-200" />}
+                <span>Approve &amp; Digitally Sign</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsApproveModalOpen(true)}
+                disabled={isRecordLocked}
+                className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs shadow-lg transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <ShieldCheck className="w-4 h-4 text-amber-300" />
+                <span>Approve &amp; Digitally Sign</span>
+              </button>
+            )}
+
+            {/* 4. Secondary actions dropdown ... menu */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsSecondaryMenuOpen(!isSecondaryMenuOpen)}
+                className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition-all cursor-pointer"
+                title="More actions"
+              >
+                <MoreVertical className="w-4 h-4" />
+              </button>
+
+              {isSecondaryMenuOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40 bg-transparent"
+                    onClick={() => setIsSecondaryMenuOpen(false)}
+                  />
+                  <div className="absolute bottom-full right-0 mb-2 w-56 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-1.5 z-50 text-xs space-y-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSecondaryMenuOpen(false);
+                        downloadComparativeStatementPdf(cs);
+                      }}
+                      className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800 hover:text-white rounded-lg flex items-center gap-2 cursor-pointer"
+                    >
+                      <FileDown className="w-4 h-4 text-rose-400" />
+                      <span>Export PDF</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSecondaryMenuOpen(false);
+                        downloadComparativeStatementExcel(cs);
+                      }}
+                      className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800 hover:text-white rounded-lg flex items-center gap-2 cursor-pointer"
+                    >
+                      <Download className="w-4 h-4 text-emerald-400" />
+                      <span>Export Excel</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSecondaryMenuOpen(false);
+                        handleAutoFillAllL1();
+                      }}
+                      disabled={!isAwardEditable}
+                      className="w-full text-left px-3 py-2 text-amber-300 hover:bg-slate-800 rounded-lg flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      <Award className="w-4 h-4 text-amber-400" />
+                      <span>Auto-Fill All L-1</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
       </div>
 
       {/* AI WHATSAPP & IMAGE QUOTE IMPORT MODAL */}

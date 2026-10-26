@@ -1760,15 +1760,16 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
             <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 type="button"
-                onClick={() => onAdvanceFmsStage(flow, 'Yes', { status: 'APPROVED', approvalRemarks: 'Director beneficiary approval confirmed' })}
+                onClick={() => onOpenStageAction ? onOpenStageAction(flow, stageIdx) : onAdvanceFmsStage(flow, 'Yes', { status: 'APPROVED', approvalRemarks: 'Director beneficiary approval confirmed' })}
                 className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded flex items-center gap-1.5 shadow-xs cursor-pointer`}
+                title="Review beneficiary bank details and cancelled cheque proof before approval"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Approve Beneficiary</span>
+                <span>Verify & Approve</span>
               </button>
               <button
                 type="button"
-                onClick={() => onAdvanceFmsStage(flow, 'No', { status: 'REJECTED', approvalRemarks: 'Rejected by Director' })}
+                onClick={() => onOpenStageAction ? onOpenStageAction(flow, stageIdx) : onAdvanceFmsStage(flow, 'No', { status: 'REJECTED', approvalRemarks: 'Rejected by Director' })}
                 className={`${isMobile ? 'px-2.5 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded flex items-center gap-1 shadow-2xs cursor-pointer`}
               >
                 <X className="w-3 h-3" />
@@ -2017,13 +2018,106 @@ export const UnifiedWorkSummary: React.FC<UnifiedWorkSummaryProps> = ({
       }
 
       if (item.rawItem?.taskType === 'DIRECTOR_BENEFICIARY_APPROVAL') {
+        const ben = item.rawItem.beneficiary;
         return (
           <button
             onClick={() => {
-              storageAdapter.approveBeneficiaryRecord(item.rawItem.beneficiary.id, true, currentUser);
-              setBankingActionRefresh(k => k + 1);
+              if (onOpenStageAction) {
+                // Find existing linked flow in memory
+                const existingFlow = flows.find(
+                  (f) =>
+                    (f.flowType === 'BENEFICIARY_APPROVAL' || f.templateKey === 'BENEFICIARY_APPROVAL' || f.templateKey === 'tpl_beneficiary_approval') &&
+                    (f.indentNo === ben.sheetNo ||
+                     f.requisitionNumber === ben.sheetNo ||
+                     f.flowId === ben.sheetNo ||
+                     f.id === ben.id ||
+                     (f.vendorName && ben.beneficiaryName && f.vendorName.toLowerCase().trim() === ben.beneficiaryName.toLowerCase().trim()))
+                );
+
+                if (existingFlow) {
+                  onOpenStageAction(existingFlow, existingFlow.currentStageIndex);
+                } else {
+                  // Synthesize a Beneficiary Approval flow so StageActionModal opens with complete bank & cheque data
+                  const synthFlow: FmsInstance = {
+                    id: `flow-ben-${ben.id}`,
+                    flowId: ben.sheetNo || `BPL/BEN/${ben.id.slice(-6)}`,
+                    flowType: 'BENEFICIARY_APPROVAL',
+                    templateKey: 'BENEFICIARY_APPROVAL',
+                    title: `Beneficiary Registration: ${ben.beneficiaryName}`,
+                    vendorName: ben.beneficiaryName,
+                    beneficiaryName: ben.beneficiaryName,
+                    beneficiaryBankName: ben.bankName,
+                    beneficiaryAccountNo: ben.accountNo,
+                    beneficiaryIfsc: ben.ifscCode,
+                    cancelledChequeUrl: ben.cancelledChequeUrl,
+                    status: 'In Progress',
+                    currentStageId: 'STG-BEN-01',
+                    currentStageIndex: 0,
+                    totalStages: 3,
+                    createdAt: ben.timestamp || new Date().toLocaleString('en-GB'),
+                    updatedAt: new Date().toLocaleString('en-GB'),
+                    requisitionNumber: ben.sheetNo,
+                    indentNo: ben.sheetNo,
+                    siteName: 'Central Accounts',
+                    priority: 'Urgent',
+                    totalDelayHours: 0,
+                    remarks: ben.remark || ben.purpose || 'Vendor Beneficiary Bank Account Registration',
+                    stages: [
+                      {
+                        stageId: 'STG-BEN-01',
+                        stageName: 'GET APPROVAL (BENEFICIARY)',
+                        assignee: 'Pranjal Agrawal',
+                        whoRole: 'FINANCE APPROVER',
+                        how: 'WHATSAPP / CALL / MANUAL',
+                        status: 'In Progress',
+                        submittedData: {
+                          beneficiaryName: ben.beneficiaryName,
+                          accountNo: ben.accountNo,
+                          ifscCode: ben.ifscCode,
+                          bankName: ben.bankName,
+                          purpose: ben.purpose,
+                          cancelledChequeUrl: ben.cancelledChequeUrl,
+                          chequeCopyUrl: ben.cancelledChequeUrl,
+                        },
+                      },
+                      {
+                        stageId: 'STG-BEN-02',
+                        stageName: 'ADD ACCOUNT ONLINE',
+                        assignee: 'Byamkesh Kaiwartya',
+                        whoRole: 'ACCOUNTS EXECUTIVE',
+                        how: 'ONLINE BANKING',
+                        status: 'Pending',
+                        submittedData: {},
+                      },
+                      {
+                        stageId: 'STG-BEN-03',
+                        stageName: 'CONFIRM ACCOUNT ADDITION',
+                        assignee: 'Byamkesh Kaiwartya',
+                        whoRole: 'ACCOUNTS EXECUTIVE',
+                        how: 'WHATSAPP / PHONE / EMAIL',
+                        status: 'Pending',
+                        submittedData: {},
+                      },
+                    ],
+                    instanceDataPool: {
+                      beneficiaryId: ben.id,
+                      beneficiaryName: ben.beneficiaryName,
+                      accountNo: ben.accountNo,
+                      ifscCode: ben.ifscCode,
+                      bankName: ben.bankName,
+                      purpose: ben.purpose,
+                      cancelledChequeUrl: ben.cancelledChequeUrl,
+                    },
+                  };
+                  onOpenStageAction(synthFlow, 0);
+                }
+              } else {
+                storageAdapter.approveBeneficiaryRecord(ben.id, true, currentUser);
+                setBankingActionRefresh((k) => k + 1);
+              }
             }}
             className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-2.5 py-1 text-[11px]'} bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded transition-colors cursor-pointer flex items-center gap-1 shadow-xs`}
+            title="Review beneficiary bank details and cancelled cheque proof"
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
             <span>Verify & Approve</span>

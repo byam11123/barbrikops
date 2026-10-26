@@ -471,19 +471,22 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
           <table className="w-full text-left text-xs text-slate-700">
             <thead className="sticky top-0 z-20 bg-slate-100 text-slate-900 font-bold uppercase tracking-wider text-[11px] border-b border-slate-300 shadow-xs">
               <tr>
-                <th className="w-10 min-w-[40px] px-3 py-3.5 sticky left-0 top-0 z-30 bg-slate-100 border-r border-slate-200 border-b border-slate-300 text-center">
-                  <input
-                    type="checkbox"
-                    checked={sortedBeneficiaries.length > 0 && selectedRowIds.length === sortedBeneficiaries.length}
-                    onChange={toggleSelectAll}
-                    className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                    title="Select / Deselect All"
-                  />
+                <th className="px-3 py-3.5 sticky left-0 top-0 z-30 bg-slate-100 border-r border-slate-200 border-b border-slate-300 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap w-36 min-w-[130px]">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={sortedBeneficiaries.length > 0 && selectedRowIds.length === sortedBeneficiaries.length}
+                      onChange={toggleSelectAll}
+                      className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                      title="Select / Deselect All"
+                    />
+                    <span>Actions</span>
+                  </div>
                 </th>
                 {visibleColumns.includes('sheetNo') && (
                   <th
                     onClick={() => handleSort('sheetNo')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 pl-5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 pl-4 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[8%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Sheet Ref</span>
@@ -498,7 +501,7 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                 {visibleColumns.includes('beneficiaryName') && (
                   <th
                     onClick={() => handleSort('beneficiaryName')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[15%] whitespace-normal"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Name of Beneficiary</span>
@@ -513,7 +516,7 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                 {visibleColumns.includes('tradeVendorName') && (
                   <th
                     onClick={() => handleSort('tradeVendorName')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[14%] whitespace-normal"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Vendor Name</span>
@@ -528,7 +531,7 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                 {visibleColumns.includes('bankDetails') && (
                   <th
                     onClick={() => handleSort('bankDetails')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[15%] whitespace-normal"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Bank Name &amp; A/C</span>
@@ -543,7 +546,7 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                 {visibleColumns.includes('ifscCode') && (
                   <th
                     onClick={() => handleSort('ifscCode')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[9%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>IFSC Code</span>
@@ -558,7 +561,7 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                 {visibleColumns.includes('category') && (
                   <th
                     onClick={() => handleSort('category')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[9%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Purpose</span>
@@ -570,7 +573,7 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                     </div>
                   </th>
                 )}
-                {visibleColumns.includes('proof') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Cheque / Proof</th>}
+                {visibleColumns.includes('proof') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 w-[7%]">Cheque / Proof</th>}
                 {visibleColumns.includes('remark') && (
                   <th
                     onClick={() => handleSort('remark')}
@@ -631,7 +634,6 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                     </div>
                   </th>
                 )}
-                {visibleColumns.includes('actions') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 text-right pr-5">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -649,19 +651,107 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
 
                   return (
                     <tr key={b.id} className={`hover:bg-indigo-50/40 transition-colors group ${isChecked ? 'bg-indigo-50/40' : ''}`}>
-                      {/* Sticky left checkbox column */}
+                      {/* Sticky left checkbox + actions column */}
                       <td
-                        className={`w-10 min-w-[40px] px-3 py-3.5 sticky left-0 z-10 border-r border-slate-200/60 text-center ${
+                        className={`px-3 py-3.5 sticky left-0 z-20 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap ${
                           isChecked ? 'bg-indigo-50' : 'bg-white group-hover:bg-indigo-50/50'
                         }`}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => handleToggleRow(b.id)}
-                          className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                        />
+                        <div className="flex items-center gap-2.5">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggleRow(b.id)}
+                            className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          />
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {/* Step 1: Approval Pending -> Show ONLY Approve & Reject buttons */}
+                            {(b.approvalStatus === 'PENDING' || !b.approvalStatus) && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateApprovalStatus(b, 'APPROVED')}
+                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                  title="Approve Beneficiary Registration"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Approve</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateApprovalStatus(b, 'REJECTED')}
+                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                  title="Reject Beneficiary Registration"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  <span>Reject</span>
+                                </button>
+                              </>
+                            )}
+
+                            {/* Step 2: Approved & Beneficiary Entry Pending -> Show ONLY Done & Cancelled buttons */}
+                            {b.approvalStatus === 'APPROVED' && (b.beneficiaryEntry === 'PENDING' || !b.beneficiaryEntry) && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateEntryStatus(b, 'DONE')}
+                                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                  title="Mark Beneficiary Entry as Done"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Done</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateEntryStatus(b, 'CANCELLED')}
+                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                  title="Mark Beneficiary Entry as Cancelled"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  <span>Cancelled</span>
+                                </button>
+                              </>
+                            )}
+
+                            {/* Step 3: Approved & Entry Done & Addition Status Pending -> Show ONLY Done & Cancelled buttons */}
+                            {b.approvalStatus === 'APPROVED' && b.beneficiaryEntry === 'DONE' && (b.additionStatus === 'PENDING' || !b.additionStatus) && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateAdditionStatus(b, 'DONE')}
+                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                  title="Mark Addition Status as Done"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Done</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateAdditionStatus(b, 'CANCELLED')}
+                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                  title="Mark Addition Status as Cancelled"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  <span>Cancelled</span>
+                                </button>
+                              </>
+                            )}
+
+                            {/* Step 4: Terminal State -> Show ONLY View button */}
+                            {(isRejected || isEntryCancelled || b.additionStatus === 'CANCELLED' || (b.approvalStatus === 'APPROVED' && b.beneficiaryEntry === 'DONE' && b.additionStatus === 'DONE')) && (
+                              <button
+                                type="button"
+                                onClick={() => setViewingRecord(b)}
+                                className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 border border-slate-200 shadow-2xs"
+                                title="View Complete Beneficiary Details"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-slate-500" />
+                                <span>View</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </td>
                       {/* 1. Sheet Ref */}
                       {visibleColumns.includes('sheetNo') && (
@@ -674,21 +764,21 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
 
                       {/* 2. Legal Beneficiary Name */}
                       {visibleColumns.includes('beneficiaryName') && (
-                        <td className="p-3.5 font-bold text-slate-900">
+                        <td className="p-3.5 font-bold text-slate-900 whitespace-normal break-words">
                           {b.beneficiaryName}
                         </td>
                       )}
 
                       {/* 3. Trade Vendor Name */}
                       {visibleColumns.includes('tradeVendorName') && (
-                        <td className="p-3.5 text-slate-600 font-medium">
+                        <td className="p-3.5 text-slate-600 font-medium whitespace-normal break-words">
                           {b.tradeVendorName || '—'}
                         </td>
                       )}
 
                       {/* 4. Bank Name & A/C */}
                       {visibleColumns.includes('bankDetails') && (
-                        <td className="p-3.5">
+                        <td className="p-3.5 whitespace-normal break-words">
                           <div className="font-bold text-slate-900">{b.bankName}</div>
                           <div className="font-mono text-slate-600 text-[11px] font-semibold">
                             A/C: {b.accountNo}
@@ -793,98 +883,6 @@ export const BeneficiaryMasterView: React.FC<BeneficiaryMasterViewProps> = ({
                               <Clock className="w-3 h-3 text-amber-600" /> Pending
                             </span>
                           )}
-                        </td>
-                      )}
-
-                      {/* 12. Actions Column */}
-                      {visibleColumns.includes('actions') && (
-                        <td className="p-3.5 pr-5 text-right">
-                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                            {/* Step 1: Approval Pending -> Show ONLY Approve & Reject buttons */}
-                            {(b.approvalStatus === 'PENDING' || !b.approvalStatus) && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateApprovalStatus(b, 'APPROVED')}
-                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                                  title="Approve Beneficiary Registration"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>Approve</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateApprovalStatus(b, 'REJECTED')}
-                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                                  title="Reject Beneficiary Registration"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                  <span>Reject</span>
-                                </button>
-                              </>
-                            )}
-
-                            {/* Step 2: Approved & Beneficiary Entry Pending -> Show ONLY Done & Cancelled buttons */}
-                            {b.approvalStatus === 'APPROVED' && (b.beneficiaryEntry === 'PENDING' || !b.beneficiaryEntry) && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateEntryStatus(b, 'DONE')}
-                                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                                  title="Mark Beneficiary Entry as Done"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>Done</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateEntryStatus(b, 'CANCELLED')}
-                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                                  title="Mark Beneficiary Entry as Cancelled"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                  <span>Cancelled</span>
-                                </button>
-                              </>
-                            )}
-
-                            {/* Step 3: Approved & Entry Done & Addition Status Pending -> Show ONLY Done & Cancelled buttons */}
-                            {b.approvalStatus === 'APPROVED' && b.beneficiaryEntry === 'DONE' && (b.additionStatus === 'PENDING' || !b.additionStatus) && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateAdditionStatus(b, 'DONE')}
-                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                                  title="Mark Addition Status as Done"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>Done</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateAdditionStatus(b, 'CANCELLED')}
-                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                                  title="Mark Addition Status as Cancelled"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                  <span>Cancelled</span>
-                                </button>
-                              </>
-                            )}
-
-                            {/* Step 4: Terminal State (All 3 decided / Rejected / Cancelled) -> Show ONLY View button (No Edit, No Delete) */}
-                            {(isRejected || isEntryCancelled || b.additionStatus === 'CANCELLED' || (b.approvalStatus === 'APPROVED' && b.beneficiaryEntry === 'DONE' && b.additionStatus === 'DONE')) && (
-                              <button
-                                type="button"
-                                onClick={() => setViewingRecord(b)}
-                                className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 border border-slate-200 shadow-2xs"
-                                title="View Complete Beneficiary Details"
-                              >
-                                <Eye className="w-3.5 h-3.5 text-slate-500" />
-                                <span>View</span>
-                              </button>
-                            )}
-                          </div>
                         </td>
                       )}
                     </tr>

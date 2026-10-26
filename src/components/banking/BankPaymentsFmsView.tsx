@@ -479,19 +479,22 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
           <table className="w-full text-left text-xs text-slate-700">
             <thead className="sticky top-0 z-20 bg-slate-100 text-slate-900 font-bold uppercase tracking-wider text-[11px] border-b border-slate-300 shadow-xs">
               <tr>
-                <th className="w-10 min-w-[40px] px-3 py-3.5 sticky left-0 top-0 z-30 bg-slate-100 border-r border-slate-200 border-b border-slate-300 text-center">
-                  <input
-                    type="checkbox"
-                    checked={sortedPayments.length > 0 && selectedRowIds.length === sortedPayments.length}
-                    onChange={toggleSelectAll}
-                    className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                    title="Select / Deselect All"
-                  />
+                <th className="px-3 py-3.5 sticky left-0 top-0 z-30 bg-slate-100 border-r border-slate-200 border-b border-slate-300 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap w-36 min-w-[130px]">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={sortedPayments.length > 0 && selectedRowIds.length === sortedPayments.length}
+                      onChange={toggleSelectAll}
+                      className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                      title="Select / Deselect All"
+                    />
+                    <span>Actions</span>
+                  </div>
                 </th>
                 {visibleColumns.includes('sheetNo') && (
                   <th
                     onClick={() => handleSort('sheetNo')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 pl-5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 pl-4 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[9%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Sheet Ref</span>
@@ -506,7 +509,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                 {visibleColumns.includes('vendorName') && (
                   <th
                     onClick={() => handleSort('vendorName')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[16%] whitespace-normal"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Vendor Name</span>
@@ -521,7 +524,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                 {visibleColumns.includes('beneficiaryName') && (
                   <th
                     onClick={() => handleSort('beneficiaryName')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[16%] whitespace-normal"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Name of Beneficiary</span>
@@ -536,7 +539,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                 {visibleColumns.includes('amount') && (
                   <th
                     onClick={() => handleSort('amount')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[11%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Amount (₹)</span>
@@ -551,7 +554,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                 {visibleColumns.includes('mode') && (
                   <th
                     onClick={() => handleSort('mode')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[7%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Mode</span>
@@ -566,7 +569,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                 {visibleColumns.includes('site') && (
                   <th
                     onClick={() => handleSort('site')}
-                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 cursor-pointer hover:bg-slate-200/70 transition-colors select-none w-[10%] whitespace-normal"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Site</span>
@@ -578,7 +581,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                     </div>
                   </th>
                 )}
-                {visibleColumns.includes('proof') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5">Cheque / Proof</th>}
+                {visibleColumns.includes('proof') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 w-[8%]">Cheque / Proof</th>}
                 {visibleColumns.includes('approvalStatus') && (
                   <th
                     onClick={() => handleSort('approvalStatus')}
@@ -624,7 +627,6 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                     </div>
                   </th>
                 )}
-                {visibleColumns.includes('actions') && <th className="sticky top-0 z-20 bg-slate-100 border-b border-slate-300 p-3.5 text-right pr-5">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -644,17 +646,105 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                       className={`hover:bg-indigo-50/50 transition-colors cursor-pointer group ${isChecked ? 'bg-indigo-50/40' : ''}`}
                     >
                       <td
-                        className={`w-10 min-w-[40px] px-3 py-3.5 sticky left-0 z-10 border-r border-slate-200/60 text-center ${
+                        className={`px-3 py-3.5 sticky left-0 z-20 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap ${
                           isChecked ? 'bg-indigo-50' : 'bg-white group-hover:bg-indigo-50/50'
                         }`}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => handleToggleRow(p.id)}
-                          className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                        />
+                        <div className="flex items-center gap-2.5">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggleRow(p.id)}
+                            className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          />
+                          <div className="flex items-center gap-1.5">
+                            {/* Director Role: Approve / Reject Pending Payments */}
+                            {isDirector && p.approvalStatus === 'PENDING' && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    storageAdapter.updateBankPaymentStatus(p.id, 'approvalStatus', 'APPROVED', currentUser);
+                                    refreshData();
+                                  }}
+                                  className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                  title="Director Approve Request"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Approve</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    storageAdapter.updateBankPaymentStatus(p.id, 'approvalStatus', 'REJECTED', currentUser);
+                                    refreshData();
+                                  }}
+                                  className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                  title="Director Reject Request"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  <span>Reject</span>
+                                </button>
+                              </>
+                            )}
+
+                            {/* Accounts Role: Verify Beneficiary */}
+                            {isAccounts && p.beneficiaryMasterStatus === 'NEEDS_ADDITION' && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedPayment(p);
+                                  setIsDrawerOpen(true);
+                                }}
+                                className="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                title="Verify New Beneficiary"
+                              >
+                                <ShieldAlert className="w-3.5 h-3.5" />
+                                <span>Verify</span>
+                              </button>
+                            )}
+
+                            {/* Accounts Role: Record UTR for Approved Pending Payments */}
+                            {isAccounts && p.approvalStatus === 'APPROVED' && p.paymentStatus === 'PENDING' && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedPayment(p);
+                                  setIsDrawerOpen(true);
+                                }}
+                                className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                                title="Record UTR / Bank Settlement"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Record UTR</span>
+                              </button>
+                            )}
+
+                            {/* View Details action */}
+                            {!(isDirector && p.approvalStatus === 'PENDING') &&
+                             !(isAccounts && p.beneficiaryMasterStatus === 'NEEDS_ADDITION') &&
+                             !(isAccounts && p.approvalStatus === 'APPROVED' && p.paymentStatus === 'PENDING') && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedPayment(p);
+                                  setIsDrawerOpen(true);
+                                }}
+                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 border border-slate-200 shadow-2xs"
+                                title="View Details"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-slate-500" />
+                                <span>View</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </td>
                     {visibleColumns.includes('sheetNo') && (
                       <td className="p-3.5 pl-5 font-mono font-bold text-slate-900">
@@ -665,7 +755,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                     )}
 
                     {visibleColumns.includes('vendorName') && (
-                      <td className="p-3.5 font-bold text-slate-900">
+                      <td className="p-3.5 font-bold text-slate-900 whitespace-normal break-words">
                         {p.vendorName}
                         {p.billNoPo && (
                           <span className="block text-[10px] text-slate-400 font-normal">
@@ -676,7 +766,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                     )}
 
                     {visibleColumns.includes('beneficiaryName') && (
-                      <td className="p-3.5">
+                      <td className="p-3.5 whitespace-normal break-words">
                         <span className="font-semibold text-slate-900">{p.beneficiaryName}</span>
                         {p.isNameMismatch && (
                           <span className="mt-0.5 inline-flex items-center gap-0.5 px-2 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-bold rounded-md border border-amber-200">
@@ -703,7 +793,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                     )}
 
                     {visibleColumns.includes('site') && (
-                      <td className="p-3.5 font-medium text-slate-700">
+                      <td className="p-3.5 font-medium text-slate-700 whitespace-normal break-words">
                         {p.site}
                       </td>
                     )}
@@ -801,80 +891,7 @@ export const BankPaymentsFmsView: React.FC<BankPaymentsFmsViewProps> = ({
                         )}
                       </td>
                     )}
-
-                    {/* Actions Column */}
-                    {visibleColumns.includes('actions') && (
-                      <td className="p-3.5 pr-5 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* Director Role: Approve / Reject Pending Payments */}
-                          {isDirector && p.approvalStatus === 'PENDING' && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  storageAdapter.updateBankPaymentStatus(p.id, 'approvalStatus', 'APPROVED', currentUser);
-                                  refreshData();
-                                }}
-                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                                title="Director Approve Request"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                                <span>Approve</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  storageAdapter.updateBankPaymentStatus(p.id, 'approvalStatus', 'REJECTED', currentUser);
-                                  refreshData();
-                                }}
-                                className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                                title="Director Reject Request"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                                <span>Reject</span>
-                              </button>
-                            </>
-                          )}
-
-                          {/* Accounts Role: Verify Beneficiary */}
-                          {isAccounts && p.beneficiaryMasterStatus === 'NEEDS_ADDITION' && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedPayment(p);
-                                setIsDrawerOpen(true);
-                              }}
-                              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                              title="Verify New Beneficiary"
-                            >
-                              <ShieldAlert className="w-3.5 h-3.5" />
-                              <span>Verify Beneficiary</span>
-                            </button>
-                          )}
-
-                          {/* Accounts Role: Record UTR for Approved Pending Payments */}
-                          {isAccounts && p.approvalStatus === 'APPROVED' && p.paymentStatus === 'PENDING' && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedPayment(p);
-                                setIsDrawerOpen(true);
-                              }}
-                              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                              title="Record UTR / Bank Settlement"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              <span>Record UTR</span>
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    )}
-                  </tr>
+                    </tr>
                 );
               }))}
             </tbody>

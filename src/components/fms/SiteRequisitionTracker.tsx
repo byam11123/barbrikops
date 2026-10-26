@@ -211,22 +211,8 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="bg-slate-900 rounded-2xl p-6 text-white shadow-xl border border-slate-800">
-        <div className="flex items-center gap-2 text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">
-          <FileText className="w-4 h-4" />
-          <span>Site Material Requisitions & Tracking Desk</span>
-        </div>
-        <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
-          Site Requisitions Tracker
-        </h2>
-        <p className="text-slate-400 text-xs sm:text-sm mt-1 max-w-2xl">
-          Track active site material requisitions, stock verification status, current assignees, and downstream store/purchase dispatch progress in real-time.
-        </p>
-      </div>
-
       {/* Summary Stat Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Requisitions */}
         <div
           onClick={() => setSelectedStatus('ALL')}
@@ -379,18 +365,21 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
             <table className="w-full text-left text-xs border-collapse">
               <thead className="bg-slate-50 border-b border-slate-300 text-slate-700 font-bold uppercase tracking-wider text-[11px] sticky top-0 z-20 shadow-xs">
                 <tr>
-                  <th className="w-10 min-w-[40px] px-3 py-3.5 sticky left-0 top-0 z-30 bg-slate-50 border-r border-slate-200 border-b border-slate-300 text-center">
-                    <input
-                      type="checkbox"
-                      checked={sortedFlows.length > 0 && selectedRowIds.length === sortedFlows.length}
-                      onChange={toggleSelectAll}
-                      className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                      title="Select / Deselect All"
-                    />
+                  <th className="w-28 min-w-[110px] px-3 py-3.5 sticky left-0 top-0 z-30 bg-slate-50 border-r border-slate-200 border-b border-slate-300 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap">
+                    <div className="flex items-center gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={sortedFlows.length > 0 && selectedRowIds.length === sortedFlows.length}
+                        onChange={toggleSelectAll}
+                        className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        title="Select / Deselect All"
+                      />
+                      <span>Action</span>
+                    </div>
                   </th>
                   <th
                     onClick={() => handleSort('requisitionNumber')}
-                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none w-[15%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Requisition No</span>
@@ -403,7 +392,7 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
                   </th>
                   <th
                     onClick={() => handleSort('siteName')}
-                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none w-[17%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Site / Location</span>
@@ -416,7 +405,7 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
                   </th>
                   <th
                     onClick={() => handleSort('requestedBy')}
-                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none w-[14%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Requested By</span>
@@ -429,7 +418,7 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
                   </th>
                   <th
                     onClick={() => handleSort('itemsCount')}
-                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none w-[9%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Items Count</span>
@@ -442,7 +431,7 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
                   </th>
                   <th
                     onClick={() => handleSort('currentStage')}
-                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none w-[18%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Current Stage</span>
@@ -455,7 +444,7 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
                   </th>
                   <th
                     onClick={() => handleSort('assignee')}
-                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none w-[12%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Assignee</span>
@@ -468,7 +457,7 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
                   </th>
                   <th
                     onClick={() => handleSort('plannedDate')}
-                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                    className="px-4 py-3.5 sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none w-[8%]"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Planned Date / SLA</span>
@@ -481,7 +470,7 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
                   </th>
                   <th
                     onClick={() => handleSort('status')}
-                    className="px-4 py-3.5 text-center sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none"
+                    className="px-4 py-3.5 text-center sticky top-0 bg-slate-50 border-b border-slate-300 cursor-pointer hover:bg-slate-100 transition-colors select-none w-[7%]"
                   >
                     <div className="flex items-center justify-center gap-1.5">
                       <span>Status</span>
@@ -492,7 +481,6 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
                       )}
                     </div>
                   </th>
-                  <th className="px-4 py-3.5 text-right sticky top-0 bg-slate-50 border-b border-slate-300">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
@@ -515,17 +503,31 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
                       className={`hover:bg-indigo-50/50 transition-colors cursor-pointer group ${isChecked ? 'bg-indigo-50/40' : ''}`}
                     >
                       <td
-                        className={`w-10 min-w-[40px] px-3 py-3.5 sticky left-0 z-10 border-r border-slate-200/60 text-center ${
+                        className={`w-28 min-w-[110px] px-3 py-3.5 sticky left-0 z-10 border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] whitespace-nowrap ${
                           isChecked ? 'bg-indigo-50' : 'bg-white group-hover:bg-indigo-50/50'
                         }`}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => handleToggleRow(flow.id)}
-                          className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                        />
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggleRow(flow.id)}
+                            className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          />
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedFlowModal(flow);
+                            }}
+                            className="px-2 py-1 bg-slate-100 hover:bg-indigo-100 text-slate-700 hover:text-indigo-700 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1 cursor-pointer border border-slate-200 shadow-2xs"
+                            title="View Requisition Timeline"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View</span>
+                          </button>
+                        </div>
                       </td>
 
                       <td className="px-4 py-3.5 font-bold text-indigo-600 flex items-center gap-2">
@@ -533,14 +535,14 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
                         <span>{flow.requisitionNumber || flow.indentNo}</span>
                       </td>
 
-                      <td className="px-4 py-3.5">
+                      <td className="px-4 py-3.5 whitespace-normal break-words">
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold">
-                          <Building2 className="w-3 h-3 text-slate-500" />
-                          {flow.siteName}
+                          <Building2 className="w-3 h-3 text-slate-500 shrink-0" />
+                          <span>{flow.siteName}</span>
                         </span>
                       </td>
 
-                      <td className="px-4 py-3.5">
+                      <td className="px-4 py-3.5 whitespace-normal break-words">
                         <div className="flex items-center gap-1.5 text-slate-700">
                           <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                           <span>{requestedBy}</span>
@@ -554,21 +556,21 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
                         </span>
                       </td>
 
-                      <td className="px-4 py-3.5 font-semibold text-slate-800">
-                        <span className="truncate max-w-[180px] block" title={currentStageName}>
+                      <td className="px-4 py-3.5 font-semibold text-slate-800 whitespace-normal break-words">
+                        <span className="block" title={currentStageName}>
                           {currentStageName}
                         </span>
                       </td>
 
-                      <td className="px-4 py-3.5 text-slate-600">
+                      <td className="px-4 py-3.5 text-slate-600 whitespace-normal break-words">
                         <span className="bg-amber-50 text-amber-800 border border-amber-200/80 px-2.5 py-1 rounded-lg text-xs font-semibold inline-block">
                           {currentAssignee}
                         </span>
                       </td>
 
-                      <td className="px-4 py-3.5 text-slate-500 text-xs">
+                      <td className="px-4 py-3.5 text-slate-500 text-xs whitespace-nowrap">
                         <div className="flex items-center gap-1 text-slate-600">
-                          <Calendar className="w-3 h-3 text-slate-400" />
+                          <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
                           <span>{plannedDate}</span>
                         </div>
                       </td>
@@ -588,16 +590,6 @@ export const SiteRequisitionTracker: React.FC<SiteRequisitionTrackerProps> = ({
                           )}
                           {flow.status}
                         </span>
-                      </td>
-
-                      <td className="px-4 py-3.5 text-right">
-                        <button
-                          type="button"
-                          className="p-1.5 rounded-lg text-indigo-600 hover:bg-indigo-100 group-hover:bg-indigo-600 group-hover:text-white transition-all cursor-pointer"
-                          title="View Requisition Timeline"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
                       </td>
                     </tr>
                   );

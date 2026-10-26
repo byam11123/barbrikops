@@ -931,8 +931,9 @@ export default function App() {
       } else if (currentStage.stageId === 'STG-PAY-03' || currentIndex === 2) {
         // STG-PAY-03: Director Beneficiary Approval - Director checks and sanctions addition
         const isApproved = submittedData?.status !== 'REJECTED' && decision !== 'No';
-        if (targetBenSheetNo) {
-          storageAdapter.approveBeneficiaryRecord(targetBenSheetNo, isApproved, currentUser, submittedData?.approvalRemarks);
+        const benIdOrSheet = targetBenSheetNo || flow.linkedBeneficiarySheetNo || flow.indentNo || flow.requisitionNumber || flow.flowId || (flow.instanceDataPool?.beneficiaryId as string);
+        if (benIdOrSheet) {
+          storageAdapter.approveBeneficiaryRecord(benIdOrSheet, isApproved, currentUser, submittedData?.approvalRemarks);
         }
         if (isApproved) {
           nextIndex = 3; // Advance to Stage 4 (STG-PAY-04: Bank Entry Beneficiary)
@@ -1022,6 +1023,13 @@ export default function App() {
         // STG-PAY-10: Collect Material from Vendor - Purchaser Assistant (Rajendra/Vivek/Rajnikant)
         nextIndex = 10; // Completed all 10 stages!
       }
+    } else if (flow.flowType === 'BENEFICIARY_APPROVAL') {
+      const isApproved = submittedData?.status !== 'REJECTED' && decision !== 'No';
+      const benIdOrSheet = flow.linkedBeneficiarySheetNo || flow.indentNo || flow.requisitionNumber || flow.flowId || (flow.instanceDataPool?.beneficiaryId as string);
+      if (benIdOrSheet && (currentStage.stageId === 'STG-BEN-01' || currentIndex === 0)) {
+        storageAdapter.approveBeneficiaryRecord(benIdOrSheet, isApproved, currentUser, submittedData?.approvalRemarks);
+      }
+      nextIndex = currentIndex + 1;
     } else if (flow.flowType === 'PURCHASE_TO_STORE_DISPATCH') {
       // Stage 5: IS E-WAY BILL REQUIRED?
       if (currentStage.stageId === 'STG-PSD-05') {
@@ -1237,8 +1245,9 @@ export default function App() {
       ...(submittedData?.purchaserLineItems && Array.isArray(submittedData.purchaserLineItems) ? { lineItems: submittedData.purchaserLineItems } : {}),
     };
 
+    const flowExists = flows.some((f) => f.id === updatedFlow.id);
     let updatedFlowsList = storageAdapter.syncParentChildWorkflowStatuses(
-      flows.map((f) => (f.id === updatedFlow.id ? updatedFlow : f))
+      flowExists ? flows.map((f) => (f.id === updatedFlow.id ? updatedFlow : f)) : [updatedFlow, ...flows]
     );
 
     // DYNAMIC SUB-WORKFLOW TRIGGER EVALUATOR (Configured via Template Studio)
